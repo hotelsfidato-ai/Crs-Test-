@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 import { CommissionDialog } from "./CommissionDialog";
+import { RoomTypeDialog, DeleteRoomTypeButton } from "./RoomTypeDialog";
 import type { RoomType, Reservation } from "@/data/types";
 
 export default function HotelDetailPage() {
@@ -56,6 +57,7 @@ export default function HotelDetailPage() {
 
   const h = hotel.data;
   const rateAccess = canEditRates(role);
+  const canConfigureRooms = can(role, "create", "room_config");
 
   const bookings = bookingsQuery.data ?? [];
   const live = bookings.filter((r) => r.status !== "cancelled" && r.status !== "draft");
@@ -87,6 +89,17 @@ export default function HotelDetailPage() {
         <span className="text-sm text-grey-500">{rt.amenities.slice(0, 3).join(", ")}</span>
       ),
     },
+    ...(canConfigureRooms
+      ? [{
+          key: "actions", header: "", width: "w-44",
+          cell: (rt: RoomType) => (
+            <div className="flex items-center justify-end gap-1">
+              <RoomTypeDialog hotelId={h.id} hotelName={h.name} roomType={rt} />
+              <DeleteRoomTypeButton hotelId={h.id} roomType={rt} />
+            </div>
+          ),
+        } satisfies Column<RoomType>]
+      : []),
   ];
 
   const bookingColumns: Column<Reservation>[] = [
@@ -225,21 +238,53 @@ export default function HotelDetailPage() {
             </TabsContent>
 
             <TabsContent value="rooms">
-              <DataTable
-                columns={roomColumns}
-                rows={roomTypes.data ?? []}
-                rowKey={(rt) => rt.id}
-                loading={roomTypes.isLoading}
-                stickyHeader={false}
-                empty={
-                  <EmptyState
-                    compact
-                    icon={<BedDouble />}
-                    title="No room types configured"
-                    description="Room types and rates are set up during onboarding."
-                  />
-                }
-              />
+              <Card>
+                <CardHeader
+                  title="Room types"
+                  description="What this property can sell. A property with none cannot be booked."
+                  actions={
+                    canConfigureRooms ? (
+                      <RoomTypeDialog hotelId={h.id} hotelName={h.name} />
+                    ) : undefined
+                  }
+                />
+                <DataTable
+                  columns={roomColumns}
+                  rows={roomTypes.data ?? []}
+                  rowKey={(rt) => rt.id}
+                  loading={roomTypes.isLoading}
+                  className="border-0 rounded-none rounded-b-md"
+                  stickyHeader={false}
+                  empty={
+                    <EmptyState
+                      compact
+                      icon={<BedDouble />}
+                      title="No room types yet"
+                      description={
+                        canConfigureRooms
+                          ? "Add at least one room type before taking a booking here — the reservation wizard has nothing to offer until you do."
+                          : "Nobody has configured room types for this property yet."
+                      }
+                      action={
+                        canConfigureRooms ? (
+                          <RoomTypeDialog hotelId={h.id} hotelName={h.name} />
+                        ) : undefined
+                      }
+                    />
+                  }
+                />
+              </Card>
+
+              {canConfigureRooms && (roomTypes.data?.length ?? 0) > 0 && (
+                <p className="text-xs text-grey-400 mt-3 leading-relaxed">
+                  Room types carry no price. Selling rates are entered per booking, and
+                  meal plans and stay rules come from{" "}
+                  <Link to={`/hotels/${h.id}/rates`} className="text-brand-orange hover:underline">
+                    seasons
+                  </Link>
+                  .
+                </p>
+              )}
             </TabsContent>
 
             <TabsContent value="bookings">
