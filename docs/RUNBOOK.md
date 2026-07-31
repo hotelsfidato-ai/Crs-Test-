@@ -50,44 +50,74 @@ firebase deploy --only firestore:rules --project crstest-9a0c5
 account from writing whatever it likes; deploying them after the first
 sign-up means there is a window where the database is open.
 
-### 3. Bootstrap the first Owner
+### 3. Bootstrap the two full-access accounts
 
-This is the one step that cannot be done from inside the app, and the
-reason is structural: **only an Owner or Admin may create an invitation,
-and at this point neither exists.** On the Spark plan there is no Admin
-SDK to break the cycle from a script, so the first invitation is written
-by hand from the console, which bypasses rules.
+You want **two accounts with full access: one Owner, one Admin.** Both
+are created the same way, and this is the one step that cannot be done
+from inside the app.
+
+The reason is structural: **only an Owner or Admin may create an
+invitation, and at this point neither exists.** On the Spark plan there
+is no Admin SDK to break the cycle from a script, so the first
+invitations are written by hand from the console, which bypasses rules.
+
+⚠️ **Only the Owner strictly needs this.** Once the Owner is in, the
+Admin can be invited normally from Admin → Users, which is less
+error-prone than hand-writing a second document. Do both by hand only if
+you want them set up before anyone signs in.
 
 Console → **Firestore Database → Start collection**:
 
 | | |
 |---|---|
 | Collection ID | `invitations` |
-| Document ID | your email, **lower-cased** — e.g. `influvateseo@gmail.com` |
+| Document ID | the person's email, **lower-cased** — e.g. `influvateseo@gmail.com` |
 
 Fields (all type `string` unless noted):
 
-| Field | Value |
-|---|---|
-| `email` | the same lower-cased address as the document ID |
-| `name` | your name |
-| `role` | `owner` |
-| `department` | `Management` |
-| `branch` | *(anything, or blank)* |
-| `invitedAt` | type **timestamp**, now |
-| `invitedBy` | `bootstrap` |
-| `invitedByName` | `Bootstrap` |
+| Field | Owner document | Admin document |
+|---|---|---|
+| `email` | same lower-cased address as the document ID | same |
+| `name` | the Owner's name | the Admin's name |
+| `role` | `owner` | `admin` |
+| `department` | `Management` | `Management` |
+| `branch` | *(anything, or blank)* | *(anything, or blank)* |
+| `invitedAt` | type **timestamp**, now | same |
+| `invitedBy` | `bootstrap` | `bootstrap` |
+| `invitedByName` | `Bootstrap` | `Bootstrap` |
 
 ⚠️ The document ID **must** equal the email exactly. The security rule
 checks `request.auth.token.email == email` against the document ID —
 a mismatch of even one character means the invitation cannot be claimed,
-and the error will look like "no invitation exists".
+and the error will read "no invitation exists", which points you at the
+wrong problem.
 
-Then open the app at `/signup`, enter that address and a password of your
-choosing. The app reads the invitation, creates `users/{your-uid}` with
-role `owner`, and deletes the invitation. You are in.
+Each person then opens the app at `/signup`, enters that address and a
+password of their choosing. The app reads the invitation, creates
+`users/{their-uid}` with the invited role, and deletes the invitation.
 
 From that point every other account is invited from **Admin → Users**.
+
+#### What Owner and Admin can each do
+
+Both have full access to every module. They differ in exactly one place,
+and it is deliberate:
+
+| | Owner | Admin |
+|---|---|---|
+| All modules, including invoices and commission | ✅ | ✅ |
+| Invite and manage users | ✅ | ✅ |
+| **Create or promote another Owner** | ✅ | ❌ |
+| **Demote an existing Owner** | ✅ | ❌ |
+
+⚠️ That single restriction is what stops an Admin escalating in two
+moves — invite an Owner at an address they control, then sign up as it.
+It is enforced in `firestore.rules` and covered by four rules tests, not
+by the interface. If you genuinely want a second Owner, sign in as the
+first Owner and invite them.
+
+Neither role can be assigned the `automation` service account; the rules
+refuse it outright so it cannot be handed to a person by mistake.
 
 ### 4. Load your data
 
@@ -101,6 +131,48 @@ Download the Excel template for each. The second sheet, *Field guide*,
 lists every column, whether it is required, and which alternative
 headings the importer accepts. You do not need to use the exact
 headings — an export from another system usually maps itself.
+
+---
+
+## Testing the security rules
+
+The rules are the only real security boundary, so they have their own
+suite that executes them in the real rules engine.
+
+```bash
+npm run test:rules
+```
+
+59 tests. It starts the Firestore emulator, runs them, and shuts it down.
+Requires Java, which is already installed on this machine.
+
+⚠️ **Run this before every rules deploy.** The client-side permission
+tests in `npm test` prove nothing about what the SDK will allow — they
+read the same table the interface reads, so they only prove the table
+equals itself.
+
+### Two traps that cost time
+
+**A UTF-8 BOM breaks rules compilation.** PowerShell's
+`Set-Content -Encoding utf8` writes one, and the emulator then fails with
+`token recognition error at: ''` on line 1. A real deploy fails the same
+way. Edit `firestore.rules` with an editor that writes plain UTF-8.
+
+**A failed run can orphan the emulator**, and the next run then reports
+"port taken" rather than anything useful:
+
+```bash
+npx kill-port 8080
+```
+
+Or on Windows, find and stop the `java.exe` holding port 8080.
+
+### Verifying the tests actually test something
+
+A suite that passes on the first run deserves suspicion. To confirm these
+detect a real regression, weaken a rule and watch them fail — e.g. change
+the commission subcollection from `isOwnerOrAdmin()` to `active()`, and
+exactly three tests should fail. Restore it afterwards.
 
 ⚠️ The 32 real properties from the fact sheets are kept in
 `scripts/hotels.reference.ts`. They are reference material, not runtime

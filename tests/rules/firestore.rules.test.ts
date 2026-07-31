@@ -1,0 +1,508 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  assertFails, assertSucceeds, type RulesTestEnvironment,
+} from "@firebase/rules-unit-testing";
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
+import {
+  getEnv, teardown, seed, as, asStranger, asAnonymous,
+  OWNER, ADMIN, MANAGER, SALES_A, SALES_B, FINANCE, VIEWER, ROBOT, DISABLED,
+} from "./setup";
+
+/* ══════════════════════════════════════════════════════════════════
+   FIRESTORE SECURITY RULES
+
+   The half of the permission model that actually enforces anything.
+   src/lib/permissions.ts decides what to render; this decides what the
+   SDK will allow, and only this survives someone opening a console.
+
+   ⚠️ Nothing here imports the permission matrix. A test that reads the
+   same table the code reads proves the table equals itself.
+   ══════════════════════════════════════════════════════════════════ */
+
+let env: RulesTestEnvironment;
+
+beforeAll(async () => { env = await getEnv(); });
+afterAll(async () => { await teardown(); });
+beforeEach(async () => { await seed(env); });
+
+/* ── The front door ────────────────────────────────────────────── */
+
+describe("unauthenticated access", () => {
+  it("cannot read anything", async () => {
+    const db = asAnonymous(env);
+    await assertFails(getDoc(doc(db, "hotels", "h1")));
+    await assertFails(getDoc(doc(db, "customers", "owned_by_a")));
+    await assertFails(getDoc(doc(db, "reservations", "owned_by_a")));
+    await assertFails(getDoc(doc(db, "invoices", "inv1")));
+  });
+
+  it("cannot write anything", async () => {
+    const db = asAnonymous(env);
+    await assertFails(setDoc(doc(db, "customers", "new"), { name: "X" }));
+    await assertFails(setDoc(doc(db, "hotels", "new"), { name: "X" }));
+  });
+});
+
+describe("signed in but with no profile", () => {
+  /* The account exists in Auth but has no users document, which is
+     what an uninvited sign-up produces. It must be inert. */
+  it("cannot read business data", async () => {
+    const db = asStranger(env);
+    await assertFails(getDoc(doc(db, "hotels", "h1")));
+    await assertFails(getDoc(doc(db, "customers", "owned_by_a")));
+    await assertFails(getDoc(doc(db, "reservations", "owned_by_a")));
+  });
+
+  it("cannot create records", async () => {
+    const db = asStranger(env);
+    await assertFails(setDoc(doc(db, "customers", "x"), { ownerId: "u_stranger" }));
+  });
+});
+
+describe("a disabled account", () => {
+  /* Disabling is the substitute for deletion, so it has to actually
+     revoke. An admin whose status is "disabled" keeps role: admin. */
+  it("is refused despite holding the admin role", async () => {
+    const db = as(env, DISABLED);
+    await assertFails(getDoc(doc(db, "hotels", "h1")));
+    await assertFails(setDoc(doc(db, "hotels", "new"), { name: "X" }));
+    await assertFails(getDoc(doc(db, "hotels/h1/private", "commercial")));
+  });
+});
+
+/* ── Privilege escalation ──────────────────────────────────────────
+   The tests that matter most. Everything else in this file assumes
+   role is trustworthy.                                              */
+
+describe("nobody can promote themselves", () => {
+  it("a salesperson cannot make themselves owner", async () => {
+    const db = as(env, SALES_A);
+    await assertFails(updateDoc(doc(db, "users", SALES_A.uid), { role: "owner" }));
+  });
+
+  it("a salesperson cannot make themselves admin", async () => {
+    const db = as(env, SALES_A);
+    await assertFails(updateDoc(doc(db, "users", SALES_A.uid), { role: "admin" }));
+  });
+
+  it("a viewer cannot re-activate a disabled colleague", async () => {
+    const db = as(env, VIEWER);
+    await assertFails(updateDoc(doc(db, "users", DISABLED.uid), { status: "active" }));
+  });
+
+  it("a salesperson cannot edit anyone else's profile", async () => {
+    const db = as(env, SALES_A);
+    await assertFails(updateDoc(doc(db, "users", SALES_B.uid), { name: "Renamed" }));
+  });
+
+  it("but may edit their own name", async () => {
+    const db = as(env, SALES_A);
+    await assertSucceeds(updateDoc(doc(db, "users", SALES_A.uid), { name: "New Name" }));
+  });
+
+  /* ⚠️ The two-move escalation this rule exists to stop: an Admin
+     invites an Owner at an address they control, then signs up as it. */
+  it("an admin cannot invite an owner", async () => {
+    const db = as(env, ADMIN);
+    await assertFails(
+      setDoc(doc(db, "invitations", "new@fidatohotels.com"), {
+        email: "new@fidatohotels.com", name: "New", role: "owner",
+      }),
+    );
+  });
+
+  it("an owner can invite an owner", async () => {
+    const db = as(env, OWNER);
+    await assertSucceeds(
+      setDoc(doc(db, "invitations", "new@fidatohotels.com"), {
+        email: "new@fidatohotels.com", name: "New", role: "owner",
+      }),
+    );
+  });
+
+  it("an admin cannot promote an existing user to owner", async () => {
+    const db = as(env, ADMIN);
+    await assertFails(updateDoc(doc(db, "users", MANAGER.uid), { role: "owner" }));
+  });
+
+  it("an admin cannot demote an owner", async () => {
+    const db = as(env, ADMIN);
+    await assertFails(updateDoc(doc(db, "users", OWNER.uid), { role: "viewer" }));
+  });
+
+  /* ⚠️ The service account must never be assignable to a person. */
+  it("nobody can invite the automation role", async () => {
+    for (const person of [OWNER, ADMIN]) {
+      const db = as(env, person);
+      await assertFails(
+        setDoc(doc(db, "invitations", "bot@fidatohotels.com"), {
+          email: "bot@fidatohotels.com", name: "Bot", role: "automation",
+        }),
+      );
+    }
+  });
+
+  it("an owner cannot grant the automation role to an existing user", async () => {
+    const db = as(env, OWNER);
+    await assertFails(updateDoc(doc(db, "users", VIEWER.uid), { role: "automation" }));
+  });
+});
+
+/* ── Invitations ───────────────────────────────────────────────── */
+
+describe("invitations", () => {
+  it("only an owner or admin may create one", async () => {
+    for (const person of [MANAGER, SALES_A, FINANCE, VIEWER]) {
+      const db = as(env, person);
+      await assertFails(
+        setDoc(doc(db, "invitations", "x@fidatohotels.com"), {
+          email: "x@fidatohotels.com", name: "X", role: "salesperson",
+        }),
+      );
+    }
+    await assertSucceeds(
+      setDoc(doc(as(env, ADMIN), "invitations", "x@fidatohotels.com"), {
+        email: "x@fidatohotels.com", name: "X", role: "salesperson",
+      }),
+    );
+  });
+
+  /* ⚠️ You may read only the invitation addressed to you. Anything
+     looser turns this collection into a staff directory for anyone who
+     can create an account. */
+  it("cannot be read by someone it is not addressed to", async () => {
+    const db = asStranger(env, "someoneelse@example.com");
+    await assertFails(getDoc(doc(db, "invitations", "invited@fidatohotels.com")));
+  });
+
+  it("can be read by the person it is addressed to", async () => {
+    const db = asStranger(env, "invited@fidatohotels.com");
+    await assertSucceeds(getDoc(doc(db, "invitations", "invited@fidatohotels.com")));
+  });
+
+  it("cannot be listed by an outsider", async () => {
+    const db = asStranger(env);
+    await assertFails(getDocs(collection(db, "invitations")));
+  });
+});
+
+/* ── Claiming an invitation ────────────────────────────────────── */
+
+describe("claiming an invitation", () => {
+  const invitee = { uid: "u_new", email: "invited@fidatohotels.com" };
+
+  function asInvitee() {
+    return env.authenticatedContext(invitee.uid, { email: invitee.email }).firestore();
+  }
+
+  const profile = (over: Record<string, unknown> = {}) => ({
+    authUid: invitee.uid,
+    name: "Invited",
+    email: invitee.email,
+    role: "salesperson",
+    status: "active",
+    ...over,
+  });
+
+  it("succeeds with the invited role", async () => {
+    await assertSucceeds(setDoc(doc(asInvitee(), "users", invitee.uid), profile()));
+  });
+
+  /* ⚠️ The rule re-reads the invitation rather than trusting the
+     payload, so editing the client hands you nothing. */
+  it("fails when claiming a role richer than the one invited", async () => {
+    await assertFails(
+      setDoc(doc(asInvitee(), "users", invitee.uid), profile({ role: "owner" })),
+    );
+    await assertFails(
+      setDoc(doc(asInvitee(), "users", invitee.uid), profile({ role: "admin" })),
+    );
+  });
+
+  it("fails when writing to somebody else's uid", async () => {
+    await assertFails(setDoc(doc(asInvitee(), "users", "u_someone_else"), profile()));
+  });
+
+  it("fails when no invitation exists for that address", async () => {
+    const db = env
+      .authenticatedContext("u_uninvited", { email: "uninvited@example.com" })
+      .firestore();
+    await assertFails(
+      setDoc(doc(db, "users", "u_uninvited"), {
+        authUid: "u_uninvited", name: "Nobody", email: "uninvited@example.com",
+        role: "salesperson", status: "active",
+      }),
+    );
+  });
+
+  it("fails when the profile email does not match the account", async () => {
+    await assertFails(
+      setDoc(doc(asInvitee(), "users", invitee.uid), profile({ email: "other@example.com" })),
+    );
+  });
+});
+
+/* ── Commission ────────────────────────────────────────────────────
+   The requirement stated as "visible ONLY to Owner, Admin".          */
+
+describe("commercial terms", () => {
+  it("are readable by owner and admin", async () => {
+    for (const person of [OWNER, ADMIN]) {
+      await assertSucceeds(getDoc(doc(as(env, person), "hotels/h1/private", "commercial")));
+    }
+  });
+
+  /* Finance is the interesting denial: they handle the money but not
+     the terms Fidato negotiated to earn it. */
+  it("are denied to manager, finance, salesperson and viewer", async () => {
+    for (const person of [MANAGER, FINANCE, SALES_A, VIEWER]) {
+      await assertFails(getDoc(doc(as(env, person), "hotels/h1/private", "commercial")));
+    }
+  });
+
+  it("are denied to the automation account", async () => {
+    await assertFails(getDoc(doc(as(env, ROBOT), "hotels/h1/private", "commercial")));
+  });
+
+  it("are writable only by owner and admin", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, ADMIN), "hotels/h1/private", "commercial"), { commissionPercent: 15 }),
+    );
+    await assertFails(
+      setDoc(doc(as(env, MANAGER), "hotels/h1/private", "commercial"), { commissionPercent: 15 }),
+    );
+  });
+
+  /* ⚠️ The hotel document itself stays readable — that is the point of
+     the subcollection. If this ever fails, commission has been moved
+     back onto the hotel and is exposed to everyone. */
+  it("do not make the hotel itself unreadable", async () => {
+    await assertSucceeds(getDoc(doc(as(env, SALES_A), "hotels", "h1")));
+  });
+
+  it("keep commission rows owner-and-admin only", async () => {
+    await assertSucceeds(getDoc(doc(as(env, OWNER), "commissions", "com1")));
+    await assertFails(getDoc(doc(as(env, FINANCE), "commissions", "com1")));
+    await assertFails(getDoc(doc(as(env, MANAGER), "commissions", "com1")));
+  });
+});
+
+/* ── Invoices ──────────────────────────────────────────────────────
+   "Visible ONLY to Owner, Admin, Manager" — plus Finance, who do the
+   work.                                                              */
+
+describe("the invoice module", () => {
+  it("is readable by owner, admin, manager and finance", async () => {
+    for (const person of [OWNER, ADMIN, MANAGER, FINANCE]) {
+      await assertSucceeds(getDoc(doc(as(env, person), "invoices", "inv1")));
+    }
+  });
+
+  it("is denied to salespeople and viewers", async () => {
+    for (const person of [SALES_A, VIEWER]) {
+      await assertFails(getDoc(doc(as(env, person), "invoices", "inv1")));
+    }
+  });
+
+  it("cannot be written by a salesperson", async () => {
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "invoices", "inv2"), { number: "INV-2" }),
+    );
+  });
+
+  it("keeps payments to owner, admin and finance for writes", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, FINANCE), "payments", "pay2"), { amount: 10, invoiceId: "inv1" }),
+    );
+    await assertFails(
+      setDoc(doc(as(env, MANAGER), "payments", "pay3"), { amount: 10, invoiceId: "inv1" }),
+    );
+  });
+});
+
+/* ── Row-level scoping ─────────────────────────────────────────── */
+
+describe("a salesperson sees only their own book", () => {
+  it("can read their own customer", async () => {
+    await assertSucceeds(getDoc(doc(as(env, SALES_A), "customers", "owned_by_a")));
+  });
+
+  it("cannot read a colleague's customer", async () => {
+    await assertFails(getDoc(doc(as(env, SALES_B), "customers", "owned_by_a")));
+  });
+
+  it("cannot read a colleague's reservation", async () => {
+    await assertFails(getDoc(doc(as(env, SALES_B), "reservations", "owned_by_a")));
+  });
+
+  it("cannot create a record owned by someone else", async () => {
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "customers", "new"), {
+        ownerId: SALES_B.uid, name: "Poached",
+      }),
+    );
+  });
+
+  it("can create a record they own", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, SALES_A), "customers", "new"), {
+        ownerId: SALES_A.uid, name: "Mine",
+      }),
+    );
+  });
+
+  it("does not constrain a manager", async () => {
+    await assertSucceeds(getDoc(doc(as(env, MANAGER), "customers", "owned_by_a")));
+    await assertSucceeds(getDoc(doc(as(env, MANAGER), "reservations", "owned_by_a")));
+  });
+});
+
+/* ── Immutability ──────────────────────────────────────────────── */
+
+describe("nothing is ever deleted", () => {
+  it("refuses to delete a reservation, from any role", async () => {
+    for (const person of [OWNER, ADMIN, MANAGER, SALES_A]) {
+      await assertFails(deleteDoc(doc(as(env, person), "reservations", "owned_by_a")));
+    }
+  });
+
+  it("refuses to delete a customer, a company, an invoice or a user", async () => {
+    const db = as(env, OWNER);
+    await assertFails(deleteDoc(doc(db, "customers", "owned_by_a")));
+    await assertFails(deleteDoc(doc(db, "companies", "owned_by_a")));
+    await assertFails(deleteDoc(doc(db, "invoices", "inv1")));
+    await assertFails(deleteDoc(doc(db, "users", VIEWER.uid)));
+  });
+
+  /* BR-04. A completed booking is an accounting record; reopening it
+     changes a figure an invoice was already raised against. */
+  it("refuses to edit a completed reservation, even as owner", async () => {
+    await assertFails(
+      updateDoc(doc(as(env, OWNER), "reservations", "completed"), { status: "confirmed" }),
+    );
+  });
+
+  it("allows editing a confirmed one", async () => {
+    await assertSucceeds(
+      updateDoc(doc(as(env, MANAGER), "reservations", "owned_by_a"), { status: "checked_in" }),
+    );
+  });
+});
+
+describe("the audit trail is append-only", () => {
+  it("accepts an entry stamped with the writer's own id", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, SALES_A), "auditLogs", "new"), {
+        actorId: SALES_A.uid, entityType: "customer", summary: "did a thing",
+      }),
+    );
+  });
+
+  /* ⚠️ Forging another actor is the one thing a client could do to
+     make the trail lie about who acted. */
+  it("refuses an entry attributed to somebody else", async () => {
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "auditLogs", "forged"), {
+        actorId: OWNER.uid, entityType: "customer", summary: "wasn't me",
+      }),
+    );
+  });
+
+  it("refuses to alter or remove an existing entry", async () => {
+    const db = as(env, OWNER);
+    await assertFails(updateDoc(doc(db, "auditLogs", "log1"), { summary: "rewritten" }));
+    await assertFails(deleteDoc(doc(db, "auditLogs", "log1")));
+  });
+
+  it("is not readable by a salesperson", async () => {
+    await assertFails(getDoc(doc(as(env, SALES_A), "auditLogs", "log1")));
+  });
+});
+
+/* ── The n8n seam ──────────────────────────────────────────────── */
+
+describe("the automation queue", () => {
+  it("accepts an event from any active user", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, SALES_A), "automationQueue", "new"), {
+        type: "reservation.created", status: "pending", attempts: 0,
+      }),
+    );
+  });
+
+  /* ⚠️ A client must not be able to write an event already marked
+     done — that is how you skip processing entirely. */
+  it("refuses an event that starts in any state but pending", async () => {
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "automationQueue", "sneaky"), {
+        type: "reservation.created", status: "done", attempts: 0,
+      }),
+    );
+  });
+
+  it("lets the automation account drain it", async () => {
+    await assertSucceeds(getDoc(doc(as(env, ROBOT), "automationQueue", "evt1")));
+    await assertSucceeds(
+      updateDoc(doc(as(env, ROBOT), "automationQueue", "evt1"), { status: "done" }),
+    );
+  });
+
+  it("is not readable by a salesperson", async () => {
+    await assertFails(getDoc(doc(as(env, SALES_A), "automationQueue", "evt1")));
+  });
+});
+
+describe("the automation account", () => {
+  it("may read business records it has to act on", async () => {
+    const db = as(env, ROBOT);
+    await assertSucceeds(getDoc(doc(db, "reservations", "owned_by_a")));
+    await assertSucceeds(getDoc(doc(db, "customers", "owned_by_a")));
+    await assertSucceeds(getDoc(doc(db, "invoices", "inv1")));
+  });
+
+  /* ⚠️ A compromised n8n instance must not become an identity
+     provider. It reads business data; it does not administer people. */
+  it("cannot administer users or invitations", async () => {
+    const db = as(env, ROBOT);
+    await assertFails(updateDoc(doc(db, "users", VIEWER.uid), { role: "owner" }));
+    await assertFails(
+      setDoc(doc(db, "invitations", "bot2@fidatohotels.com"), {
+        email: "bot2@fidatohotels.com", name: "Bot", role: "admin",
+      }),
+    );
+  });
+});
+
+/* ── Configuration ─────────────────────────────────────────────── */
+
+describe("hotels and configuration", () => {
+  it("are readable by every active user", async () => {
+    for (const person of [OWNER, ADMIN, MANAGER, SALES_A, FINANCE, VIEWER]) {
+      await assertSucceeds(getDoc(doc(as(env, person), "hotels", "h1")));
+    }
+  });
+
+  it("are writable by owner, admin and manager only", async () => {
+    await assertSucceeds(setDoc(doc(as(env, MANAGER), "hotels", "h2"), { name: "New" }));
+    await assertFails(setDoc(doc(as(env, SALES_A), "hotels", "h3"), { name: "New" }));
+    await assertFails(setDoc(doc(as(env, FINANCE), "hotels", "h4"), { name: "New" }));
+  });
+
+  it("keeps org settings readable but owner/admin-writable", async () => {
+    await assertSucceeds(getDoc(doc(as(env, SALES_A), "settings", "org")));
+    await assertFails(setDoc(doc(as(env, MANAGER), "settings", "org"), { brandName: "X" }));
+    await assertSucceeds(setDoc(doc(as(env, OWNER), "settings", "org"), { brandName: "X" }));
+  });
+});
+
+/* ── Default deny ──────────────────────────────────────────────── */
+
+describe("collections nobody wrote a rule for", () => {
+  /* ⚠️ The property that makes adding a collection safe: it is
+     unreachable until someone deliberately opens it. */
+  it("are closed even to an owner", async () => {
+    const db = as(env, OWNER);
+    await assertFails(getDoc(doc(db, "someFutureCollection", "x")));
+    await assertFails(setDoc(doc(db, "someFutureCollection", "x"), { a: 1 }));
+  });
+});
