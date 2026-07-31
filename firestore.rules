@@ -1,0 +1,24 @@
+rules_version = '2';
+
+/* ══════════════════════════════════════════════════════════════════
+   FIRESTORE SECURITY RULES — PRE-PHASE-2 LOCKDOWN
+
+   Phase 1 uses no Firestore at all. Its data is a deterministic
+   simulation running in the browser.
+
+   These rules therefore deny everything. They exist because the
+   project id and web API key are public (the repository is public and
+   the config is in the client bundle), so an unlocked database would
+   be readable and writable by anyone who found it.
+
+   ⚠️ DO NOT relax these until Phase 2 sprint S4 replaces this file
+   with the generated rules. See docs/phase-2/04-rbac-and-security-rules.md
+   ══════════════════════════════════════════════════════════════════ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

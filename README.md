@@ -7,13 +7,28 @@ inventory, rates, finance, reporting, automation and administration.
 interaction works, and the whole flow runs on simulated data. The purpose is to lock the
 UI/UX and the flow so that Phases 2–4 are plumbing rather than redesign.
 
+**Live:** <https://crstest-9a0c5.web.app> — Phase 1, no authentication.
+
 ```bash
-npm install
+npm install     # from PowerShell — see docs/RUNBOOK.md
 npm run dev
 ```
 
 Then open <http://localhost:5173>. There is **no login** — use the "Viewing as…" switcher in
 the top bar to move between the eight roles.
+
+---
+
+## Where to start
+
+| If you are… | Read |
+|---|---|
+| An **agent** or AI assistant | [`CLAUDE.md`](CLAUDE.md) — loaded automatically |
+| **Picking the project up** | [`docs/CONTEXT.md`](docs/CONTEXT.md) |
+| Working **without repo access** | [`docs/KNOWLEDGE.md`](docs/KNOWLEDGE.md) — paste it anywhere |
+| A **new engineer or trainee** | [`docs/Fidato-Platform-Phase-1-Manual.pdf`](docs/Fidato-Platform-Phase-1-Manual.pdf) — 148 pp |
+| **Deploying or recovering** | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) |
+| **Building Phase 2** | [`docs/phase-2/README.md`](docs/phase-2/README.md) |
 
 ---
 

@@ -1,0 +1,20 @@
+rules_version = '2';
+
+/* ══════════════════════════════════════════════════════════════════
+   STORAGE SECURITY RULES — PRE-PHASE-2 LOCKDOWN
+
+   Phase 1 uploads nothing. Storage is opened in Phase 2 for hotel
+   images and reservation documents, and in Phase 2.5 for vouchers and
+   invoice PDFs.
+
+   Deny-all until then, for the same reason as firestore.rules: the
+   project id and bucket name are public.
+   ══════════════════════════════════════════════════════════════════ */
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
