@@ -49,15 +49,30 @@ const ANONYMOUS: SessionUser = {
 
 type Status = "loading" | "signed_out" | "signed_in";
 
+/**
+ * Why a signed-in account was rejected.
+ *
+ * ⚠️ Without this the rejection is invisible: sign-in succeeds, the
+ * listener signs the account straight back out, and the person lands on
+ * the login screen with a correct password and no explanation. That is
+ * indistinguishable from a wrong password, and it is exactly what
+ * happens to an account created in the Firebase console instead of
+ * through /signup.
+ */
+export type AuthIssue = "no_profile" | "disabled";
+
 interface SessionState {
   status: Status;
   account: SessionUser | null;
+  /** Set when the last sign-in attempt was rejected after authenticating. */
+  issue: AuthIssue | null;
   /** Impersonation. Null means "act as my own role". */
   viewAs: Role | null;
   /** The effective role — what every screen reads. */
   role: Role;
   setRole: (role: Role) => void;
-  setAccount: (account: SessionUser | null, status: Status) => void;
+  setAccount: (account: SessionUser | null, status: Status, issue?: AuthIssue | null) => void;
+  clearIssue: () => void;
 }
 
 export const useSession = create<SessionState>()(
@@ -65,6 +80,7 @@ export const useSession = create<SessionState>()(
     (set, get) => ({
       status: "loading",
       account: null,
+      issue: null,
       viewAs: null,
       role: ANONYMOUS.role,
 
@@ -84,14 +100,17 @@ export const useSession = create<SessionState>()(
         set({ viewAs, role });
       },
 
-      setAccount: (account, status) =>
+      setAccount: (account, status, issue = null) =>
         set({
           account,
           status,
+          issue,
           // Impersonation never survives a sign-in.
           viewAs: null,
           role: account?.role ?? ANONYMOUS.role,
         }),
+
+      clearIssue: () => set({ issue: null }),
     }),
     {
       name: "fidato.session",
@@ -114,19 +133,43 @@ export const useSession = create<SessionState>()(
  * account with no matching document — or a disabled one — is signed
  * out again rather than left in a half-authenticated state.
  */
+/**
+ * Suppresses the listener while an invitation is being claimed.
+ *
+ * ⚠️ Without this, sign-up cannot work at all.
+ * `createUserWithEmailAndPassword` fires `onAuthStateChanged`
+ * immediately — before `users/{uid}` has been written, because writing
+ * it requires being signed in first. The listener would find no
+ * profile, sign the brand-new account out, and the very next write
+ * would then be rejected for being unauthenticated.
+ *
+ * The account is mid-creation, not rejected. `claimInvitation`
+ * populates the session itself once the profile exists.
+ */
+let claiming = false;
+
 export function useAuthListener(): void {
   useEffect(() => {
     return onAuthStateChanged(auth, async (firebaseUser) => {
+      if (claiming) return;
+
       if (!firebaseUser) {
-        useSession.getState().setAccount(null, "signed_out");
+        // A plain sign-out, not a rejection — keep any issue already set,
+        // or the reason vanishes before the login screen can show it.
+        const { issue } = useSession.getState();
+        useSession.getState().setAccount(null, "signed_out", issue);
         return;
       }
 
       const profile = await profileFor(firebaseUser.uid);
 
       if (!profile || profile.status === "disabled") {
+        // ⚠️ Record why BEFORE signing out. signOut re-enters this
+        // listener, and the branch above reads what we set here.
+        useSession
+          .getState()
+          .setAccount(null, "signed_out", profile ? "disabled" : "no_profile");
         await signOut(auth);
-        useSession.getState().setAccount(null, "signed_out");
         return;
       }
 
@@ -189,6 +232,21 @@ export async function claimInvitation(
   displayName: string,
 ): Promise<void> {
   const address = email.trim().toLowerCase();
+
+  // Held for the whole sequence — see the note on `claiming`.
+  claiming = true;
+  try {
+    await claim(address, password, displayName);
+  } finally {
+    claiming = false;
+  }
+}
+
+async function claim(
+  address: string,
+  password: string,
+  displayName: string,
+): Promise<void> {
   const credential = await createUserWithEmailAndPassword(auth, address, password);
   const uid = credential.user.uid;
 
@@ -227,6 +285,11 @@ export async function claimInvitation(
     /* The profile exists, which is what matters. A stale invitation is
        visible on the users screen and can be withdrawn there. */
   });
+
+  /* The listener was suppressed for this whole sequence, so nothing has
+     populated the session. Do it here, from the profile just written. */
+  const profile = await profileFor(uid);
+  if (profile) useSession.getState().setAccount(profile, "signed_in");
 }
 
 export class NoInvitationError extends Error {
@@ -237,6 +300,8 @@ export class NoInvitationError extends Error {
 }
 
 export async function signOutOfApp(): Promise<void> {
+  // A deliberate sign-out is not a rejection.
+  useSession.getState().clearIssue();
   await signOut(auth);
 }
 
