@@ -20,6 +20,9 @@ import {
   type Actor, fromDoc, toDoc, getOne, listAll, runQuery, countWhere,
   recordAudit, queueEvent, now,
 } from "./helpers";
+import {
+  HOTEL_DEFAULTS, COMPANY_DEFAULTS, CUSTOMER_DEFAULTS,
+} from "./defaults";
 
 export type { Actor };
 
@@ -32,6 +35,7 @@ export type { Actor };
    ══════════════════════════════════════════════════════════════════ */
 
 /* ── Hotels ────────────────────────────────────────────────────── */
+
 
 export const hotelsRepo = {
   list: (q?: ListQuery): Promise<ListResult<Hotel>> =>
@@ -101,6 +105,7 @@ export const hotelsRepo = {
 
   create: async (input: Partial<Hotel>, actor: Actor): Promise<Hotel> => {
     const ref = await addDoc(collection(db, "hotels"), {
+      ...HOTEL_DEFAULTS,
       ...toDoc(input),
       createdAt: serverTimestamp(), createdBy: actor.id,
       updatedAt: serverTimestamp(), updatedBy: actor.id,
@@ -184,6 +189,7 @@ export const roomConfigRepo = {
 
 /* ── Companies ─────────────────────────────────────────────────── */
 
+
 export const companiesRepo = {
   list: (q?: ListQuery, ctx?: ScopeContext): Promise<ListResult<Company>> =>
     runQuery<Company>("companies", q, {
@@ -202,6 +208,7 @@ export const companiesRepo = {
 
   create: async (input: Partial<Company>, actor: Actor): Promise<Company> => {
     const ref = await addDoc(collection(db, "companies"), {
+      ...COMPANY_DEFAULTS,
       ...toDoc(input),
       ownerId: input.ownerId ?? actor.id,
       ownerName: input.ownerName ?? actor.name,
@@ -235,6 +242,7 @@ export const companiesRepo = {
 };
 
 /* ── Customers ─────────────────────────────────────────────────── */
+
 
 export const customersRepo = {
   list: (q?: ListQuery, ctx?: ScopeContext): Promise<ListResult<Customer>> =>
@@ -302,6 +310,7 @@ export const customersRepo = {
   create: async (input: Partial<Customer>, actor: Actor): Promise<Customer> => {
     const fullName = `${input.firstName ?? ""} ${input.lastName ?? ""}`.trim();
     const ref = await addDoc(collection(db, "customers"), {
+      ...CUSTOMER_DEFAULTS,
       ...toDoc(input),
       fullName,
       emailNormalised: (input.email ?? "").trim().toLowerCase(),
@@ -1119,6 +1128,13 @@ export const notificationsRepo = {
 
 /* ── Import ────────────────────────────────────────────────────── */
 
+/** One place, so a new importable entity cannot forget its defaults. */
+const DEFAULTS_FOR: Record<ImportEntity, Record<string, unknown>> = {
+  customers: CUSTOMER_DEFAULTS,
+  companies: COMPANY_DEFAULTS,
+  hotels: HOTEL_DEFAULTS,
+};
+
 export const importRepo = {
   /**
    * The normalised values already stored, for collision warnings.
@@ -1174,6 +1190,11 @@ export const importRepo = {
       for (const row of chunk) {
         const ref = doc(collection(db, collectionName));
         batch.set(ref, {
+          /* ⚠️ Same defaults the single-record create applies. A
+             spreadsheet has no column for `roomMix`, so without these an
+             imported hotel is missing the arrays its list screen
+             dereferences — and 200 rows all render as a blank page. */
+          ...DEFAULTS_FOR[entity],
           ...row,
           ownerId: actor.id,
           ownerName: actor.name,

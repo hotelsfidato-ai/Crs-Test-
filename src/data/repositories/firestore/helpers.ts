@@ -7,6 +7,7 @@ import {
 import { db } from "@/lib/firebase";
 import { scopeConstraints, type ScopeContext, type Role } from "@/lib/permissions";
 import type { ListQuery, ListResult, AutomationEvent, AutomationEventType } from "@/data/types";
+import { applyDefaults, DEFAULTS_BY_COLLECTION } from "./defaults";
 
 /* ══════════════════════════════════════════════════════════════════
    FIRESTORE HELPERS
@@ -42,9 +43,21 @@ function toIso(value: unknown): unknown {
   return value;
 }
 
-/** Firestore document → domain object. */
-export function fromDoc<T>(snap: QueryDocumentSnapshot<DocumentData>): T {
-  return { ...(toIso(snap.data()) as object), id: snap.id } as T;
+/**
+ * Firestore document → domain object.
+ *
+ * `collection` fills any field the stored document is missing — see
+ * defaults.ts for why that has to happen on read and not only on write.
+ */
+export function fromDoc<T>(
+  snap: QueryDocumentSnapshot<DocumentData>,
+  collection?: string,
+): T {
+  const value = { ...(toIso(snap.data()) as object), id: snap.id } as T;
+  return applyDefaults(
+    value as object,
+    collection ? DEFAULTS_BY_COLLECTION[collection] : undefined,
+  ) as T;
 }
 
 /** Strips `undefined`, which Firestore rejects, and the client-side id. */
@@ -133,7 +146,7 @@ export async function runQuery<T>(
   const base = collection(db, path) as Query<DocumentData>;
   const snap = await getDocs(query(base, ...constraints));
 
-  let items = snap.docs.slice(0, fetchSize).map((d) => fromDoc<T>(d));
+  let items = snap.docs.slice(0, fetchSize).map((d) => fromDoc<T>(d, path));
   if (query_.search) {
     items = items.filter((r) => matchesSearch(r, query_.search!, searchFields));
   }
@@ -155,7 +168,9 @@ export async function countWhere(path: string, ...constraints: QueryConstraint[]
 export async function getOne<T>(path: string, id: string): Promise<T | null> {
   if (!id) return null;
   const snap = await getDoc(doc(db, path, id));
-  return snap.exists() ? ({ ...(toIso(snap.data()) as object), id: snap.id } as T) : null;
+  if (!snap.exists()) return null;
+  const value = { ...(toIso(snap.data()) as object), id: snap.id } as T;
+  return applyDefaults(value as object, DEFAULTS_BY_COLLECTION[path]) as T;
 }
 
 export async function listAll<T>(
@@ -163,7 +178,7 @@ export async function listAll<T>(
   ...constraints: QueryConstraint[]
 ): Promise<T[]> {
   const snap = await getDocs(query(collection(db, path), ...constraints));
-  return snap.docs.map((d) => fromDoc<T>(d));
+  return snap.docs.map((d) => fromDoc<T>(d, path));
 }
 
 /* ── Audit ─────────────────────────────────────────────────────────
