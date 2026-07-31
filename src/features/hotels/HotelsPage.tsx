@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { MapPin, BedDouble, Hotel as HotelIcon } from "lucide-react";
+import { MapPin, BedDouble, Hotel as HotelIcon, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { humanise, number } from "@/lib/format";
 import {
-  Page, PageHeader, Card, FilterBar, DataTable, Pagination, EmptyState,
+  Page, PageHeader, Card, Button, FilterBar, DataTable, Pagination, EmptyState,
   StatusPill, HOTEL_TONES, StarRating, Segmented, SkeletonCards, type Column,
 } from "@/components/ui";
 import { hotelsRepo } from "@/data/repositories";
@@ -94,10 +95,13 @@ export default function HotelsPage() {
     <Page>
       <PageHeader
         title="Properties"
-        description={
-          role === "hotel_manager"
-            ? "Your property and its details"
-            : "The Fidato partner portfolio — 32 properties across India"
+        description="Partner properties Fidato sells into. Fidato does not own these."
+        actions={
+          can(role, "create", "hotel") ? (
+            <Button asChild leadingIcon={<Plus className="size-4" />}>
+              <Link to="/hotels/new">Add property</Link>
+            </Button>
+          ) : undefined
         }
       >
         <div className="flex items-center justify-end">

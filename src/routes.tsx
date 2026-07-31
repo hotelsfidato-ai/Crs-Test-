@@ -31,6 +31,7 @@ const MergePage = lazy(() => import("@/features/crm/MergePage"));
 const ImportPage = lazy(() => import("@/features/crm/ImportPage"));
 
 const HotelsPage = lazy(() => import("@/features/hotels/HotelsPage"));
+const HotelFormPage = lazy(() => import("@/features/hotels/HotelFormPage"));
 const HotelDetailPage = lazy(() => import("@/features/hotels/HotelDetailPage"));
 const HotelInventoryPage = lazy(() => import("@/features/hotels/InventoryPage"));
 const HotelRatesPage = lazy(() => import("@/features/hotels/RatesPage"));
@@ -202,6 +203,15 @@ export function AppRoutes() {
 
                 {/* ── Properties ── */}
                 <Route path="/hotels" element={<Guard resource="hotel"><HotelsPage /></Guard>} />
+                {/* Before /hotels/:id, or "new" is read as an id. */}
+                <Route
+                  path="/hotels/new"
+                  element={<Guard resource="hotel"><HotelFormPage /></Guard>}
+                />
+                <Route
+                  path="/hotels/:id/edit"
+                  element={<Guard resource="hotel"><HotelFormPage /></Guard>}
+                />
                 <Route
                   path="/hotels/:id"
                   element={<Guard resource="hotel"><HotelDetailPage /></Guard>}

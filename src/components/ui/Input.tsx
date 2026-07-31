@@ -49,6 +49,26 @@ export function Field({ label, hint, error, required, children, className }: Fie
   );
 }
 
+/**
+ * Turns what `Field` hands its child into props a DOM element accepts.
+ *
+ * ⚠️ `describedBy` is camelCase and React will not translate it — a
+ * bare `{...props}` spread puts a literal `describedBy` attribute on
+ * the input, warns in the console, and silently loses the
+ * screen-reader association. Spread this instead.
+ */
+export function fieldProps(props: {
+  id: string;
+  describedBy?: string;
+  invalid: boolean;
+}) {
+  return {
+    id: props.id,
+    "aria-describedby": props.describedBy,
+    invalid: props.invalid,
+  };
+}
+
 /* ── Input ─────────────────────────────────────────────────────── */
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {

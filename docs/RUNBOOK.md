@@ -20,11 +20,103 @@ Operational procedures. Deploy, rebuild, recover.
 
 | Service | State |
 |---|---|
-| Hosting | ✅ Live — Phase 1, **no authentication** |
-| Firestore | 🔒 **Deny-all.** Phase 1 uses none |
+| Hosting | ✅ Live — still serving the Phase 1 build until the next deploy |
+| Firestore | ⚠️ Rules written and role-aware, **not yet deployed** |
 | Realtime Database | 🔒 Denied. Exists but unused — the project uses Firestore |
-| Storage | ❌ Not provisioned. Needed in Phase 2 |
-| Authentication | ❌ Not configured. Sprint S3 |
+| Storage | ❌ Not provisioned. Only needed once vouchers/PDFs land |
+| Authentication | ⚠️ Code complete, **provider not yet enabled in the console** |
+
+---
+
+## Going live with Phase 2
+
+Four steps, in this order. Doing them out of order either locks you out
+or leaves the database open.
+
+### 1. Enable Email/Password sign-in
+
+Console → **Authentication → Sign-in method → Email/Password → Enable**.
+
+Leave "Email link (passwordless)" off. Nothing in the app uses it, and an
+enabled provider nobody uses is an attack surface nobody watches.
+
+### 2. Deploy the rules — before anyone signs up
+
+```bash
+firebase deploy --only firestore:rules --project crstest-9a0c5
+```
+
+⚠️ Do this *before* step 3. The rules are what stop a freshly created
+account from writing whatever it likes; deploying them after the first
+sign-up means there is a window where the database is open.
+
+### 3. Bootstrap the first Owner
+
+This is the one step that cannot be done from inside the app, and the
+reason is structural: **only an Owner or Admin may create an invitation,
+and at this point neither exists.** On the Spark plan there is no Admin
+SDK to break the cycle from a script, so the first invitation is written
+by hand from the console, which bypasses rules.
+
+Console → **Firestore Database → Start collection**:
+
+| | |
+|---|---|
+| Collection ID | `invitations` |
+| Document ID | your email, **lower-cased** — e.g. `influvateseo@gmail.com` |
+
+Fields (all type `string` unless noted):
+
+| Field | Value |
+|---|---|
+| `email` | the same lower-cased address as the document ID |
+| `name` | your name |
+| `role` | `owner` |
+| `department` | `Management` |
+| `branch` | *(anything, or blank)* |
+| `invitedAt` | type **timestamp**, now |
+| `invitedBy` | `bootstrap` |
+| `invitedByName` | `Bootstrap` |
+
+⚠️ The document ID **must** equal the email exactly. The security rule
+checks `request.auth.token.email == email` against the document ID —
+a mismatch of even one character means the invitation cannot be claimed,
+and the error will look like "no invitation exists".
+
+Then open the app at `/signup`, enter that address and a password of your
+choosing. The app reads the invitation, creates `users/{your-uid}` with
+role `owner`, and deletes the invitation. You are in.
+
+From that point every other account is invited from **Admin → Users**.
+
+### 4. Load your data
+
+**Import → Bulk import**, one entity at a time, in this order:
+
+1. **Properties** — reservations reference them
+2. **Companies** — customers attach to them
+3. **Customers** — last, so the company match resolves
+
+Download the Excel template for each. The second sheet, *Field guide*,
+lists every column, whether it is required, and which alternative
+headings the importer accepts. You do not need to use the exact
+headings — an export from another system usually maps itself.
+
+⚠️ The 32 real properties from the fact sheets are kept in
+`scripts/hotels.reference.ts`. They are reference material, not runtime
+data. Convert them to a spreadsheet and import them like anything else,
+or add them from **Properties → Add property**.
+
+### 5. The n8n service account (only when Phase 2.5 starts)
+
+n8n signs in as a normal Firebase account whose profile carries the
+`automation` role.
+
+⚠️ It cannot be invited from the app: the invitation rule explicitly
+refuses `role: automation`, so that nobody can hand a person the service
+account by mistake. Create it the same way as the bootstrap Owner —
+console → Authentication → Add user, then a `users/{that-uid}` document
+with `role: automation` and `status: active`.
 
 ---
 

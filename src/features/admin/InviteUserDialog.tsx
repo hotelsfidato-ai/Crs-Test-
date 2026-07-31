@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserPlus } from "lucide-react";
 import { adminRepo, hotelsRepo } from "@/data/repositories";
@@ -10,22 +10,22 @@ import {
 import { useSession } from "@/lib/session";
 import {
   Button, Dialog, DialogContent, DialogTrigger, DialogClose,
-  Field, Input, NativeSelect, toast,
+  Field, Input, NativeSelect, fieldProps, toast,
 } from "@/components/ui";
 
-/* ══════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    INVITE A USER
 
-   ⚠️ This creates the *record*, not the account. On the Spark plan
+   âš ï¸ This creates the *record*, not the account. On the Spark plan
    there is no Admin SDK, so nobody here can mint an Auth user or set a
-   password — the invited person creates their own credentials at
+   password â€” the invited person creates their own credentials at
    /signup, and the record below is what turns that anonymous account
    into someone with a role.
 
    That ordering is a feature: no administrator ever handles another
    person's password, because there is no point in the flow where one
    exists to handle.
-   ══════════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 export function InviteUserDialog() {
   const actor = useActor();
@@ -47,8 +47,8 @@ export function InviteUserDialog() {
   });
 
   /**
-   * ⚠️ Only an Owner may create another Owner. Otherwise an Admin can
-   * promote themselves to Owner in two moves — invite an Owner account
+   * âš ï¸ Only an Owner may create another Owner. Otherwise an Admin can
+   * promote themselves to Owner in two moves â€” invite an Owner account
    * at an address they control, then sign in as it.
    */
   const offerableRoles = ASSIGNABLE_ROLES.filter(
@@ -124,7 +124,7 @@ export function InviteUserDialog() {
           <Field label="Full name" required>
             {(p) => (
               <Input
-                {...p}
+                {...fieldProps(p)}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Rhea Kapoor"
@@ -145,7 +145,7 @@ export function InviteUserDialog() {
           >
             {(p) => (
               <Input
-                {...p}
+                {...fieldProps(p)}
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -157,7 +157,7 @@ export function InviteUserDialog() {
           <Field label="Role" required hint={ROLE_HINTS[role]}>
             {(p) => (
               <NativeSelect
-                {...p}
+                {...fieldProps(p)}
                 value={role}
                 onChange={(e) => setRole(e.target.value as Role)}
               >
@@ -174,7 +174,7 @@ export function InviteUserDialog() {
             <Field label="Department">
               {(p) => (
                 <Input
-                  {...p}
+                  {...fieldProps(p)}
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
                   placeholder="Sales"
@@ -184,7 +184,7 @@ export function InviteUserDialog() {
             <Field label="Branch">
               {(p) => (
                 <Input
-                  {...p}
+                  {...fieldProps(p)}
                   value={branch}
                   onChange={(e) => setBranch(e.target.value)}
                   placeholder="Pune"
@@ -199,14 +199,14 @@ export function InviteUserDialog() {
           >
             {(p) => (
               <NativeSelect
-                {...p}
+                {...fieldProps(p)}
                 value={hotelId}
                 onChange={(e) => setHotelId(e.target.value)}
               >
                 <option value="">All properties</option>
                 {(hotels.data ?? []).map((h) => (
                   <option key={h.id} value={h.id}>
-                    {h.name} — {h.city}
+                    {h.name} â€” {h.city}
                   </option>
                 ))}
               </NativeSelect>

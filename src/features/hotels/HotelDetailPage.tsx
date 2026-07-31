@@ -15,6 +15,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
+import { CommissionDialog } from "./CommissionDialog";
 import type { RoomType, Reservation } from "@/data/types";
 
 export default function HotelDetailPage() {
@@ -347,7 +348,20 @@ export default function HotelDetailPage() {
                 {canSeeCommission && (
                   <>
                     <DetailRow label="Commission">
-                      {commercial.data ? `${commercial.data.commissionPercent}%` : "Not set"}
+                      <span className="flex items-center gap-2.5">
+                        <span className="tabular">
+                          {commercial.data
+                            ? `${commercial.data.commissionPercent}%`
+                            : "Not set"}
+                        </span>
+                        {can(role, "edit", "commission_terms") && (
+                          <CommissionDialog
+                            hotelId={h.id}
+                            hotelName={h.name}
+                            current={commercial.data}
+                          />
+                        )}
+                      </span>
                     </DetailRow>
                     {commercial.data?.negotiatedBy && (
                       <DetailRow label="Negotiated by">{commercial.data.negotiatedBy}</DetailRow>
