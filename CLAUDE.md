@@ -194,7 +194,21 @@ role can never be assigned to a person.
 - The interactive flows — wizard, approve/cancel, merge, import commit —
   are unit-tested at the logic layer, never click-tested end to end.
 
-## ⚠️ Two traps that cost time this session
+## ⚠️ Never round-trip a file through PowerShell
+
+```powershell
+(Get-Content $f -Raw) -replace 'a','b' | Set-Content -Encoding utf8 $f   # ← corrupts
+```
+
+`Get-Content` without `-Encoding` decodes as the system ANSI codepage on
+Windows PowerShell 5.1. Every non-ASCII character in a UTF-8 file comes
+back mangled — `…` becomes `â€¦` — and a BOM is added on the way out.
+It corrupted nine files here and survived a typecheck, a build and 103
+tests, because almost all of the damage was inside comments.
+
+Use the editing tools, or `python`/`perl`, which default to UTF-8.
+
+## ⚠️ Traps that cost time this session
 
 - **A UTF-8 BOM breaks `firestore.rules`.** PowerShell's `Set-Content
   -Encoding utf8` writes one; the emulator then reports `token
