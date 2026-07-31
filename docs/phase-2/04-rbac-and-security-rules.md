@@ -21,8 +21,26 @@ interface. A rule that exists only in TypeScript does not exist.
 | `finance` | Invoices, payments, commissions |
 | `viewer` | Read-only |
 
-Dormant, retained in code with no grants: `hotel_manager`, `support` — see
-[01 C-10](01-scope-and-changes.md).
+Plus one non-human role added for Phase 2.5:
+
+| Role | Purpose |
+|---|---|
+| `automation` | The n8n service account. Never assigned to a person, never shown in a picker. Narrow grants only — see [07 §7.5](07-phase-2.5-n8n.md) |
+
+Dormant, retained in code with **no grants**: `hotel_manager`, `support` — decided, see
+[01 C-10](01-scope-and-changes.md). Because `canAccess` denies by default, an empty grant map is
+genuinely closed.
+
+```ts
+export const DORMANT_ROLES: Role[] = ["hotel_manager", "support"];
+export const SYSTEM_ROLES: Role[] = ["automation"];
+export const ASSIGNABLE_ROLES: Role[] =
+  ROLES.filter((r) => !DORMANT_ROLES.includes(r) && !SYSTEM_ROLES.includes(r));
+```
+
+⚠️ **Only `ASSIGNABLE_ROLES` may appear in a role picker.** If `automation` ever becomes
+selectable, someone can grant a person the service account's write access to
+`automationQueue`.
 
 ---
 

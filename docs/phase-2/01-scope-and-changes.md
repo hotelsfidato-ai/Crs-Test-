@@ -30,18 +30,23 @@ export function gstRateFor(perNightRate: number): number {
 }
 ```
 
-### ⚠️ Decision needed — historical reservations
+### ✅ Decided — historical reservations are grandfathered
 
-Existing reservations store `taxAmount` computed at 12%. Three options:
+Existing reservations store `taxAmount` computed at 12%. **That figure is never recomputed.**
 
-| Option | Consequence |
+A booking made under the old rate keeps its original folio, which is what an auditor expects and
+what keeps an already-issued invoice reconciling against the reservation that produced it. Only
+new bookings use 5% / 18%.
+
+Every reservation carries `gstVersion` recording which band table produced its tax:
+
+| Value | Meaning |
 |---|---|
-| **Grandfather** (recommended) | Stored `taxAmount` is never recomputed. A booking made under the old rate keeps its original folio, which is what an auditor expects. New bookings use the new rate |
-| Recompute all | Historical folios change retroactively. Invoices already issued would no longer reconcile |
-| Recompute only unconfirmed | Middle path; more code, and the cut-off is arbitrary |
+| `"legacy"` | Computed at 12% / 18%. Never recomputed |
+| `"2025-09"` | Computed at 5% / 18% |
 
-The plan assumes **grandfather**. A `gstVersion` field is added to reservations so the rate a
-folio was computed under is recoverable. Confirm before building.
+⚠️ Reporting that sums tax across both eras is summing two different rate regimes. Any
+tax-liability report must group by `gstVersion` or state the cut-off date.
 
 ---
 
@@ -316,18 +321,43 @@ support · viewer.
 | `hotel_manager` | **removed** | Its purpose was inventory, which is now hidden |
 | `support` | **removed** | Not in the target model |
 
-### ⚠️ Two questions this raises
+### ✅ Decided — `hotel_manager` and `support` stay dormant
 
-**Is `hotel_manager` gone permanently, or only dormant?** Property staff logging in to see their
-own arrivals is a plausible future requirement, and the row-level scoping that supports it is
-already built and working. Deleting it discards working code.
+Both remain defined in `permissions.ts` with **all grants removed**, and are excluded from the
+role picker and from any role-assignment dropdown.
 
-**Recommendation:** keep both roles defined in `permissions.ts` with all grants removed, and
-exclude them from the role picker. The scoping logic stays, costs nothing, and can be
-re-enabled by restoring grants. This mirrors the instruction to hide inventory rather than
-delete it.
+```ts
+// src/lib/permissions.ts
+const MATRIX: Record<Role, ResourceGrants> = {
+  owner: …, admin: …, manager: …, salesperson: …, finance: …, viewer: …,
 
-Confirm before building — if they are genuinely never coming back, deleting is cleaner.
+  /* Dormant. Retained because the row-level scoping they drive is built,
+     tested and costs nothing to keep. Property staff seeing their own
+     arrivals is a plausible return once a live inventory feed exists.
+     Re-enable by restoring grants — no other code changes. */
+  hotel_manager: {},
+  support: {},
+};
+
+/** Roles that may be assigned to a person. */
+export const ASSIGNABLE_ROLES: Role[] =
+  ROLES.filter((r) => !DORMANT_ROLES.includes(r));
+```
+
+The `scopeRecords()` branch for `hotel_manager` **stays**:
+
+```ts
+if (ctx.role === "hotel_manager" && ctx.hotelId) {
+  return records.filter((r) => !r.hotelId || r.hotelId === ctx.hotelId);
+}
+```
+
+It is unreachable while grants are empty, and it is the piece that would be expensive to
+rebuild. This mirrors the instruction to hide inventory rather than delete it.
+
+⚠️ **`canAccess` already denies by default**, so an empty grant map is genuinely closed — a
+dormant role cannot reach any route. Rule test: a user with `role: "hotel_manager"` is denied
+every read.
 
 ---
 
@@ -373,18 +403,40 @@ phase.
 
 ---
 
-## Open decisions
+## Decisions
 
-These need answers before the affected module is built. None blocks the start of the sprint.
+### ✅ Settled
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Historical GST | **Grandfather.** Never recompute; `gstVersion` records the era |
+| 2 | `hotel_manager` and `support` | **Dormant.** Defined with no grants, hidden from pickers, scoping retained |
+| 3 | Repository visibility | **Public.** See the note below |
+
+⚠️ **The repository is public.** `src/data/seed/hotels.data.ts` contains the real names,
+addresses, room counts, amenities and landmark distances of all 32 partner properties, taken
+from their fact sheets. That is now world-readable, as is the full service manual.
+
+Commercial figures — commission rates, tariffs, contract terms — are **simulated**, not real, and
+the file says so at the top. Nothing confidential is exposed by the code itself. But if a partner
+would object to their published fact-sheet details sitting in a public GitHub repository under
+Fidato's account, that is worth raising with them before the repository is shared more widely.
+
+🔧 **Once Phase 2 begins**, this matters more: `.env` is gitignored, but a Firebase web API key
+committed by accident would be public. The `.gitignore` already covers `.env`,
+`serviceAccountKey*.json` and `*-firebase-adminsdk-*.json`. Do not weaken it.
+
+### Still open
+
+None of these blocks the start of the sprint.
 
 | # | Question | Blocks | Recommendation |
 |---|---|---|---|
-| 1 | Grandfather historical GST, or recompute? | Invoice module | Grandfather |
-| 2 | Are `hotel_manager` and `support` dormant or deleted? | RBAC | Dormant |
-| 3 | May seasons overlap? | Room config | Allow, resolve newest-first |
-| 4 | Excel import in Phase 2, or CSV only? | Import | CSV only |
-| 5 | Should an unusually low rate warn, block, or neither? | Reservation wizard | Warn |
-| 6 | Who assigns roles — Owner only, or Owner + Admin? | User module | Owner only |
+| 4 | May seasons overlap? | Room config | Allow, resolve newest-first |
+| 5 | Excel import in Phase 2, or CSV only? | Import | CSV only |
+| 6 | Should an unusually low rate warn, block, or neither? | Reservation wizard | Warn |
+| 7 | Who assigns roles — Owner only, or Owner + Admin? | User module | Owner only |
+| 8 | Does Finance genuinely have no commission access? | RBAC | Confirm — most likely cell to be wrong |
 
 ---
 

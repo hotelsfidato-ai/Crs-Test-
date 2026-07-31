@@ -55,6 +55,18 @@ an event to `automationQueue` and forgets about it.
 
 ---
 
+## Decisions already settled
+
+| Question | Decision |
+|---|---|
+| Historical GST at 12% | **Grandfathered.** Never recomputed; `gstVersion` records the era |
+| `hotel_manager` and `support` | **Dormant.** Defined with no grants, hidden from pickers, scoping retained |
+| Repository visibility | **Public.** Real partner fact-sheet data is world-readable; commercial figures are simulated |
+
+Five questions remain open in [01](01-scope-and-changes.md). None blocks the start.
+
+---
+
 ## Read this before you start
 
 Three things in this plan will surprise you if you skip [02](02-architecture-and-spark.md).
