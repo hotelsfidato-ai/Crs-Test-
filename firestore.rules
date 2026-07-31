@@ -1,22 +1,395 @@
 rules_version = '2';
 
 /* ══════════════════════════════════════════════════════════════════
-   FIRESTORE SECURITY RULES — PRE-PHASE-2 LOCKDOWN
+   FIRESTORE SECURITY RULES — PHASE 2
 
-   Phase 1 uses no Firestore at all. Its data is a deterministic
-   simulation running in the browser.
+   These rules are the only real security boundary in the system. The
+   React app's permission matrix decides what to *render*; this file
+   decides what anyone can actually read or write. Anything enforced
+   only in the client is enforced nowhere — the web API key is public
+   and the SDK is scriptable.
 
-   These rules therefore deny everything. They exist because the
-   project id and web API key are public (the repository is public and
-   the config is in the client bundle), so an unlocked database would
-   be readable and writable by anyone who found it.
+   ⚠️ SPARK PLAN CONSTRAINT
+   Roles live in `users/{docId}.role`, not in a custom auth claim.
+   Custom claims require the Admin SDK, which requires a server, which
+   requires Blaze. So every role check is a document lookup.
 
-   ⚠️ DO NOT relax these until Phase 2 sprint S4 replaces this file
-   with the generated rules. See docs/phase-2/04-rbac-and-security-rules.md
+   That costs one read per rule evaluation, cached per request. It is
+   the price of not running a backend, and it is why `role()` is
+   called through helpers rather than inline everywhere.
+
+   ⚠️ DOCUMENT-LEVEL, NOT FIELD-LEVEL
+   Rules cannot hide a field. `hotels/{id}.commissionPercent` would be
+   readable by anyone who can read the hotel, so commission lives in
+   `hotels/{id}/private/commercial` — a separate document with its own
+   rule. Moving it back onto the hotel would silently expose it.
    ══════════════════════════════════════════════════════════════════ */
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    /* ── Identity ─────────────────────────────────────────────────── */
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    /** The caller's user document, found by authUid. */
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    /** Exists check, so a missing profile denies rather than errors. */
+    function hasProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function role() {
+      return hasProfile() ? profile().role : 'none';
+    }
+
+    function active() {
+      return hasProfile() && profile().status == 'active';
+    }
+
+    function isRole(r) {
+      return active() && role() == r;
+    }
+
+    function isAnyRole(roles) {
+      return active() && role() in roles;
+    }
+
+    function isOwnerOrAdmin() {
+      return isAnyRole(['owner', 'admin']);
+    }
+
+    /* ⚠️ `automation` is the n8n service account. It may read business
+       records and drain the queue. It may never touch users, roles or
+       commercial terms. */
+    function isAutomation() {
+      return isRole('automation');
+    }
+
+    function myUserId() {
+      return request.auth.uid;
+    }
+
+    /* ── Scoping ──────────────────────────────────────────────────── */
+
+    /** A salesperson sees only their own book. Everyone else sees all. */
+    function ownsOrUnscoped(resource) {
+      return role() != 'salesperson' || resource.data.ownerId == myUserId();
+    }
+
+    function writingOwnRecord() {
+      return role() != 'salesperson' || request.resource.data.ownerId == myUserId();
+    }
+
+    /* ── Field guards ─────────────────────────────────────────────── */
+
+    /** True when the write leaves `field` exactly as it was. */
+    function unchanged(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] == resource.data[field];
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       USERS
+
+       ⚠️ The most dangerous collection in the database. Anyone who can
+       write their own `role` can grant themselves anything, and every
+       other rule in this file trusts that field.
+       ══════════════════════════════════════════════════════════════ */
+
+    /** The invitation addressed to a given email, if any. */
+    function invitationFor(email) {
+      return get(/databases/$(database)/documents/invitations/$(email)).data;
+    }
+
+    function hasInvitation(email) {
+      return exists(/databases/$(database)/documents/invitations/$(email));
+    }
+
+    match /invitations/{email} {
+      /* ⚠️ You may read only the invitation addressed to you, and
+         administrators may read them all. Anything looser turns this
+         collection into a staff directory for anyone who can sign up.
+         The id IS the email, which is what makes this checkable
+         without a query. */
+      allow read: if isOwnerOrAdmin()
+        || (signedIn() && request.auth.token.email == email);
+
+      /* ⚠️ Only an Owner may invite another Owner. Without this an
+         Admin escalates in two moves: invite an Owner at an address
+         they control, then sign up as it. */
+      allow create, update: if isOwnerOrAdmin()
+        && request.resource.data.email == email
+        && (request.resource.data.role != 'owner' || isRole('owner'))
+        && request.resource.data.role != 'automation';
+
+      /* Withdrawn by an administrator, or consumed by the person
+         claiming it. */
+      allow delete: if isOwnerOrAdmin()
+        || (signedIn() && request.auth.token.email == email);
+    }
+
+    match /users/{userId} {
+      /* Everyone signed in may read the directory — names appear on
+         reservations, audit rows and assignment pickers. */
+      allow read: if signedIn();
+
+      /* Claiming an invitation. This is the ONLY way a user document
+         is created — there is no admin-side create, because on Spark
+         an administrator cannot mint an auth account to attach one to.
+
+         ⚠️ Three conditions carry the whole model:
+           1. the id must be your own uid, so you cannot write anyone
+              else's profile;
+           2. an invitation must exist for your own email;
+           3. the role must equal the invited role — the rule re-reads
+              the invitation rather than trusting the payload, so
+              editing the client hands you nothing. */
+      allow create: if signedIn()
+        && userId == myUserId()
+        && hasInvitation(request.auth.token.email)
+        && request.resource.data.role == invitationFor(request.auth.token.email).role
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.status == 'active';
+
+      /* Administration. Same owner-escalation guard in both
+         directions, and nobody may hand a person the service account. */
+      allow update: if isOwnerOrAdmin()
+        && (request.resource.data.role != 'owner' || isRole('owner'))
+        && (resource.data.role != 'owner' || isRole('owner'))
+        && request.resource.data.role != 'automation';
+
+      /* Your own record: name and heartbeat only.
+         ⚠️ `role` and `status` are excluded by the hasOnly, which is
+         the difference between a profile edit and self-promotion. */
+      allow update: if signedIn()
+        && userId == myUserId()
+        && changedKeys().hasOnly(['name', 'lastSeenAt', 'department', 'branch'])
+        && unchanged('role')
+        && unchanged('status');
+
+      /* ⚠️ Never. A deleted user detaches their audit trail from a
+         name. Disable by setting status instead. */
+      allow delete: if false;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       HOTELS
+       ══════════════════════════════════════════════════════════════ */
+
+    match /hotels/{hotelId} {
+      allow read: if active();
+      allow create, update: if isOwnerOrAdmin() || isRole('manager');
+      allow delete: if false;
+
+      /* ⚠️ Commercial terms. Owner and Admin only — this is the whole
+         reason commission is a subcollection. A denied read here is
+         expected for every other role and must not be treated as an
+         error by the client. */
+      match /private/{document} {
+        allow read, write: if isOwnerOrAdmin();
+      }
+    }
+
+    match /roomTypes/{roomTypeId} {
+      allow read: if active();
+      allow write: if isOwnerOrAdmin() || isRole('manager');
+    }
+
+    match /seasons/{seasonId} {
+      allow read: if active();
+      allow write: if isOwnerOrAdmin() || isRole('manager');
+    }
+
+    /* Fidato's own allotment, not the hotel's true availability.
+       Nothing writes here in Phase 2; the rule exists so turning the
+       screen on later is not also a security change. */
+    match /inventory/{inventoryId} {
+      allow read: if active();
+      allow write: if isOwnerOrAdmin() || isRole('manager');
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       CRM
+       ══════════════════════════════════════════════════════════════ */
+
+    match /customers/{customerId} {
+      allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
+      allow create: if active()
+        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
+        && writingOwnRecord();
+      allow update: if active()
+        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
+        && ownsOrUnscoped(resource);
+      allow delete: if false;
+    }
+
+    match /companies/{companyId} {
+      allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
+      allow create: if active()
+        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
+        && writingOwnRecord();
+      allow update: if active()
+        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
+        && ownsOrUnscoped(resource);
+      allow delete: if false;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       RESERVATIONS
+       ══════════════════════════════════════════════════════════════ */
+
+    match /reservations/{reservationId} {
+      allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
+
+      allow create: if active()
+        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
+        && writingOwnRecord();
+
+      allow update: if active()
+        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
+        && ownsOrUnscoped(resource)
+        /* ⚠️ BR-04. A completed booking is an accounting record, not a
+           draft. Reopening it would change a figure an invoice was
+           already raised against. */
+        && resource.data.status != 'completed';
+
+      /* ⚠️ BR-02. Reservations are cancelled, never deleted. The
+         cancellation and its reason are the audit story. */
+      allow delete: if false;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       FINANCE
+       ⚠️ Not visible to salespeople at all. Requirement: the invoice
+       module is Owner, Admin and Manager only, plus Finance.
+       ══════════════════════════════════════════════════════════════ */
+
+    function financeReader() {
+      return isAnyRole(['owner', 'admin', 'manager', 'finance']) || isAutomation();
+    }
+
+    match /invoices/{invoiceId} {
+      allow read: if financeReader();
+      allow create, update: if isAnyRole(['owner', 'admin', 'manager', 'finance']);
+      allow delete: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if financeReader();
+      allow create, update: if isAnyRole(['owner', 'admin', 'finance']);
+      allow delete: if false;
+    }
+
+    /* Commission earned per booking. Owner and Admin only — same
+       reasoning as the hotel's commercial terms. */
+    match /commissions/{commissionId} {
+      allow read, write: if isOwnerOrAdmin();
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       AUDIT
+
+       ⚠️ Append-only. On Spark the client writes these directly, so
+       the trail is tamper-EVIDENT, not tamper-proof: rules can stop a
+       row being altered or removed, but cannot guarantee one was
+       written at all. Say so in the manual rather than implying more.
+       ══════════════════════════════════════════════════════════════ */
+
+    match /auditLogs/{logId} {
+      allow read: if isAnyRole(['owner', 'admin', 'manager']);
+      allow create: if active()
+        && request.resource.data.actorId == myUserId();
+      allow update, delete: if false;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       AUTOMATION QUEUE
+
+       The seam to n8n. Fidato writes events; n8n drains them.
+       ══════════════════════════════════════════════════════════════ */
+
+    match /automationQueue/{eventId} {
+      allow read: if isOwnerOrAdmin() || isAutomation();
+
+      /* Any active user's action can raise an event, and it always
+         starts pending — a client cannot write one already marked done
+         and skip processing. */
+      allow create: if active()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.attempts == 0;
+
+      /* n8n advances the lifecycle. An Owner or Admin may requeue a
+         dead-lettered event from the queue viewer. */
+      allow update: if isAutomation() || isOwnerOrAdmin();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    /* The n8n workflow catalogue. n8n publishes it; the app displays
+       it. Nothing in the app authors a workflow. */
+    match /automationWorkflows/{workflowId} {
+      allow read: if active();
+      allow write: if isOwnerOrAdmin() || isAutomation();
+    }
+
+    match /automationRuns/{runId} {
+      allow read: if isAnyRole(['owner', 'admin', 'manager']);
+      allow write: if isAutomation();
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       NOTIFICATIONS & SETTINGS
+       ══════════════════════════════════════════════════════════════ */
+
+    match /notifications/{notificationId} {
+      allow read, update: if active();
+      allow create: if active() || isAutomation();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /notificationTemplates/{templateId} {
+      allow read: if active();
+      allow write: if isOwnerOrAdmin();
+    }
+
+    match /integrations/{integrationId} {
+      allow read: if isOwnerOrAdmin();
+      allow write: if isOwnerOrAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if active();
+      allow write: if isOwnerOrAdmin();
+    }
+
+    /* Reference-number counters. Every booking creation touches these
+       in a transaction, so any role that can create must be able to
+       write them.
+       ⚠️ Deliberately unguarded beyond "active". A rule that read the
+       current value to check monotonicity would deadlock against the
+       transaction that is incrementing it. */
+    match /counters/{counterId} {
+      allow read, write: if active();
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       DEFAULT DENY
+
+       Anything not named above is closed. A new collection is
+       unreachable until someone writes a rule for it — which is the
+       correct default, because the alternative fails open.
+       ══════════════════════════════════════════════════════════════ */
+
     match /{document=**} {
       allow read, write: if false;
     }

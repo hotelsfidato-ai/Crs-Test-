@@ -1,7 +1,7 @@
 import { Suspense, lazy, type ReactNode } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/app/AppShell";
-import { useSession } from "@/lib/session";
+import { useSession, useAuthListener } from "@/lib/session";
 import { canAccess, type Resource } from "@/lib/permissions";
 import { Forbidden } from "@/features/shared/Forbidden";
 import { NotFound } from "@/features/shared/NotFound";
@@ -9,6 +9,10 @@ import { RouteFallback } from "@/features/shared/RouteFallback";
 
 /* Code-split by feature so the first paint stays quick even though
    the platform carries ~35 screens. */
+const LoginPage = lazy(() => import("@/features/auth/LoginPage"));
+const SignupPage = lazy(() => import("@/features/auth/SignupPage"));
+const ForgotPasswordPage = lazy(() => import("@/features/auth/ForgotPasswordPage"));
+
 const DashboardPage = lazy(() => import("@/features/dashboard/DashboardPage"));
 
 const ReservationsPage = lazy(() => import("@/features/reservations/ReservationsPage"));
@@ -74,10 +78,50 @@ function Guard({ resource, children }: { resource: Resource; children: ReactNode
   return <>{children}</>;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   AUTH GATE
+
+   ⚠️ Cosmetic, not a security boundary. It decides which screens
+   render; firestore.rules decides what data anyone can actually read.
+   Removing this gate would expose empty screens, not records — which
+   is the property that makes it safe to keep it this simple.
+   ══════════════════════════════════════════════════════════════════ */
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  const status = useSession((s) => s.status);
+  const location = useLocation();
+
+  // Auth resolves asynchronously on every load. Redirecting during
+  // that window bounces a signed-in user to the login screen on
+  // every refresh.
+  if (status === "loading") return <RouteFallback />;
+
+  if (status === "signed_out") {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
 export function AppRoutes() {
+  useAuthListener();
+
   return (
     <Routes>
-      <Route element={<AppShell />}>
+      {/* Public. Everything else is behind RequireAuth. */}
+      <Route
+        path="/login"
+        element={<Suspense fallback={<RouteFallback />}><LoginPage /></Suspense>}
+      />
+      <Route
+        path="/signup"
+        element={<Suspense fallback={<RouteFallback />}><SignupPage /></Suspense>}
+      />
+      <Route
+        path="/forgot-password"
+        element={<Suspense fallback={<RouteFallback />}><ForgotPasswordPage /></Suspense>}
+      />
+
+      <Route element={<RequireAuth><AppShell /></RequireAuth>}>
         <Route
           path="*"
           element={
