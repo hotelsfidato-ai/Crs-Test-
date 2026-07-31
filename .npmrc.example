@@ -1,0 +1,10 @@
+# Machine-local npm config — copy to .npmrc if your network uses a
+# TLS-inspecting proxy that breaks `npm install` with
+# UNABLE_TO_VERIFY_LEAF_SIGNATURE.
+#
+# Export your Windows root CAs to win-ca-bundle.pem in this directory,
+# then uncomment the line below. Run npm install from PowerShell, not
+# Git Bash — Git Bash lacks cmd.exe on PATH, which breaks lifecycle
+# scripts for native packages.
+#
+# cafile=win-ca-bundle.pem

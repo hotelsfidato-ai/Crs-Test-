@@ -1,0 +1,368 @@
+/* ══════════════════════════════════════════════════════════════════
+   PRINT STYLESHEET — Fidato Phase 1 Service Manual
+
+   Tuned for A4 reading on paper: 10.5pt body, generous leading,
+   tables that never split a header from its first row, and code that
+   wraps rather than clipping off the page edge.
+   ══════════════════════════════════════════════════════════════════ */
+
+@page { size: A4; margin: 18mm 16mm; }
+
+:root {
+  --ink: #031728;
+  --ink-700: #142b3a;
+  --grey-700: #354552;
+  --grey-600: #4c5b67;
+  --grey-500: #67737e;
+  --grey-400: #9aa2a9;
+  --grey-300: #ccd0d4;
+  --grey-200: #e2e5e8;
+  --grey-100: #eef0f2;
+  --grey-50: #f7f8f9;
+  --orange: #df6128;
+  --orange-50: #fdf1eb;
+  --orange-100: #f9dccd;
+  --yellow-50: #fff8e6;
+  --red: #e0301e;
+  --red-50: #fdeceb;
+  --success: #1f6f5c;
+  --success-50: #eaf4f1;
+  --info: #2b6cb0;
+  --info-50: #ebf2f9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: var(--grey-700);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Cover ───────────────────────────────────────────────────────── */
+
+/* 297mm page − 36mm of vertical margin = 261mm of printable height. */
+.cover {
+  page-break-after: always;
+  break-after: page;
+  height: 258mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-left: 4mm;
+}
+
+.cover-mark {
+  width: 64mm;
+  height: 3.5mm;
+  background: linear-gradient(100deg, #fe611f, #f4bf54);
+  border-radius: 2mm;
+  margin-bottom: 14mm;
+}
+
+.cover-brand {
+  font-size: 12pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--orange);
+  font-weight: 600;
+  margin: 0 0 6mm;
+}
+
+.cover h1 {
+  font-size: 40pt;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  font-weight: 650;
+  margin: 0;
+}
+
+.cover-sub {
+  font-size: 17pt;
+  color: var(--grey-500);
+  font-weight: 400;
+  margin: 4mm 0 0;
+  letter-spacing: -0.01em;
+}
+
+.cover-rule {
+  width: 100%;
+  height: 1px;
+  background: var(--grey-200);
+  margin: 16mm 0 10mm;
+}
+
+.cover-meta { margin: 0; font-size: 10pt; }
+.cover-meta dt {
+  color: var(--grey-400);
+  font-size: 8.5pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-top: 5mm;
+}
+.cover-meta dd { margin: 1.5mm 0 0; color: var(--ink); }
+
+.cover-note {
+  margin-top: 18mm;
+  font-size: 9pt;
+  color: var(--grey-500);
+}
+
+/* ── Front matter ────────────────────────────────────────────────── */
+
+.front, .toc {
+  page-break-after: always;
+  break-after: page;
+}
+
+.front h1, .toc h1 {
+  font-size: 24pt;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-weight: 650;
+  margin: 0 0 8mm;
+  padding-bottom: 4mm;
+  border-bottom: 2px solid var(--orange);
+}
+
+.front .lead {
+  font-size: 12pt;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--orange-50);
+  border-left: 3px solid var(--orange);
+  padding: 5mm 6mm;
+  margin: 0 0 8mm;
+  border-radius: 0 2mm 2mm 0;
+}
+
+.reading-paths, .conventions { font-size: 9.5pt; }
+.reading-paths td:first-child {
+  text-align: center;
+  font-weight: 600;
+  color: var(--orange);
+  width: 12mm;
+}
+.conventions td:first-child { width: 42mm; color: var(--ink); }
+
+/* ── Table of contents ───────────────────────────────────────────── */
+
+.toc-list { list-style: none; margin: 0; padding: 0; counter-reset: none; }
+.toc-list li { margin: 0; border-bottom: 1px dotted var(--grey-200); }
+.toc-list a {
+  display: flex;
+  gap: 6mm;
+  align-items: baseline;
+  padding: 3.2mm 0;
+  text-decoration: none;
+  color: var(--ink);
+}
+.toc-label {
+  flex: 0 0 26mm;
+  font-size: 8.5pt;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--orange);
+  font-weight: 600;
+}
+.toc-title { font-size: 11pt; font-weight: 500; }
+
+/* ── Volumes ─────────────────────────────────────────────────────── */
+
+.volume {
+  page-break-before: always;
+  break-before: page;
+}
+
+.volume-head {
+  margin-bottom: 9mm;
+  padding-bottom: 4mm;
+  border-bottom: 2px solid var(--orange);
+}
+
+.volume-label {
+  font-size: 8.5pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--orange);
+  font-weight: 600;
+  margin: 0 0 2.5mm;
+}
+
+.volume-title {
+  font-size: 25pt;
+  line-height: 1.12;
+  letter-spacing: -0.024em;
+  color: var(--ink);
+  font-weight: 650;
+  margin: 0;
+}
+
+/* ── Headings ────────────────────────────────────────────────────── */
+
+h2, h3, h4 {
+  color: var(--ink);
+  letter-spacing: -0.014em;
+  page-break-after: avoid;
+  break-after: avoid;
+  font-weight: 620;
+}
+
+h2 {
+  font-size: 15pt;
+  margin: 9mm 0 3.5mm;
+  padding-top: 2mm;
+  border-top: 1px solid var(--grey-200);
+}
+.volume > h2:first-of-type { border-top: none; padding-top: 0; margin-top: 2mm; }
+
+h3 { font-size: 12pt; margin: 6.5mm 0 2.5mm; }
+h4 { font-size: 10.5pt; margin: 5mm 0 2mm; color: var(--grey-700); }
+
+p { margin: 0 0 3.2mm; orphans: 3; widows: 3; }
+
+strong { color: var(--ink); font-weight: 620; }
+em { font-style: italic; }
+
+a { color: var(--orange); text-decoration: none; }
+
+/* ── Lists ───────────────────────────────────────────────────────── */
+
+ul, ol { margin: 0 0 3.5mm; padding-left: 6mm; }
+li { margin-bottom: 1.4mm; }
+li > p { margin-bottom: 1.4mm; }
+
+/* ── Tables ──────────────────────────────────────────────────────── */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 3.5mm 0 5mm;
+  font-size: 9.5pt;
+  page-break-inside: auto;
+}
+
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; break-inside: avoid; }
+
+th {
+  text-align: left;
+  font-size: 8pt;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--grey-500);
+  font-weight: 650;
+  background: var(--grey-50);
+  border-bottom: 1px solid var(--grey-300);
+  padding: 2.2mm 2.5mm;
+}
+
+td {
+  padding: 2.2mm 2.5mm;
+  border-bottom: 1px solid var(--grey-100);
+  vertical-align: top;
+}
+
+td:has(> code:only-child) { white-space: nowrap; }
+
+/* ── Code ────────────────────────────────────────────────────────── */
+
+code {
+  font-family: "Cascadia Mono", "SF Mono", Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--grey-100);
+  color: var(--ink-700);
+  padding: 0.4mm 1.2mm;
+  border-radius: 1mm;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+pre.code {
+  background: var(--grey-50);
+  border: 1px solid var(--grey-200);
+  border-left: 3px solid var(--grey-300);
+  border-radius: 1.5mm;
+  padding: 3.5mm 4mm;
+  margin: 3.5mm 0 5mm;
+  font-size: 8.6pt;
+  line-height: 1.5;
+  overflow-x: hidden;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+pre.code code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: var(--grey-700);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* A very long listing may split rather than overflow the page. */
+pre.code.long { page-break-inside: auto; break-inside: auto; }
+
+/* ── Diagrams ────────────────────────────────────────────────────── */
+
+figure.diagram {
+  margin: 5mm 0 6mm;
+  padding: 4mm;
+  background: #fff;
+  border: 1px solid var(--grey-200);
+  border-radius: 2mm;
+  text-align: center;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+figure.diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+pre.diagram-failed {
+  border-left-color: var(--red);
+  background: var(--red-50);
+}
+
+/* ── Blockquotes — used for on-screen copy and callouts ──────────── */
+
+blockquote {
+  margin: 3.5mm 0 4.5mm;
+  padding: 3mm 5mm;
+  border-left: 3px solid var(--orange);
+  background: var(--orange-50);
+  border-radius: 0 1.5mm 1.5mm 0;
+  color: var(--ink);
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+/* ── Rules ───────────────────────────────────────────────────────── */
+
+hr {
+  border: none;
+  border-top: 1px solid var(--grey-200);
+  margin: 7mm 0;
+}
+
+/* Hide the leading separator each volume file starts with. */
+.volume > hr:first-child { display: none; }
+
+/* Section headings already carry a top rule, so a preceding `---`
+   would draw a second line a few millimetres above it. */
+hr:has(+ h2) { display: none; }
+
+/* ── Mermaid staging element ─────────────────────────────────────── */
+
+pre.mermaid-ready { display: none; }

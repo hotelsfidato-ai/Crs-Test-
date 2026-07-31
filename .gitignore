@@ -1,0 +1,48 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ── Docs toolchain: generated artefacts ────────────────────────────
+tools/pdf/preview/
+tools/pdf/shots/
+tools/pdf/manual.html
+
+# ── Machine-local and secret ───────────────────────────────────────
+# The CA bundle is specific to this machine's TLS-inspecting proxy.
+# Each machine exports its own — see tools/pdf/README.md.
+win-ca-bundle.pem
+
+# Phase 2 — Firebase config carries project ids and keys
+.env
+.env.*
+!.env.example
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+serviceAccountKey*.json
+*-firebase-adminsdk-*.json
+
+# npm config is machine-local (see .npmrc.example)
+.npmrc

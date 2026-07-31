@@ -1,0 +1,16 @@
+{
+  "name": "fidato-manual-pdf",
+  "private": true,
+  "type": "module",
+  "description": "Builds the Phase 1 service manual into a single PDF.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.7",
+    "mermaid": "^11.4.1",
+    "pdfjs-dist": "^6.2.108",
+    "puppeteer-core": "^24.1.1"
+  }
+}
