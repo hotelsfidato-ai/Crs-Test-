@@ -253,6 +253,13 @@ export default function HotelDetailPage() {
                   rows={roomTypes.data ?? []}
                   rowKey={(rt) => rt.id}
                   loading={roomTypes.isLoading}
+                  /* ⚠️ Surfacing the error matters more than it looks. A
+                     missing Firestore composite index makes this query
+                     throw, and without this the table just kept showing
+                     its last good value — so adding a room type looked
+                     like a save that silently did nothing. */
+                  error={roomTypes.error}
+                  onRetry={roomTypes.refetch}
                   className="border-0 rounded-none rounded-b-md"
                   stickyHeader={false}
                   empty={
