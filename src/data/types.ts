@@ -119,13 +119,42 @@ export interface RoomType extends Auditable {
 
 /* ── seasons (replaces ratePlans) ──────────────────────────────── */
 
-export type MealPlan = "EP" | "AP" | "MAP" | "ALL_INCLUSIVE";
+/**
+ * The five plans the Indian hotel trade actually quotes.
+ *
+ * ⚠️ CP was retired in the first Phase 2 pass and is back, because
+ * bed-and-breakfast is the most common corporate plan in this market —
+ * dropping it forced everyone to book EP and add breakfast as a note,
+ * which is how a meal ends up unbilled.
+ */
+export type MealPlan = "EP" | "CP" | "MAP" | "AP" | "ALL_INCLUSIVE";
+
+/** Ordered as the trade lists them: least included to most. */
+export const MEAL_PLANS: MealPlan[] = ["EP", "CP", "MAP", "AP", "ALL_INCLUSIVE"];
 
 export const MEAL_PLAN_LABELS: Record<MealPlan, string> = {
   EP: "Room only",
-  AP: "All meals",
-  MAP: "Breakfast and one meal",
-  ALL_INCLUSIVE: "All inclusive",
+  CP: "Room and breakfast",
+  MAP: "Breakfast and one other meal",
+  AP: "All three meals",
+  ALL_INCLUSIVE: "All meals, snacks and selected drinks",
+};
+
+/** The short form printed on vouchers and folios. */
+export const MEAL_PLAN_SHORT: Record<MealPlan, string> = {
+  EP: "EP",
+  CP: "CP",
+  MAP: "MAP",
+  AP: "AP",
+  ALL_INCLUSIVE: "AI",
+};
+
+export const MEAL_PLAN_FULL_NAMES: Record<MealPlan, string> = {
+  EP: "European Plan",
+  CP: "Continental Plan",
+  MAP: "Modified American Plan",
+  AP: "American Plan",
+  ALL_INCLUSIVE: "All Inclusive",
 };
 
 /**
@@ -247,7 +276,6 @@ export interface Customer extends Auditable {
 
 export type ReservationStatus =
   | "draft"
-  | "pending_approval"
   | "confirmed"
   | "checked_in"
   | "completed"
@@ -335,7 +363,6 @@ export interface Reservation extends Auditable {
   ownerId: string;
   ownerName: string;
 
-  requiresApproval: boolean;
   approvedBy?: string;
   approvedAt?: IsoDateTime;
   approvalNote?: string;

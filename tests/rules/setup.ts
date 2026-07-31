@@ -57,6 +57,7 @@ export interface Person {
 export const OWNER: Person = { uid: "u_owner", email: "owner@fidatohotels.com", role: "owner" };
 export const ADMIN: Person = { uid: "u_admin", email: "admin@fidatohotels.com", role: "admin" };
 export const MANAGER: Person = { uid: "u_manager", email: "manager@fidatohotels.com", role: "manager" };
+export const CRS: Person = { uid: "u_crs", email: "crs@fidatohotels.com", role: "crs_manager" };
 export const SALES_A: Person = { uid: "u_sales_a", email: "a@fidatohotels.com", role: "salesperson" };
 export const SALES_B: Person = { uid: "u_sales_b", email: "b@fidatohotels.com", role: "salesperson" };
 export const FINANCE: Person = { uid: "u_finance", email: "fin@fidatohotels.com", role: "finance" };
@@ -67,7 +68,7 @@ export const DISABLED: Person = {
 };
 
 export const EVERYONE = [
-  OWNER, ADMIN, MANAGER, SALES_A, SALES_B, FINANCE, VIEWER, ROBOT, DISABLED,
+  OWNER, ADMIN, CRS, MANAGER, SALES_A, SALES_B, FINANCE, VIEWER, ROBOT, DISABLED,
 ];
 
 /** A Firestore handle authenticated as `person`, subject to the rules. */
@@ -131,6 +132,12 @@ export async function seed(environment: RulesTestEnvironment): Promise<void> {
 
     await setDoc(doc(db, "reservations", "owned_by_a"), {
       ownerId: SALES_A.uid, status: "confirmed", reference: "FH-1",
+    });
+    await setDoc(doc(db, "customers", "owned_by_b"), {
+      ownerId: SALES_B.uid, name: "Owned by B",
+    });
+    await setDoc(doc(db, "companies", "owned_by_b"), {
+      ownerId: SALES_B.uid, name: "Company of B",
     });
     await setDoc(doc(db, "reservations", "completed"), {
       ownerId: SALES_A.uid, status: "completed", reference: "FH-2",

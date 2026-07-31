@@ -162,7 +162,7 @@ export function summariseReservation(r: Reservation): string {
   if (r.companyName) parts.push(`Billed to ${r.companyName}.`);
   if (r.paymentTerm) parts.push(`Payment term: ${PAYMENT_TERM_LABELS[r.paymentTerm]}.`);
 
-  if (r.status === "pending_approval") {
+  if (false) {
     parts.push("It is above the ₹50,000 threshold and is waiting on approval.");
   } else if (r.status === "cancelled") {
     parts.push(`Cancelled — ${r.cancellationReason ?? "no reason recorded"}.`);

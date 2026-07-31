@@ -1,4 +1,4 @@
-import type { ImportEntity, MealPlan } from "@/data/types";
+import { MEAL_PLANS, type ImportEntity, type MealPlan } from "@/data/types";
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT DESCRIPTORS
@@ -378,7 +378,7 @@ export const COMPANY_IMPORT: ImportDescriptor = {
    HOTELS
    ══════════════════════════════════════════════════════════════════ */
 
-const MEAL_PLAN_CODES: MealPlan[] = ["EP", "AP", "MAP", "ALL_INCLUSIVE"];
+const MEAL_PLAN_CODES: MealPlan[] = MEAL_PLANS;
 
 export const HOTEL_IMPORT: ImportDescriptor = {
   entity: "hotels",

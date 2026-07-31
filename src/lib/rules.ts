@@ -8,7 +8,15 @@ import type { Reservation, ReservationStatus } from "@/data/types";
    ══════════════════════════════════════════════════════════════════ */
 
 /** Bookings at or above this value need a manager's approval before confirming. */
-export const APPROVAL_THRESHOLD = 50_000;
+/**
+ * ⚠️ Removed. Bookings no longer route through an approval queue —
+ * every reservation confirms on creation.
+ *
+ * Kept as a named zero so any straggling caller is obvious rather than
+ * silently comparing against `undefined`, which is false for every
+ * amount and would look like it worked.
+ */
+export const APPROVAL_THRESHOLD = 0;
 
 /* The rules stated in plain language, for the Roles & permissions screen.
    `enforcedIn` names the function below that actually applies each one, so
@@ -28,13 +36,6 @@ export const BUSINESS_RULES: BusinessRule[] = [
     rationale:
       "The commercial history of a booking has to survive the booking itself — for disputes, commission reconciliation and the cancellation report.",
     enforcedIn: "rules.ts · canCancelReservation()",
-  },
-  {
-    id: "BR-02",
-    rule: `Reservations at or above ₹${APPROVAL_THRESHOLD.toLocaleString("en-IN")} require approval before they confirm.`,
-    rationale:
-      "Large bookings carry the most discount risk, so a second pair of eyes sees them before the guest is committed to.",
-    enforcedIn: "rules.ts · requiresApproval()",
   },
   {
     id: "BR-03",
@@ -140,21 +141,11 @@ export function canEditRates(role: Role): { allowed: boolean; reason?: string } 
   return { allowed: true };
 }
 
-/** Does this booking value route through the approval queue? */
-export function requiresApproval(totalAmount: number): boolean {
-  return totalAmount >= APPROVAL_THRESHOLD;
-}
-
-export function canApproveReservation(role: Role): boolean {
-  return can(role, "approve", "reservation_approval");
-}
-
 /* ── Status presentation ───────────────────────────────────────── */
 
 export function labelFor(status: ReservationStatus): string {
   const labels: Record<ReservationStatus, string> = {
     draft: "Draft",
-    pending_approval: "Pending approval",
     confirmed: "Confirmed",
     checked_in: "Checked in",
     completed: "Completed",
@@ -167,8 +158,7 @@ export function labelFor(status: ReservationStatus): string {
 /** Which statuses a reservation may legally move to next. */
 export function nextStatuses(current: ReservationStatus): ReservationStatus[] {
   const transitions: Record<ReservationStatus, ReservationStatus[]> = {
-    draft: ["pending_approval", "confirmed", "cancelled"],
-    pending_approval: ["confirmed", "cancelled"],
+    draft: ["confirmed", "cancelled"],
     confirmed: ["checked_in", "cancelled", "no_show"],
     checked_in: ["completed"],
     completed: [],

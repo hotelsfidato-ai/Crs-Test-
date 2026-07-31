@@ -5,7 +5,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 import {
   getEnv, teardown, seed, as, asStranger, asAnonymous,
-  OWNER, ADMIN, MANAGER, SALES_A, SALES_B, FINANCE, VIEWER, ROBOT, DISABLED,
+  OWNER, ADMIN, CRS, MANAGER, SALES_A, SALES_B, FINANCE, VIEWER, ROBOT, DISABLED,
 } from "./setup";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -504,5 +504,102 @@ describe("collections nobody wrote a rule for", () => {
     const db = as(env, OWNER);
     await assertFails(getDoc(doc(db, "someFutureCollection", "x")));
     await assertFails(setDoc(doc(db, "someFutureCollection", "x"), { a: 1 }));
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   CRS MANAGER, AND LEAD OWNERSHIP
+
+   The role exists to work every account from a central desk, and to
+   raise bookings on behalf of the salesperson who will own them.
+   ══════════════════════════════════════════════════════════════════ */
+
+describe("the CRS manager", () => {
+  it("reads every customer and company, whoever owns them", async () => {
+    const db = as(env, CRS);
+    await assertSucceeds(getDoc(doc(db, "customers", "owned_by_a")));
+    await assertSucceeds(getDoc(doc(db, "customers", "owned_by_b")));
+    await assertSucceeds(getDoc(doc(db, "companies", "owned_by_a")));
+    await assertSucceeds(getDoc(doc(db, "companies", "owned_by_b")));
+  });
+
+  it("reads every reservation", async () => {
+    await assertSucceeds(getDoc(doc(as(env, CRS), "reservations", "owned_by_a")));
+  });
+
+  /* ⚠️ The behaviour the role is for: the booking is raised by the CRS
+     desk but owned by the salesperson, so it lands in their list and
+     against their name. */
+  it("can raise a booking owned by somebody else", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, CRS), "reservations", "on_behalf"), {
+        ownerId: SALES_A.uid, status: "confirmed", reference: "FH-3",
+      }),
+    );
+  });
+
+  it("can edit a booking it does not own", async () => {
+    await assertSucceeds(
+      updateDoc(doc(as(env, CRS), "reservations", "owned_by_a"), { status: "checked_in" }),
+    );
+  });
+
+  it("may read invoices", async () => {
+    await assertSucceeds(getDoc(doc(as(env, CRS), "invoices", "inv1")));
+  });
+
+  /* Seeing every booking is not the same as setting what Fidato earns
+     on one, or deciding who else gets an account. */
+  it("cannot read commission terms", async () => {
+    await assertFails(getDoc(doc(as(env, CRS), "hotels/h1/private", "commercial")));
+    await assertFails(getDoc(doc(as(env, CRS), "commissions", "com1")));
+  });
+
+  it("cannot invite users or change roles", async () => {
+    const db = as(env, CRS);
+    await assertFails(
+      setDoc(doc(db, "invitations", "x@fidatohotels.com"), {
+        email: "x@fidatohotels.com", name: "X", role: "salesperson",
+      }),
+    );
+    await assertFails(updateDoc(doc(db, "users", VIEWER.uid), { role: "admin" }));
+  });
+});
+
+describe("lead ownership between salespeople", () => {
+  /* The requirement: a lead belongs to whoever created it, and a
+     colleague is not allowed to look at it. */
+  it("hides one salesperson's customer from another", async () => {
+    await assertFails(getDoc(doc(as(env, SALES_B), "customers", "owned_by_a")));
+    await assertFails(getDoc(doc(as(env, SALES_A), "customers", "owned_by_b")));
+  });
+
+  it("hides one salesperson's company from another", async () => {
+    await assertFails(getDoc(doc(as(env, SALES_B), "companies", "owned_by_a")));
+    await assertFails(getDoc(doc(as(env, SALES_A), "companies", "owned_by_b")));
+  });
+
+  it("stops a salesperson editing a colleague's lead", async () => {
+    await assertFails(
+      updateDoc(doc(as(env, SALES_B), "customers", "owned_by_a"), { name: "Poached" }),
+    );
+  });
+
+  /* ⚠️ A salesperson must not be able to reassign work to themselves,
+     which is what creating a record under another owner would allow in
+     reverse. */
+  it("stops a salesperson creating a lead owned by a colleague", async () => {
+    await assertFails(
+      setDoc(doc(as(env, SALES_B), "customers", "new_one"), {
+        ownerId: SALES_A.uid, name: "Not mine to give",
+      }),
+    );
+  });
+
+  it("lets owner, admin and crs manager see both", async () => {
+    for (const person of [OWNER, ADMIN, CRS]) {
+      await assertSucceeds(getDoc(doc(as(env, person), "customers", "owned_by_a")));
+      await assertSucceeds(getDoc(doc(as(env, person), "customers", "owned_by_b")));
+    }
   });
 });

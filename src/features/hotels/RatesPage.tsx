@@ -13,7 +13,10 @@ import {
   Textarea, EmptyState, Tooltip, Checkbox, toast, Stat, type Column,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
-import { MEAL_PLAN_LABELS, type MealPlan, type Season } from "@/data/types";
+import {
+  MEAL_PLANS, MEAL_PLAN_LABELS, MEAL_PLAN_SHORT,
+  type MealPlan, type Season,
+} from "@/data/types";
 
 /* ══════════════════════════════════════════════════════════════════
    SEASONS
@@ -29,7 +32,6 @@ import { MEAL_PLAN_LABELS, type MealPlan, type Season } from "@/data/types";
    and the selling rate is typed per reservation.
    ══════════════════════════════════════════════════════════════════ */
 
-const ALL_MEAL_PLANS: MealPlan[] = ["EP", "AP", "MAP", "ALL_INCLUSIVE"];
 
 export default function RatesPage() {
   const { id = "" } = useParams();
@@ -74,7 +76,7 @@ export default function RatesPage() {
           {s.mealPlans.map((plan) => (
             <Tooltip key={plan} content={MEAL_PLAN_LABELS[plan]}>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-xs bg-grey-100 text-2xs font-medium text-grey-600">
-                {plan === "ALL_INCLUSIVE" ? "AI" : plan}
+                {MEAL_PLAN_SHORT[plan]}
               </span>
             </Tooltip>
           ))}
@@ -165,7 +167,7 @@ export default function RatesPage() {
           <Stat
             label="Meal plans offered"
             value={new Set(seasons.flatMap((s) => s.mealPlans)).size}
-            hint={`Of ${ALL_MEAL_PLANS.length}`}
+            hint={`Of ${MEAL_PLANS.length}`}
           />
         </Card>
         <Card className="p-5">
@@ -339,7 +341,7 @@ function SeasonDialog({
           >
             {() => (
               <div className="grid gap-2 sm:grid-cols-2">
-                {ALL_MEAL_PLANS.map((plan) => (
+                {MEAL_PLANS.map((plan) => (
                   <label
                     key={plan}
                     className="flex items-start gap-2.5 px-3 py-2 rounded-md border border-grey-200 cursor-pointer hover:border-grey-300"

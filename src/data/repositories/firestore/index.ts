@@ -5,7 +5,6 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { computeTax, CURRENT_GST_VERSION } from "@/lib/tax";
-import { APPROVAL_THRESHOLD } from "@/lib/rules";
 import { ASSIGNABLE_ROLES, type ScopeContext } from "@/lib/permissions";
 
 const ROLE_KEYS = ASSIGNABLE_ROLES;
@@ -485,6 +484,42 @@ export interface CreateReservationInput {
   channel?: Reservation["channel"];
   specialRequests?: string;
   internalNotes?: string;
+
+  /* At least one of these is required — see hasHotelConfirmation. */
+  hotelConfirmationNumber?: string;
+  hotelRepName?: string;
+  confirmedAt?: string;
+
+  /**
+   * Who the booking belongs to. Defaults to whoever is creating it.
+   *
+   * ⚠️ A CRS Manager books on behalf of a salesperson, so the owner is
+   * not always the author. `ownerId` drives the salesperson's list, the
+   * row-level scoping and commission attribution; `createdBy` still
+   * records who actually typed it, and the audit entry names them.
+   */
+  ownerId?: string;
+  ownerName?: string;
+}
+
+/**
+ * A booking must carry proof the property accepted it.
+ *
+ * ⚠️ Any one of the three is enough, but not none. Fidato does not own
+ * these hotels — without a confirmation number, a name, or at minimum a
+ * time, there is nothing to quote back to the property when a guest
+ * arrives and reception has no record.
+ */
+export function hasHotelConfirmation(input: {
+  hotelConfirmationNumber?: string;
+  hotelRepName?: string;
+  confirmedAt?: string;
+}): boolean {
+  return Boolean(
+    input.hotelConfirmationNumber?.trim() ||
+      input.hotelRepName?.trim() ||
+      input.confirmedAt?.trim(),
+  );
 }
 
 /** Pre-tax value of one room line across all rooms and nights. */
@@ -506,15 +541,6 @@ export const reservationsRepo = {
 
   get: (id: string): Promise<Reservation | null> => getOne<Reservation>("reservations", id),
 
-  pendingApprovals: (ctx?: ScopeContext): Promise<Reservation[]> =>
-    listAll<Reservation>(
-      "reservations",
-      where("status", "==", "pending_approval"),
-      orderBy("totalAmount", "desc"),
-      limit(50),
-    ).then((rows) =>
-      ctx?.role === "salesperson" ? rows.filter((r) => r.ownerId === ctx.userId) : rows,
-    ),
 
   daySheet: async (date: string, ctx?: ScopeContext) => {
     const live = ["confirmed", "checked_in"];
@@ -604,7 +630,6 @@ export const reservationsRepo = {
       taxByBand: tax.byBand,
       gstRate: tax.effectiveRate,
       totalAmount,
-      requiresApproval: totalAmount >= APPROVAL_THRESHOLD,
       companyName: company?.name,
     };
   },
@@ -620,6 +645,15 @@ export const reservationsRepo = {
     // BR-10 — bill to company requires a company.
     if (input.paymentTerm === "BTC" && !customer.companyId) {
       throw new Error("Bill to company requires the customer to belong to a company");
+    }
+
+    /* ⚠️ Enforced here, not only in the wizard. The form is one caller;
+       the import and n8n are others, and a booking with no proof the
+       property accepted it is unusable at the front desk. */
+    if (!hasHotelConfirmation(input)) {
+      throw new Error(
+        "A booking needs the hotel's confirmation number, the name of who confirmed it, or the time it was confirmed",
+      );
     }
 
     const company = customer.companyId
@@ -638,7 +672,9 @@ export const reservationsRepo = {
 
     const reservation = {
       reference,
-      status: (quote.requiresApproval ? "pending_approval" : "confirmed") as ReservationStatus,
+      /* ⚠️ Confirms immediately. The approval queue was removed —
+         a booking is the salesperson's to make. */
+      status: "confirmed" as ReservationStatus,
       channel: input.channel ?? "direct_sales",
       paymentTerm: input.paymentTerm,
 
@@ -664,8 +700,14 @@ export const reservationsRepo = {
       gstVersion: CURRENT_GST_VERSION,
       gstRate: quote.gstRate,
 
-      ownerId: actor.id, ownerName: actor.name,
-      requiresApproval: quote.requiresApproval,
+      ownerId: input.ownerId ?? actor.id,
+      ownerName: input.ownerName ?? actor.name,
+
+      ...(input.hotelConfirmationNumber
+        ? { hotelConfirmationNumber: input.hotelConfirmationNumber.trim() }
+        : {}),
+      ...(input.hotelRepName ? { hotelRepName: input.hotelRepName.trim() } : {}),
+      confirmedAt: input.confirmedAt || new Date().toISOString(),
       specialRequests: input.specialRequests ?? "",
       internalNotes: input.internalNotes ?? "",
 
@@ -728,18 +770,12 @@ export const reservationsRepo = {
         cancelledBy: actor.name,
         cancellationReason: extra?.reason ?? "No reason recorded",
       }),
-      ...(status === "confirmed" && current.status === "pending_approval" && {
-        approvedBy: actor.name,
-        approvedAt: serverTimestamp(),
-        ...(extra?.note ? { approvalNote: extra.note } : {}),
-      }),
       updatedAt: serverTimestamp(), updatedBy: actor.id,
     });
 
     await recordAudit({
       entityType: "reservation", entityId: id, entityLabel: current.reference,
       action: status === "cancelled" ? "cancelled"
-        : status === "confirmed" && current.status === "pending_approval" ? "approved"
         : "status_changed",
       summary: `Status changed to ${status}`,
       ...(extra?.reason ? { detail: extra.reason } : {}),
@@ -750,7 +786,6 @@ export const reservationsRepo = {
       status === "cancelled" ? "reservation.cancelled"
       : status === "checked_in" ? "reservation.checked_in"
       : status === "completed" ? "reservation.checked_out"
-      : current.status === "pending_approval" ? "reservation.approved"
       : "reservation.confirmed";
     await queueEvent({
       type: eventType, entityType: "reservation", entityId: id,
@@ -1235,14 +1270,13 @@ export const reportsRepo = {
     const scoped = (extra: Parameters<typeof where>[]) => extra;
     void scoped;
 
-    const [thisMonth, pending, overdue] = await Promise.all([
+    const [thisMonth, overdue] = await Promise.all([
       listAll<Reservation>(
         "reservations",
         where("checkIn", ">=", monthStart),
         where("checkIn", "<", nextMonth),   // ⚠️ BOTH bounds — see D-03
         limit(500),
       ),
-      listAll<Reservation>("reservations", where("status", "==", "pending_approval"), limit(200)),
       listAll<Invoice>("invoices", where("status", "==", "overdue"), limit(200)),
     ]);
 
@@ -1260,8 +1294,6 @@ export const reportsRepo = {
       arrivalsToday: 0,
       departuresToday: 0,
       inHouse: 0,
-      pendingApprovals: mine(pending).length,
-      pendingApprovalValue: mine(pending).reduce((s, r) => s + r.totalAmount, 0),
       occupancyPercent: 0,
       roomNightsThisMonth: live.reduce((s, r) => s + r.totalRooms * r.nights, 0),
       averageBookingValue: live.length

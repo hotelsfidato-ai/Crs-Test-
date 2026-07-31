@@ -8,7 +8,7 @@ import { money, dateShort, number, humanise } from "@/lib/format";
 import { labelFor } from "@/lib/rules";
 import {
   Page, PageHeader, Button, FilterBar, DataTable, Pagination, EmptyState,
-  StatusPill, RESERVATION_TONES, Tooltip, toast, type Column,
+  StatusPill, RESERVATION_TONES, toast, type Column,
 } from "@/components/ui";
 import { useListState } from "@/features/shared/useListState";
 import type { Reservation } from "@/data/types";
@@ -75,16 +75,9 @@ export default function ReservationsPage() {
     {
       key: "status", header: "Status", sortable: true,
       cell: (r) => (
-        <div className="flex items-center gap-1.5">
-          <StatusPill tone={RESERVATION_TONES[r.status] ?? "neutral"}>
-            {labelFor(r.status)}
-          </StatusPill>
-          {r.requiresApproval && r.status === "pending_approval" && (
-            <Tooltip content="Above the ₹50,000 approval threshold">
-              <span className="text-2xs text-grey-400">≥50k</span>
-            </Tooltip>
-          )}
-        </div>
+        <StatusPill tone={RESERVATION_TONES[r.status] ?? "neutral"}>
+          {labelFor(r.status)}
+        </StatusPill>
       ),
     },
     {

@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Building2, CalendarCheck, Hotel, Receipt,
   BarChart3, Workflow, Bell, Sparkles, Settings, ShieldCheck,
-  CalendarRange, CheckSquare, GitMerge, Upload, FileText, Wallet,
+  CalendarRange, GitMerge, Upload, FileText, Wallet,
   Percent, History, Plug, ScrollText, UserCog, Palette,
   type LucideIcon,
 } from "lucide-react";
@@ -44,7 +44,6 @@ const SECTIONS: NavSection[] = [
         children: [
           { label: "All reservations", to: "/reservations", icon: CalendarCheck, resource: "reservation" },
           { label: "Calendar", to: "/reservations/calendar", icon: CalendarRange, resource: "reservation" },
-          { label: "Approvals", to: "/reservations/approvals", icon: CheckSquare, resource: "reservation_approval" },
         ],
       },
       {

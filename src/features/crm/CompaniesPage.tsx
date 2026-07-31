@@ -10,6 +10,7 @@ import {
   StatusPill, COMPANY_TONES, ProgressBar, Tooltip, type Column,
 } from "@/components/ui";
 import { useListState } from "@/features/shared/useListState";
+import { OwnerTag } from "@/features/shared/OwnerTag";
 import type { Company } from "@/data/types";
 
 const FILTER_KEYS = ["status", "tier"];
@@ -93,8 +94,8 @@ export default function CompaniesPage() {
         ),
     },
     {
-      key: "ownerName", header: "Owner", hideBelow: "xl",
-      cell: (c) => <span className="text-grey-600">{c.ownerName}</span>,
+      key: "ownerName", header: "Lead owner", sortable: true, hideBelow: "lg",
+      cell: (c) => <OwnerTag ownerId={c.ownerId} ownerName={c.ownerName} />,
     },
     {
       key: "lastActivityAt", header: "Last activity", sortable: true, hideBelow: "xl",

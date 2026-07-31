@@ -3,15 +3,16 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { differenceInCalendarDays, parseISO, addDays } from "date-fns";
 import {
-  Check, ChevronLeft, ChevronRight, AlertTriangle, Minus, Plus, Info, Star,
+  Check, ChevronLeft, ChevronRight, AlertTriangle, Minus, Plus, Star,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { useActor } from "@/lib/session";
+import { useActor, useSession } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import {
-  companiesRepo, customersRepo, hotelsRepo, reservationsRepo, lineTotal, TODAY,
+  adminRepo, companiesRepo, customersRepo, hotelsRepo, reservationsRepo,
+  lineTotal, TODAY,
 } from "@/data/repositories";
 import { money, moneyCompact, dateShort, percent, humanise } from "@/lib/format";
-import { APPROVAL_THRESHOLD } from "@/lib/rules";
 import { GST_THRESHOLD } from "@/lib/tax";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button, Field,
@@ -19,7 +20,7 @@ import {
   EmptyState, StarRating, toast,
 } from "@/components/ui";
 import {
-  MEAL_PLAN_LABELS, PAYMENT_TERM_LABELS,
+  MEAL_PLANS, MEAL_PLAN_LABELS, MEAL_PLAN_SHORT, PAYMENT_TERM_LABELS,
   type ReservationRoom, type RoomType, type Season, type MealPlan, type PaymentTerm,
 } from "@/data/types";
 
@@ -33,9 +34,14 @@ import {
    stay rules; the price is the salesperson's, and it is frozen onto
    the reservation the moment it is created.
 
-   The quote recalculates live at every step — corporate discount, the
-   two GST bands and the ₹50,000 approval threshold — so nothing about
-   the commercials is a surprise at the end.
+   The quote recalculates live at every step — corporate discount and
+   both GST bands — so nothing about the commercials is a surprise at
+   the end.
+
+   ⚠️ A booking must carry the property's confirmation. Fidato does
+   not own these hotels, so without a confirmation number, the name of
+   who confirmed it, or at minimum a time, there is nothing to quote
+   back when a guest arrives and reception has no record.
    ══════════════════════════════════════════════════════════════════ */
 
 const STEPS = [
@@ -75,8 +81,33 @@ export default function NewReservationPage() {
   const [paymentTerm, setPaymentTerm] = useState<PaymentTerm>("DP");
   const [specialRequests, setSpecialRequests] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
+  const [hotelConfirmationNumber, setHotelConfirmationNumber] = useState("");
+  const [hotelRepName, setHotelRepName] = useState("");
+  const [confirmedAt, setConfirmedAt] = useState(() => localNow());
+  /* Empty means "me". Only roles that book on behalf of someone else
+     ever change it — see canAssignOwner. */
+  const [ownerId, setOwnerId] = useState("");
 
   const step = STEPS[stepIndex]!.key;
+  const role = useSession((s) => s.role);
+
+  /* ⚠️ Booking on behalf of someone else is the CRS desk's job. A
+     salesperson never sees this — letting them reassign ownership
+     would let them move commission onto or off their own name. */
+  const canAssignOwner = can(role, "edit", "user") || role === "crs_manager";
+
+  const staff = useQuery({
+    queryKey: ["assignable-owners"],
+    queryFn: () => adminRepo.allUsers(),
+    enabled: canAssignOwner,
+  });
+
+  const assignableOwners = (staff.data ?? []).filter(
+    (u) => u.status === "active" && u.id !== actor.id &&
+      (u.role === "salesperson" || u.role === "manager" || u.role === "crs_manager"),
+  );
+
+  const assignedOwner = assignableOwners.find((u) => u.id === ownerId);
 
   const customers = useQuery({
     queryKey: ["customers-all"],
@@ -164,33 +195,42 @@ export default function NewReservationPage() {
           paymentTerm,
           specialRequests,
           internalNotes,
+          hotelConfirmationNumber,
+          hotelRepName,
+          confirmedAt,
+          ...(assignedOwner
+            ? { ownerId: assignedOwner.id, ownerName: assignedOwner.name }
+            : {}),
           channel: channel as never,
         },
         actor,
       ),
     onSuccess: (reservation) => {
       queryClient.invalidateQueries({ queryKey: ["reservations"] });
-      queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
       queryClient.invalidateQueries({ queryKey: ["kpis"] });
-      if (reservation.status === "pending_approval") {
-        toast.warning(
-          "Sent for approval",
-          `${reservation.reference} is above ₹50,000 and needs a manager's sign-off.`,
-        );
-      } else {
-        toast.success("Reservation confirmed", `${reservation.reference} has been created.`);
-      }
+      toast.success(
+        "Reservation confirmed",
+        assignedOwner
+          ? `${reservation.reference} created and assigned to ${assignedOwner.name}.`
+          : `${reservation.reference} has been created.`,
+      );
       navigate(`/reservations/${reservation.id}`);
     },
     onError: () => toast.error("Could not create", "Nothing was saved. Try again."),
   });
+
+  /* ⚠️ Any ONE of the three is enough, but not none. Mirrors
+     hasHotelConfirmation in the repository, which is the real gate. */
+  const hasConfirmation = Boolean(
+    hotelConfirmationNumber.trim() || hotelRepName.trim() || confirmedAt.trim(),
+  );
 
   /* Each step gates the next — you cannot skip ahead of a decision. */
   const canAdvance =
     (step === "customer" && Boolean(customerId)) ||
     (step === "property" && Boolean(hotelId)) ||
     (step === "dates" && nights > 0 && rooms.length > 0) ||
-    step === "rates" ||
+    (step === "rates" && hasConfirmation) ||
     step === "review";
 
   return (
@@ -486,6 +526,87 @@ export default function NewReservationPage() {
                   )}
                 </Field>
 
+                {/* ── The property's confirmation ── */}
+                <div className="rounded-md border border-grey-200 p-4 space-y-4">
+                  <div>
+                    <p className="text-base font-medium text-ink-900">
+                      Hotel confirmation <span className="text-brand-red">*</span>
+                    </p>
+                    <p className="text-sm text-grey-600 mt-1 leading-relaxed">
+                      Fidato does not own this property, so the booking needs proof it was
+                      accepted. Fill in <strong>at least one</strong> — whichever the hotel
+                      actually gave you.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Field label="Confirmation number" hint="The hotel's own reference.">
+                      {({ id }) => (
+                        <Input
+                          id={id}
+                          value={hotelConfirmationNumber}
+                          onChange={(e) => setHotelConfirmationNumber(e.target.value)}
+                          placeholder="e.g. RES-88213"
+                        />
+                      )}
+                    </Field>
+                    <Field label="Confirmed by" hint="Who at the hotel confirmed it.">
+                      {({ id }) => (
+                        <Input
+                          id={id}
+                          value={hotelRepName}
+                          onChange={(e) => setHotelRepName(e.target.value)}
+                          placeholder="e.g. Priya, Front Office"
+                        />
+                      )}
+                    </Field>
+                    <Field label="Confirmed at">
+                      {({ id }) => (
+                        <Input
+                          id={id}
+                          type="datetime-local"
+                          value={confirmedAt}
+                          onChange={(e) => setConfirmedAt(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                  </div>
+
+                  {!hasConfirmation && (
+                    <p className="flex items-start gap-2 text-sm text-brand-red leading-relaxed">
+                      <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
+                      Enter the confirmation number, the name of who confirmed it, or the
+                      time — one of the three is enough.
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Whose booking is this ── */}
+                {canAssignOwner && (
+                  <Field
+                    label="Booked for"
+                    hint="The salesperson this booking belongs to. It appears in their list and against their name."
+                  >
+                    {({ id }) => (
+                      <NativeSelect
+                        id={id}
+                        value={ownerId}
+                        onChange={(e) => setOwnerId(e.target.value)}
+                      >
+                        <option value="">
+                          {actor.name} — me
+                        </option>
+                        {assignableOwners.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                            {u.department ? ` — ${u.department}` : ""}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    )}
+                  </Field>
+                )}
+
                 {paymentTerm === "BTC" && !customer?.companyId && (
                   <div className="flex items-start gap-3 p-4 rounded-md bg-brand-yellow-50 border border-brand-yellow-100">
                     <AlertTriangle className="size-4 text-[#8a6300] shrink-0 mt-0.5" />
@@ -531,22 +652,6 @@ export default function NewReservationPage() {
                 description="Nothing is written until you confirm."
               />
               <CardBody className="space-y-5">
-                {quote.requiresApproval && (
-                  <div className="flex items-start gap-3 p-4 rounded-md bg-brand-yellow-50 border border-brand-yellow-100">
-                    <AlertTriangle className="size-4 text-[#8a6300] shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-base font-medium text-[#8a6300]">
-                        This booking needs approval
-                      </p>
-                      <p className="text-sm text-[#8a6300] mt-1 leading-relaxed">
-                        At {money(quote.totalAmount)} it is at or above the{" "}
-                        {money(APPROVAL_THRESHOLD)} threshold. It will be created as{" "}
-                        <em>pending approval</em> and routed to a sales manager rather than
-                        confirmed straight away.
-                      </p>
-                    </div>
-                  </div>
-                )}
 
                 <ReviewRow label="Customer" value={customer?.fullName ?? "—"} sub={customer?.email} />
                 <ReviewRow
@@ -601,7 +706,7 @@ export default function NewReservationPage() {
                 loading={create.isPending}
                 onClick={() => create.mutate()}
               >
-                {quote.requiresApproval ? "Submit for approval" : "Confirm reservation"}
+                {"Confirm reservation"}
               </Button>
             ) : (
               <Button
@@ -657,15 +762,6 @@ export default function NewReservationPage() {
                     {moneyCompact(quote.totalAmount / Math.max(1, nights))} per night
                   </p>
                 </div>
-
-                {quote.requiresApproval && (
-                  <div className="flex items-start gap-2 pt-3 border-t border-grey-200">
-                    <Info className="size-3.5 text-[#8a6300] shrink-0 mt-0.5" />
-                    <p className="text-xs text-[#8a6300] leading-relaxed">
-                      Above {money(APPROVAL_THRESHOLD)} — routes to approval.
-                    </p>
-                  </div>
-                )}
               </>
             )}
           </CardBody>
@@ -690,7 +786,11 @@ function RoomTypeRow({
      the safe default: it is the one plan every property offers, and it
      under-promises rather than billing the guest for meals nobody
      agreed to. */
-  const offered = season?.mealPlans?.length ? season.mealPlans : (["EP"] as MealPlan[]);
+  /* ⚠️ Falls back to every plan, not just EP. A property with no
+     season configured should still be sellable on any board basis —
+     restricting to room-only would silently drop the meal from the
+     booking, and it is the meal that gets billed. */
+  const offered = season?.mealPlans?.length ? season.mealPlans : MEAL_PLANS;
 
   function setQuantity(next: number) {
     if (next <= 0) return onChange(null);
@@ -760,7 +860,7 @@ function RoomTypeRow({
             >
               {offered.map((plan) => (
                 <option key={plan} value={plan}>
-                  {plan} — {MEAL_PLAN_LABELS[plan]}
+                  {MEAL_PLAN_SHORT[plan]} — {MEAL_PLAN_LABELS[plan]}
                 </option>
               ))}
             </NativeSelect>
@@ -996,4 +1096,16 @@ function QuoteRow({
       </span>
     </div>
   );
+}
+
+/**
+ * `datetime-local` wants a local wall-clock string, not an ISO instant.
+ *
+ * ⚠️ `toISOString()` is UTC, so in India it renders as 5½ hours ago and
+ * the salesperson silently records the wrong confirmation time.
+ */
+function localNow(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60_000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 16);
 }

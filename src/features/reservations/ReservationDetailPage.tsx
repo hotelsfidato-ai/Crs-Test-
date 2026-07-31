@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Ban, CheckCircle2, Lock, Mail, FileText, Sparkles, Building2,
+  Ban, Lock, Mail, FileText, Sparkles, Building2,
   Hotel as HotelIcon, User, Download, LogIn, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -10,7 +10,7 @@ import { useSession, useActor } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { reservationsRepo, lineTotal } from "@/data/repositories";
 import {
-  money, moneyPrecise, dateShort, dateTime, nightsLabel, humanise, relative,
+  money, moneyPrecise, dateShort, dateTime, nightsLabel, humanise,
 } from "@/lib/format";
 import {
   canCancelReservation, canEditReservation, labelFor, nextStatuses, isTerminal,
@@ -21,7 +21,7 @@ import {
   Page, PageHeader, Button, Card, CardHeader, CardBody, DetailList, DetailRow,
   StatusPill, RESERVATION_TONES, Skeleton, Tabs, TabsList, TabsTrigger,
   TabsContent, Dialog, DialogContent, DialogTrigger, DialogClose, NativeSelect,
-  Textarea, Field, toast, Stat, EmptyState, Tooltip, Avatar,
+  Field, toast, Stat, EmptyState, Tooltip, Avatar,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 import { MEAL_PLAN_LABELS, type ReservationStatus } from "@/data/types";
@@ -64,8 +64,6 @@ export default function ReservationDetailPage() {
   const editCheck = canEditReservation(role, r);
   const locked = isTerminal(r.status);
   const transitions = nextStatuses(r.status);
-  const canApprove =
-    r.status === "pending_approval" && can(role, "approve", "reservation_approval");
 
   return (
     <Page>
@@ -106,15 +104,7 @@ export default function ReservationDetailPage() {
               Voucher
             </Button>
 
-            {canApprove && (
-              <ApproveDialog
-                onApprove={(note) => setStatus.mutate({ status: "confirmed", note })}
-                amount={r.totalAmount}
-                pending={setStatus.isPending}
-              />
-            )}
-
-            {!canApprove && transitions.includes("checked_in") && editCheck.allowed && (
+            {transitions.includes("checked_in") && editCheck.allowed && (
               <Button
                 variant="primary"
                 leadingIcon={<LogIn className="size-4" />}
@@ -156,22 +146,6 @@ export default function ReservationDetailPage() {
         }
       />
 
-      {/* ── Locked / approval banners ── */}
-      {r.status === "pending_approval" && (
-        <Card className="mb-6 border-brand-yellow-100 bg-brand-yellow-50">
-          <CardBody className="flex items-start gap-3 py-4">
-            <CheckCircle2 className="size-4 text-[#8a6300] shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <p className="text-base font-medium text-[#8a6300]">Waiting on approval</p>
-              <p className="text-sm text-[#8a6300] mt-1 leading-relaxed">
-                At {money(r.totalAmount)} this booking is at or above the ₹50,000
-                threshold. It stays unconfirmed until a sales manager or admin signs it
-                off. Raised by {r.ownerName} {relative(r.createdAt)}.
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-      )}
 
       {r.status === "cancelled" && (
         <Card className="mb-6 border-brand-red-100 bg-brand-red-50">
@@ -543,53 +517,6 @@ export default function ReservationDetailPage() {
 
 /* ── Dialogs ───────────────────────────────────────────────────── */
 
-function ApproveDialog({
-  onApprove, amount, pending,
-}: {
-  onApprove: (note: string) => void;
-  amount: number;
-  pending: boolean;
-}) {
-  const [note, setNote] = useState("");
-
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="primary" leadingIcon={<CheckCircle2 className="size-4" />}>
-          Approve
-        </Button>
-      </DialogTrigger>
-      <DialogContent
-        title="Approve this reservation?"
-        description={`${money(amount)} — approving confirms the booking and releases the guest confirmation.`}
-        footer={
-          <>
-            <DialogClose asChild>
-              <Button variant="ghost">Cancel</Button>
-            </DialogClose>
-            <DialogClose asChild>
-              <Button variant="primary" loading={pending} onClick={() => onApprove(note)}>
-                Approve and confirm
-              </Button>
-            </DialogClose>
-          </>
-        }
-      >
-        <Field label="Approval note" hint="Recorded on the audit trail">
-          {({ id }) => (
-            <Textarea
-              id={id}
-              rows={3}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Within the account's negotiated band."
-            />
-          )}
-        </Field>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function CancelDialog({
   reference, onCancel, pending,

@@ -230,6 +230,8 @@ export function InviteUserDialog() {
 const ROLE_HINTS: Record<Role, string> = {
   owner: "Everything, including commercial terms and commission.",
   admin: "Everything except transferring ownership.",
+  crs_manager:
+    "Every customer, company and booking. Can raise a reservation on behalf of a salesperson.",
   manager: "Approves reservations and sees the invoice module.",
   salesperson: "Sees only their own customers, companies and bookings.",
   finance: "Invoices, payments and reconciliation. No commission terms.",

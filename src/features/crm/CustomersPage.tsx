@@ -10,6 +10,7 @@ import {
   StatusPill, CUSTOMER_TONES, Avatar, Tooltip, type Column,
 } from "@/components/ui";
 import { useListState } from "@/features/shared/useListState";
+import { OwnerTag } from "@/features/shared/OwnerTag";
 import type { Customer } from "@/data/types";
 
 const FILTER_KEYS = ["status", "source"];
@@ -80,8 +81,8 @@ export default function CustomersPage() {
       cell: (c) => (c.totalRevenue ? money(c.totalRevenue) : <span className="text-grey-400">—</span>),
     },
     {
-      key: "ownerName", header: "Owner", hideBelow: "xl",
-      cell: (c) => <span className="text-grey-600">{c.ownerName}</span>,
+      key: "ownerName", header: "Lead owner", sortable: true, hideBelow: "lg",
+      cell: (c) => <OwnerTag ownerId={c.ownerId} ownerName={c.ownerName} />,
     },
     {
       key: "lastActivityAt", header: "Last activity", sortable: true, hideBelow: "xl",

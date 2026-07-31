@@ -65,6 +65,22 @@ service cloud.firestore {
       return isAnyRole(['owner', 'admin']);
     }
 
+    /**
+     * ⚠️ The roles that work the WHOLE book.
+     *
+     * A salesperson sees only their own leads; everyone here sees all
+     * of them. CRS Manager exists precisely to be a central desk, so
+     * scoping it would defeat the role.
+     */
+    function seesEveryAccount() {
+      return isAnyRole(['owner', 'admin', 'crs_manager', 'manager', 'finance', 'viewer']);
+    }
+
+    /** May raise or edit a booking, and own customers and companies. */
+    function worksAccounts() {
+      return isAnyRole(['owner', 'admin', 'crs_manager', 'manager', 'salesperson']);
+    }
+
     /* ⚠️ `automation` is the n8n service account. It may read business
        records and drain the queue. It may never touch users, roles or
        commercial terms. */
@@ -189,7 +205,7 @@ service cloud.firestore {
 
     match /hotels/{hotelId} {
       allow read: if active();
-      allow create, update: if isOwnerOrAdmin() || isRole('manager');
+      allow create, update: if isOwnerOrAdmin() || isAnyRole(['crs_manager', 'manager']);
       allow delete: if false;
 
       /* ⚠️ Commercial terms. Owner and Admin only — this is the whole
@@ -203,12 +219,12 @@ service cloud.firestore {
 
     match /roomTypes/{roomTypeId} {
       allow read: if active();
-      allow write: if isOwnerOrAdmin() || isRole('manager');
+      allow write: if isOwnerOrAdmin() || isAnyRole(['crs_manager', 'manager']);
     }
 
     match /seasons/{seasonId} {
       allow read: if active();
-      allow write: if isOwnerOrAdmin() || isRole('manager');
+      allow write: if isOwnerOrAdmin() || isAnyRole(['crs_manager', 'manager']);
     }
 
     /* Fidato's own allotment, not the hotel's true availability.
@@ -216,32 +232,27 @@ service cloud.firestore {
        screen on later is not also a security change. */
     match /inventory/{inventoryId} {
       allow read: if active();
-      allow write: if isOwnerOrAdmin() || isRole('manager');
+      allow write: if isOwnerOrAdmin() || isAnyRole(['crs_manager', 'manager']);
     }
 
     /* ══════════════════════════════════════════════════════════════
        CRM
        ══════════════════════════════════════════════════════════════ */
 
+    /* ⚠️ Lead ownership. A customer belongs to whoever created it, and
+       another salesperson cannot read it — that is enforced here, not by
+       the list query, so it holds against the SDK too. */
     match /customers/{customerId} {
       allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
-      allow create: if active()
-        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
-        && writingOwnRecord();
-      allow update: if active()
-        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
-        && ownsOrUnscoped(resource);
+      allow create: if active() && worksAccounts() && writingOwnRecord();
+      allow update: if active() && worksAccounts() && ownsOrUnscoped(resource);
       allow delete: if false;
     }
 
     match /companies/{companyId} {
       allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
-      allow create: if active()
-        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
-        && writingOwnRecord();
-      allow update: if active()
-        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
-        && ownsOrUnscoped(resource);
+      allow create: if active() && worksAccounts() && writingOwnRecord();
+      allow update: if active() && worksAccounts() && ownsOrUnscoped(resource);
       allow delete: if false;
     }
 
@@ -252,12 +263,13 @@ service cloud.firestore {
     match /reservations/{reservationId} {
       allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
 
-      allow create: if active()
-        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
-        && writingOwnRecord();
+      /* ⚠️ writingOwnRecord only constrains a salesperson. A CRS
+         Manager raises bookings ON BEHALF OF a salesperson, so the
+         ownerId they write is deliberately somebody else's. */
+      allow create: if active() && worksAccounts() && writingOwnRecord();
 
       allow update: if active()
-        && isAnyRole(['owner', 'admin', 'manager', 'salesperson'])
+        && worksAccounts()
         && ownsOrUnscoped(resource)
         /* ⚠️ BR-04. A completed booking is an accounting record, not a
            draft. Reopening it would change a figure an invoice was
@@ -276,12 +288,12 @@ service cloud.firestore {
        ══════════════════════════════════════════════════════════════ */
 
     function financeReader() {
-      return isAnyRole(['owner', 'admin', 'manager', 'finance']) || isAutomation();
+      return isAnyRole(['owner', 'admin', 'crs_manager', 'manager', 'finance']) || isAutomation();
     }
 
     match /invoices/{invoiceId} {
       allow read: if financeReader();
-      allow create, update: if isAnyRole(['owner', 'admin', 'manager', 'finance']);
+      allow create, update: if isAnyRole(['owner', 'admin', 'crs_manager', 'manager', 'finance']);
       allow delete: if false;
     }
 
@@ -307,7 +319,7 @@ service cloud.firestore {
        ══════════════════════════════════════════════════════════════ */
 
     match /auditLogs/{logId} {
-      allow read: if isAnyRole(['owner', 'admin', 'manager']);
+      allow read: if isAnyRole(['owner', 'admin', 'crs_manager', 'manager']);
       allow create: if active()
         && request.resource.data.actorId == myUserId();
       allow update, delete: if false;
@@ -343,7 +355,7 @@ service cloud.firestore {
     }
 
     match /automationRuns/{runId} {
-      allow read: if isAnyRole(['owner', 'admin', 'manager']);
+      allow read: if isAnyRole(['owner', 'admin', 'crs_manager', 'manager']);
       allow write: if isAutomation();
     }
 

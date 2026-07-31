@@ -17,7 +17,6 @@ const DashboardPage = lazy(() => import("@/features/dashboard/DashboardPage"));
 
 const ReservationsPage = lazy(() => import("@/features/reservations/ReservationsPage"));
 const ReservationCalendarPage = lazy(() => import("@/features/reservations/CalendarPage"));
-const ReservationApprovalsPage = lazy(() => import("@/features/reservations/ApprovalsPage"));
 const NewReservationPage = lazy(() => import("@/features/reservations/NewReservationPage"));
 const ReservationDetailPage = lazy(() => import("@/features/reservations/ReservationDetailPage"));
 
@@ -143,12 +142,6 @@ export function AppRoutes() {
                 <Route
                   path="/reservations/calendar"
                   element={<Guard resource="reservation"><ReservationCalendarPage /></Guard>}
-                />
-                <Route
-                  path="/reservations/approvals"
-                  element={
-                    <Guard resource="reservation_approval"><ReservationApprovalsPage /></Guard>
-                  }
                 />
                 <Route
                   path="/reservations/new"

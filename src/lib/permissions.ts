@@ -8,6 +8,15 @@
 export const ROLES = [
   "owner",
   "admin",
+  /**
+   * CRS Manager — sees the whole book.
+   *
+   * Unlike a salesperson they are not scoped to their own records, and
+   * unlike a sales manager their job includes raising a booking *on
+   * behalf of* a salesperson: they pick who owns it, and it then shows
+   * up in that person's list and against their name.
+   */
+  "crs_manager",
   "manager",
   "salesperson",
   "finance",
@@ -48,6 +57,7 @@ export const ASSIGNABLE_ROLES: Role[] = ROLES.filter(
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
   admin: "Admin",
+  crs_manager: "CRS Manager",
   manager: "Manager",
   salesperson: "Salesperson",
   finance: "Finance",
@@ -60,8 +70,10 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   owner: "Unrestricted. Sole authority over roles, commission and settings.",
   admin: "Runs the platform day to day. Cannot assign roles.",
-  manager: "Sales leadership. Approves high-value bookings and sees invoices.",
-  salesperson: "Own accounts only. Creates customers and reservations.",
+  crs_manager:
+    "Every customer, company and booking. Can raise a reservation on behalf of a salesperson.",
+  manager: "Sales leadership. Sees invoices and the whole book.",
+  salesperson: "Own leads only. Creates customers, companies and reservations.",
   finance: "Invoices, payments, commissions and financial reporting.",
   viewer: "Read-only across the platform. No write access anywhere.",
   hotel_manager: "Dormant. One property, arrivals and inventory, never pricing.",
@@ -76,7 +88,6 @@ export const RESOURCES = [
   "customer",
   "company",
   "reservation",
-  "reservation_approval",
   "hotel",
   "inventory",
   /* Room types, meal plans and seasons. Carries no pricing — selling
@@ -124,7 +135,6 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   customer: "Customers",
   company: "Companies",
   reservation: "Reservations",
-  reservation_approval: "Approvals",
   hotel: "Properties",
   inventory: "Inventory",
   room_config: "Room configuration",
@@ -164,7 +174,7 @@ const READ_EXPORT: readonly Action[] = ["view", "export"];
 /* ══════════════════════════════════════════════════════════════════
    THE MATRIX
 
-   Six assignable roles, two dormant, one system account.
+   Seven assignable roles, two dormant, one system account.
 
    ⚠️ Two cells decide the sensitive requirements:
      · commission_terms — Owner and Admin only. Finance is deliberately
@@ -181,7 +191,6 @@ const MATRIX: Record<Role, ResourceGrants> = {
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export"],
-    reservation_approval: ["view", "approve"],
     hotel: ["view", "create", "edit", "import", "export"],
     room_config: ["view", "create", "edit"],
     commission_terms: ["view", "edit"],
@@ -197,12 +206,35 @@ const MATRIX: Record<Role, ResourceGrants> = {
     setting: READ,
   },
 
+  /**
+   * ⚠️ Unscoped by design — see scopeConstraints. The whole point of
+   * this role is a central desk that works every account, so scoping
+   * it to its own records would make it useless.
+   *
+   * No commission_terms and no user administration: seeing every
+   * booking is not the same as setting what Fidato earns on one, or
+   * deciding who else gets in.
+   */
+  crs_manager: {
+    dashboard: READ,
+    customer: ["view", "create", "edit", "merge", "import", "export"],
+    company: ["view", "create", "edit", "merge", "import", "export"],
+    reservation: ["view", "create", "edit", "cancel", "export"],
+    hotel: READ_EXPORT,
+    room_config: ["view", "create", "edit"],
+    invoice: ["view", "create", "export"],
+    report: READ_EXPORT,
+    notification: ["view", "create"],
+    ai: READ,
+    user: READ,
+    audit_log: READ,
+  },
+
   manager: {
     dashboard: READ,
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export"],
-    reservation_approval: ["view", "approve"],
     hotel: READ_EXPORT,
     room_config: READ,
     invoice: ["view", "create", "export"],
@@ -312,6 +344,9 @@ export function scopeRecords<T extends { ownerId?: string; hotelId?: string }>(
   ctx: ScopeContext,
   records: T[],
 ): T[] {
+  /* ⚠️ Only the salesperson is scoped. Owner, Admin, CRS Manager,
+     Manager, Finance and Viewer all see the whole book — a central desk
+     that could only see its own records would be useless. */
   if (ctx.role === "salesperson") {
     return records.filter((r) => !r.ownerId || r.ownerId === ctx.userId);
   }

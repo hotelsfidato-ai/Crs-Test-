@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   ArrowRight, TrendingUp, TrendingDown, LogIn, LogOut, BedDouble,
-  CheckSquare, Receipt, Sparkles,
+  Receipt, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useSession, useScope, useCurrentUser } from "@/lib/session";
@@ -48,11 +48,6 @@ export default function DashboardPage() {
     queryFn: () => reservationsRepo.daySheet(today, scope),
   });
 
-  const approvals = useQuery({
-    queryKey: ["pending-approvals", scope.role, scope.userId],
-    queryFn: () => reservationsRepo.pendingApprovals(scope),
-    enabled: can(role, "view", "reservation_approval"),
-  });
 
   const recent = useQuery({
     queryKey: ["recent-reservations", scope.role, scope.userId],
@@ -117,9 +112,9 @@ export default function DashboardPage() {
                 hint="This month"
               />
               <Kpi
-                label="Awaiting approval"
-                value={moneyCompact(kpis.data.pendingApprovalValue)}
-                hint={`${kpis.data.pendingApprovals} reservations`}
+                label="Cancellation rate"
+                value={percent(kpis.data.cancellationRate)}
+                hint="This month"
               />
             </>
           ) : isHotelManager ? (
@@ -147,10 +142,9 @@ export default function DashboardPage() {
                 change={kpis.data.reservationsChangePercent}
               />
               <Kpi
-                label="Awaiting approval"
-                value={number(kpis.data.pendingApprovals)}
-                hint={moneyCompact(kpis.data.pendingApprovalValue)}
-                tone={kpis.data.pendingApprovals > 0 ? "warning" : undefined}
+                label="Room nights"
+                value={number(kpis.data.roomNightsThisMonth)}
+                hint="This month"
               />
               <Kpi
                 label="Cancellation rate"
@@ -278,66 +272,6 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Approvals ── */}
-      {can(role, "approve", "reservation_approval") && (
-        <Section
-          className="mt-8"
-          title="Waiting on you"
-          description="Reservations at or above ₹50,000 need approval before they confirm"
-          actions={
-            <Button asChild variant="secondary" size="sm">
-              <Link to="/reservations/approvals">View queue</Link>
-            </Button>
-          }
-        >
-          <Card>
-            {approvals.isLoading ? (
-              <CardBody className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </CardBody>
-            ) : !approvals.data?.length ? (
-              <EmptyState
-                compact
-                icon={<CheckSquare />}
-                title="Approval queue is clear"
-                description="Nothing is waiting on your sign-off."
-              />
-            ) : (
-              <ul className="divide-y divide-grey-100">
-                {approvals.data.slice(0, 5).map((r) => (
-                  <li key={r.id}>
-                    <Link
-                      to={`/reservations/${r.id}`}
-                      className="flex items-center gap-4 px-5 py-3.5 hover:bg-grey-50 transition-colors duration-150"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-base font-medium text-ink-900 truncate">
-                            {r.customerName}
-                          </p>
-                          <span className="text-sm text-grey-400 tabular shrink-0">
-                            {r.reference}
-                          </span>
-                        </div>
-                        <p className="text-sm text-grey-500 truncate mt-0.5">
-                          {r.hotelName} · {dateShort(r.checkIn)} · {r.nights} night
-                          {r.nights === 1 ? "" : "s"} · raised by {r.ownerName}
-                        </p>
-                      </div>
-                      <p className="text-md font-semibold text-ink-900 tabular shrink-0">
-                        {money(r.totalAmount)}
-                      </p>
-                      <ArrowRight className="size-4 text-grey-300 shrink-0" />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        </Section>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-3 mt-8">
         {/* ── Recent activity ── */}
