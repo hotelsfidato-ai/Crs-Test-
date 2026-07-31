@@ -22,6 +22,23 @@ They serve different situations and overlap on purpose.
 | [`CONTEXT.md`](CONTEXT.md) | ~6 pp | Full project state: what is done, what is planned, what was never verified, which decisions are settled |
 | [`KNOWLEDGE.md`](KNOWLEDGE.md) | ~10 pp | Self-contained. Domain, architecture, rules, traps, Phase 2 scope — everything, assuming no file access |
 
+**[`SESSION-START.md`](SESSION-START.md)** has copy-paste prompts for handing the project to a
+fresh session or a new person.
+
+### What these files do and do not carry
+
+They answer every question about **judgement** — why occupancy works the way it does, the GST
+banding, the Spark constraints, what broke before, what was never tested.
+
+They answer **no** question about **code specifics** — component props, repository signatures,
+which file holds which screen. That is deliberate: including them would make the files too long
+to read every session, and they already exist in [`manual/`](manual/README.md).
+
+| Session | Can it work from these alone? |
+|---|---|
+| With repo access | ✅ Yes — it reads the manual and source on demand |
+| Without repo access | ⚠️ Can discuss, plan and review. **Cannot write correct code** |
+
 ⚠️ **When something material changes, update all three.** They are deliberately redundant, which
 means they can also drift apart. A quarterly read-through is cheaper than acting on a stale one.
 
