@@ -76,8 +76,9 @@ React UI  →  Repository layer  →  Firebase  →  automationQueue  →  n8n  
 
 **Two rules that must never break:**
 
-1. **Screens import only from `@/data/repositories`.** Never from `mock/` or `firestore/`
-   directly. That seam is why Phase 2 replaces one folder instead of rewriting 34 screens.
+1. **Screens import only from `@/data/repositories`.** Never from `firestore/`
+   directly. That seam is why Phase 2 swapped one folder instead of rewriting 34
+   screens — `mock/` is gone and the barrel re-exports `./firestore`.
 2. **The React app never talks to Drive, WhatsApp, email, AI, accounting or marketing.** It
    writes an event to `automationQueue`; n8n does the rest.
 
@@ -89,7 +90,7 @@ React UI  →  Repository layer  →  Firebase  →  automationQueue  →  n8n  
 | Shell | `src/components/app/**` | Sidebar, top bar, palette |
 | Primitives | `src/components/ui/**` | Never import features or repositories |
 | Cross-cutting | `src/lib/**` | Imports nothing from components or features |
-| Data | `src/data/**` | The Phase 2 swap point |
+| Data | `src/data/**` | The seam. `repositories/index.ts` re-exports `./firestore` |
 
 ### Stack
 
@@ -228,9 +229,21 @@ rendered screenshot.
 A booking cannot be created after today. Deriving `createdAt` from check-in without a clamp
 produced future creation dates that rendered as *"in about 1 month"*.
 
-### Seed volume is a design parameter
+### Seed volume was a design parameter
 320 reservations over 480 days is 0.67 arrivals/day across 32 properties — the dashboard looked
 dead. Choose volume from the real-world rate the data represents.
+
+⚠️ Historical. The seed layer is deleted; the database is empty and stays
+that way until the owner imports real records. A dashboard reading zero is
+now correct, not a symptom.
+
+### On Spark, every unbounded read is a bug
+50k reads a day, shared across everything. A report that reads all
+reservations to aggregate costs one read per row **per view**. Use
+`getCountFromServer` for counts — one read regardless of how many
+documents match — and `limit()` on everything else. Firestore has no
+GROUP BY; the alternative is a roll-up collection maintained by a
+trigger, which needs Blaze.
 
 ---
 
@@ -297,31 +310,43 @@ Without it, **any signed-in user can promote themselves to Owner from the browse
 
 ---
 
-## 10 · Phase 2 scope
+## 10 · Phase 2 scope — all built
 
-| # | Change | Size |
+| # | Change | State |
 |---|---|---|
-| C-1 | GST 5% / 18% | S |
-| C-2 | **Pricing moves from hotel config to the reservation** | **L** |
-| C-3 | Meal plans → EP / AP / MAP / All Inclusive | S |
-| C-4 | Seasons carry meal-plan combinations | M |
-| C-5 | Hotel confirmation no., rep name, time, payment term | S |
-| C-6 | Create hotel / user / company | **L** |
-| C-7 | CSV import ×3 | M |
-| C-8 | Commission → Owner/Admin only (subcollection) | M |
-| C-9 | Invoices → Owner/Admin/Manager/Finance | S |
-| C-10 | 8 roles → 6 active | M |
-| C-11 | Inventory hidden, code preserved | S |
+| C-1 | GST 5% / 18%, per line | ✅ `src/lib/tax.ts`, unit-tested |
+| C-2 | **Pricing moves from hotel config to the reservation** | ✅ `RoomType` and `Season` carry no money |
+| C-3 | Meal plans → EP / AP / MAP / All Inclusive | ✅ CP retired |
+| C-4 | Seasons carry meal-plan combinations | ✅ `RatesPage` rebuilt as a seasons editor |
+| C-5 | Hotel confirmation no., rep name, time, payment term | ✅ on `Reservation` |
+| C-6 | Create hotel / user / company | ✅ `HotelFormPage`, `InviteUserDialog`, `CompanyFormPage` |
+| C-7 | Bulk import ×3 | ✅ **CSV *and* Excel**, with templates and auto-mapping |
+| C-8 | Commission → Owner/Admin only (subcollection) | ✅ + `CommissionDialog` |
+| C-9 | Invoices → Owner/Admin/Manager/Finance | ✅ matrix + rules |
+| C-10 | 8 roles → 6 active | ✅ 6 assignable, 2 dormant, 1 system |
+| C-11 | Inventory hidden, code preserved | ✅ repo method kept, nothing writes to it |
 
-**C-2 consequence:** with no configured price, nothing constrains what a salesperson charges.
-The ₹50,000 approval threshold becomes the only commercial control. Soft guards: show the last
-three rates for that room type at that property; flag anything 40% below the trailing median.
+**C-2 consequence, unresolved:** with no configured price, nothing constrains
+what a salesperson charges. The ₹50,000 approval threshold is currently the
+only commercial control. The planned soft guard — flag anything well below the
+trailing median for that room type — was **not built**, because with an empty
+database there is no trailing median yet. Revisit once real bookings exist.
 
-**C-6 constraint:** creating another person's Auth account needs the Admin SDK. Use an
-**invitation flow** — admin creates a `users` doc with `status: "invited"`; the person signs up
-and claims it by email.
+**C-6, as actually built:** creating another person's Auth account needs the
+Admin SDK, which Spark does not have. So sign-up is open and the *invitation*
+is the gate. ⚠️ The plan said "a `users` doc with status: invited"; that is
+**not** what shipped. Rules resolve a caller's role with
+`get(users/$(request.auth.uid))` and cannot query, so an invited person — who
+has no uid yet — cannot have a `users` row. Invitations are a separate
+collection keyed by lower-cased email. The document id being the email is what
+lets a rule check `request.auth.token.email == email`.
 
-### Sprint order — 26 days
+### Sprint order — as planned vs. as executed
+
+The 26-day plan below was compressed. Rules were still written before the
+repositories were pointed at live data, which was the important ordering
+constraint — developing against open rules and discovering at lockdown that
+half the queries violate them is the failure this avoids.
 
 ```
 S0 rules tests → S1 Firebase config → S2 schema → S3 auth → S4 security rules
@@ -329,11 +354,10 @@ S0 rules tests → S1 Firebase config → S2 schema → S3 auth → S4 security 
 → S9 reservations → S10 invoices → S11 import → S12 dashboard → S13 queue → S14 cleanup
 ```
 
-**Rules (S4) before repositories (S5)** — otherwise you develop against open rules and discover
-at lockdown that half the queries violate them.
-
-**S5 is a checkpoint.** All 38 screens rendering against Firestore before any mutation exists
-proves the repository seam held.
+⚠️ **S0 was not done as specified.** The rules-unit tests against the emulator
+were never written; what exists is a client-side permission-matrix test, which
+proves nothing about what the SDK will actually allow. That is the largest
+outstanding gap.
 
 ⚠️ **Rules filter documents, not queries.** A query that *could* return a forbidden document
 fails entirely rather than returning a subset. The client must constrain the query too:
@@ -350,11 +374,19 @@ This is the most common Firestore rules mistake.
 |---|---|
 | Repo | `github.com/hotelsfidato-ai/Crs-Test-` — **public** |
 | Firebase | `crstest-9a0c5` — **Spark** |
-| Hosting | `https://crstest-9a0c5.web.app` — Phase 1 live, **no login** |
-| Firestore | **Deny-all.** Do not relax until sprint S4 |
+| Hosting | `https://crstest-9a0c5.web.app` — **still the Phase 1 build**, no login |
+| Firestore | Role-aware rules written and committed, **not yet deployed** |
 | Realtime DB | Exists, denied, unused |
-| Storage / Auth | Not yet provisioned |
+| Storage | Not provisioned. Only needed once vouchers/PDFs land |
+| Auth | Code complete; **Email/Password not yet enabled in the console** |
 | n8n | Self-hosted VPS via Hostinger |
+
+⚠️ **The database is empty and has no users.** The seed layer is deleted,
+so every screen shows an empty state until real data is imported. The
+first Owner cannot be created from inside the app — only an Owner or
+Admin may create an invitation, and at first run neither exists. The
+bootstrap invitation is written by hand in the Firebase console, which
+bypasses rules. Full procedure in `RUNBOOK.md`.
 
 ⚠️ Firebase **web** API keys are not secrets — Google documents them as safe to expose. Security
 comes entirely from rules. That is why the rules file is the most important file in Phase 2.
@@ -365,10 +397,16 @@ comes entirely from rules. That is why the rules file is the most important file
 
 ```bash
 npm run dev                                   # localhost:5173
-npx tsc --noEmit -p tsconfig.app.json
+npm run typecheck                             # tsc -b
+npm test                                      # 31 tests
 npm run build
+firebase deploy --only firestore:rules --project crstest-9a0c5
 firebase deploy --only hosting --project crstest-9a0c5
 ```
+
+⚠️ `tsconfig.json` is a solution file with `"files": []`. A bare
+`npx tsc --noEmit` compiles **nothing** and reports zero errors on a
+broken build. Use `tsc -b`.
 
 - `npm install` from **PowerShell**, not Git Bash (TLS-inspecting proxy on this machine).
 - Commit per module: `feat(auth): Firebase Authentication`.
@@ -380,9 +418,22 @@ firebase deploy --only hosting --project crstest-9a0c5
 
 ## 13 · Honest limitations
 
-- **Twelve interactive flows were never click-tested** — the wizard end-to-end, approve/cancel
-  dialogs, merge, import commit. Built and typechecked, not behaviourally verified.
-- **No test suite** in Phase 1. Sprint S0 fixes this.
+- **Nothing has been exercised against a real Firestore.** Every repository
+  method compiles and none has executed against the live database. Auth is
+  not enabled in the console, so no sign-in has ever succeeded.
+- **`firestore.rules` has never been run.** The permission matrix is tested
+  on the client side, but the rules file itself has not been executed
+  against the emulator. Client-side permission tests prove nothing about
+  what the SDK will actually allow — that needs
+  `@firebase/rules-unit-testing`. This is the largest remaining gap.
+- **The interactive flows were never click-tested end to end** — the
+  reservation wizard, approve/cancel, merge, import commit. They compile
+  and are unit-tested at the logic layer, not behaviourally verified.
+- **31 unit tests exist**, covering GST bands, import mapping and the
+  permission matrix. No component tests, no integration tests.
 - **No screen-reader pass**, no full keyboard traversal, no skip-to-content link.
-- **The deployed app has no authentication.** Anyone with the URL sees everything.
-- **The audit trail is tamper-evident, not tamper-proof** on Spark.
+- **The audit trail is tamper-evident, not tamper-proof** on Spark. Rules
+  stop a row being altered or removed; nothing can guarantee one was
+  written at all, because the client writes it.
+- **The deployed app is still Phase 1 and still has no authentication.**
+  Anyone with the URL sees the simulated build.

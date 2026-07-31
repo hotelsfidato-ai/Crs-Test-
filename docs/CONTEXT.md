@@ -4,7 +4,7 @@
 has been on this project throughout. Read alongside [`../CLAUDE.md`](../CLAUDE.md), which is
 loaded automatically and holds the short version.
 
-**Last updated:** 30 July 2026, after the Phase 1 deployment.
+**Last updated:** 31 July 2026, after the Phase 2 build.
 
 ---
 
@@ -12,17 +12,70 @@ loaded automatically and holds the short version.
 
 | | |
 |---|---|
-| **Phase 1** | Complete, verified, committed, **deployed** to https://crstest-9a0c5.web.app |
-| **Phase 2** | Fully planned in [`phase-2/`](phase-2/README.md). **Not started.** No Firebase code exists in the app yet |
+| **Phase 1** | Complete, verified, deployed. **Superseded** — the seed layer it ran on has been deleted |
+| **Phase 2** | **Built.** Typecheck, production build and 31 tests all green. **Not deployed, no data, no users yet** |
 | **Phase 2.5** | Designed in [`phase-2/07-phase-2.5-n8n.md`](phase-2/07-phase-2.5-n8n.md). n8n is self-hosted on a VPS via Hostinger; the owner is building workflows separately |
+
+### ⚠️ Read this before touching anything
+
+The three states below are easy to conflate, and doing so wastes a session:
+
+| | |
+|---|---|
+| **Code** | Phase 2. Auth, Firestore repositories, real security rules, bulk import |
+| **What is live** | Still the Phase 1 build. Rules not pushed. Email/Password sign-in not enabled in the console |
+| **What is in the database** | Nothing. No records, no users, not even a first Owner |
+
+So: **every screen showing an empty state is behaving correctly.** That
+is not a bug to chase. The path from here is in the "Going live with
+Phase 2" section of [`RUNBOOK.md`](RUNBOOK.md), and its first
+irreducible step is creating the bootstrap Owner invitation by hand in
+the Firebase console — because only an Owner or Admin may create an
+invitation, and at first run neither exists.
 
 ### Commits on `main`
 
 ```
+0585179  test: pin the GST bands, the import mapping and the permission matrix
+229884b  feat(hotels): property form, commission editor, and the go-live runbook
+7972d7b  feat(auth): Firebase Auth, invitations, and the real security rules
+78c69ce  feat(phase-2): swap to Firestore, drop all seed data, apply schema changes
+66a214e  feat(import): CSV and Excel engine with auto-mapping and templates
+b80a1d9  feat(phase-2): Firebase client, GST bands and shared vocabulary
+5f268f9  docs: add session handover prompts and state the knowledge gap honestly
+2a8ef70  chore(firebase): deploy Phase 1 to hosting and lock both databases
 d441fb9  docs(phase2): record settled decisions on GST, dormant roles and visibility
 d95de4b  docs(phase2): engineering sprint plan for the production backend
 220f20e  feat(phase-1): complete frontend prototype with simulated data
 ```
+
+---
+
+## 1b · What changed in Phase 2
+
+The seven changes the owner asked for, and where each landed:
+
+| # | Change | Where |
+|---|---|---|
+| 1 | GST 5% below ₹7,500, 18% at or above; no prices on rooms | `src/lib/tax.ts`, `RoomType` lost `baseRate` |
+| 2 | Create a hotel, a salesperson, a company | `HotelFormPage`, `InviteUserDialog`, existing `CompanyFormPage` |
+| 3 | Commission set by and visible only to Owner and Admin | `hotels/{id}/private/commercial` + `CommissionDialog` |
+| 4 | Invoices visible only to Manager, Owner, Admin (plus Finance) | `permissions.ts` matrix + `firestore.rules` |
+| 5 | Hotel confirmation no., rep name, confirmation time | `Reservation` fields |
+| 6 | Rate plans per season with EP / AP / MAP / All Inclusive | `Season` replaces `RatePlan`; `RatesPage` rebuilt |
+| 7 | DP / RA / BTC payment terms, plus CSV/Excel bulk import | `PaymentTerm`, `features/import/**`, `ImportPage` |
+
+Two structural consequences worth carrying forward:
+
+- **Rooms carry no price.** Fidato negotiates every booking, so the
+  salesperson types the selling rate in the wizard and it is frozen onto
+  the folio. A published rate would be a number nobody is bound by — and
+  the moment one exists, the wizard starts defaulting to it, which is how
+  last year's price gets quoted without anyone noticing.
+- **The `users` document id is the auth uid.** The security rules resolve
+  a caller's role with `get(users/$(request.auth.uid))`, and rules cannot
+  query. That is why invitations are a separate collection keyed by
+  email: an invited person has no uid yet.
 
 ---
 
