@@ -13,7 +13,7 @@ loaded automatically and holds the short version.
 | | |
 |---|---|
 | **Phase 1** | Complete, verified, deployed. **Superseded** — the seed layer it ran on has been deleted |
-| **Phase 2** | **Built.** Typecheck, production build and 31 tests all green. **Not deployed, no data, no users yet** |
+| **Phase 2** | **Built.** Typecheck, production build, 31 unit tests and 59 rules tests all green. **Not deployed, no data, no users yet** |
 | **Phase 2.5** | Designed in [`phase-2/07-phase-2.5-n8n.md`](phase-2/07-phase-2.5-n8n.md). n8n is self-hosted on a VPS via Hostinger; the owner is building workflows separately |
 
 ### ⚠️ Read this before touching anything

@@ -30,7 +30,7 @@ not computed from reservations** (see the trap list below).
 | Phase | Scope | State |
 |---|---|---|
 | **1** | Full frontend, no backend, no login, simulated data | ✅ Done, deployed |
-| **2** | Firebase — Auth, Firestore, rules. Spark only | ✅ **Built. Typecheck, build and 31 tests green. Awaiting deploy** |
+| **2** | Firebase — Auth, Firestore, rules. Spark only | ✅ **Built. Typecheck, build, 31 unit + 59 rules tests green. Awaiting deploy** |
 | 2.5 | n8n consumes `automationQueue` — vouchers, Drive, email | Designed, not started |
 | 3 | Further automation | — |
 | 4 | Final testing | — |
@@ -128,7 +128,8 @@ Each of these was a real defect. Full write-ups in
 npm run dev          # http://localhost:5173
 npm run build
 npm run typecheck    # tsc -b — plain `tsc --noEmit` does nothing here
-npm test             # 31 tests: GST bands, import mapping, permissions
+npm test             # 31 unit tests: GST bands, import mapping, permissions
+npm run test:rules   # 59 rules tests in the real engine (starts the emulator)
 ```
 
 ⚠️ `tsconfig.json` is a solution file with `"files": []` and project
@@ -183,8 +184,22 @@ role can never be assigned to a person.
 
 - **Nothing deploys these rules automatically.** `firebase deploy --only
   firestore:rules` is a manual step and must happen *before* the first
-  sign-up, or there is a window where the database is open.
+  sign-up, or there is a window where the database is open. Run
+  `npm run test:rules` before every rules deploy.
 - Storage is still unprovisioned. Only matters once vouchers or PDFs land.
-- No rules *tests* — the permission matrix is tested on the client side,
-  but `firestore.rules` itself has never been executed. That needs
-  `@firebase/rules-unit-testing` against the emulator.
+- **Nothing has run against the live project.** Every repository method
+  compiles and is covered by rules tests on the emulator; none has
+  executed against real Firestore. No sign-in has ever succeeded, because
+  Email/Password is not enabled in the console yet.
+- The interactive flows — wizard, approve/cancel, merge, import commit —
+  are unit-tested at the logic layer, never click-tested end to end.
+
+## ⚠️ Two traps that cost time this session
+
+- **A UTF-8 BOM breaks `firestore.rules`.** PowerShell's `Set-Content
+  -Encoding utf8` writes one; the emulator then reports `token
+  recognition error at: ''` on line 1, and a real deploy fails the same
+  way. Edit that file with something that writes plain UTF-8.
+- **A failed rules run orphans the emulator**, and the next run reports
+  "port taken" instead of anything useful. Stop the `java.exe` holding
+  port 8080.
