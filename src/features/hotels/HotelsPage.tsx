@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MapPin, BedDouble, Hotel as HotelIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
-import { humanise, number, percent } from "@/lib/format";
+import { humanise, number } from "@/lib/format";
 import {
   Page, PageHeader, Card, FilterBar, DataTable, Pagination, EmptyState,
   StatusPill, HOTEL_TONES, StarRating, Segmented, SkeletonCards, type Column,
@@ -68,8 +68,17 @@ export default function HotelsPage() {
       ),
     },
     {
-      key: "commissionPercent", header: "Commission", numeric: true, sortable: true, hideBelow: "lg",
-      cell: (h) => percent(h.commissionPercent, 0),
+      /* Commission is deliberately absent from the list. It lives in a
+         per-hotel private subcollection readable only by Owner and
+         Admin, and a list of 32 properties cannot fetch 32 of those
+         without spending 32 reads to render a column most roles are
+         not allowed to see. It appears on the detail page instead. */
+      key: "city", header: "Location", sortable: true, hideBelow: "lg",
+      cell: (h) => (
+        <span className="text-grey-600">
+          {h.city}, {h.state}
+        </span>
+      ),
     },
     {
       key: "status", header: "Status", sortable: true,
@@ -221,7 +230,7 @@ function HotelCard({ hotel: h }: { hotel: Hotel }) {
               <span className="tabular">{h.totalRooms}</span> rooms
             </span>
             <span className="text-sm text-grey-500 tabular">
-              {h.commissionPercent}% commission
+              {h.roomMix.length} room type{h.roomMix.length === 1 ? "" : "s"}
             </span>
           </div>
 

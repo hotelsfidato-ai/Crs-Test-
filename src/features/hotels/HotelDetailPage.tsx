@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { can } from "@/lib/permissions";
-import { hotelsRepo, db } from "@/data/repositories";
+import { hotelsRepo, reservationsRepo } from "@/data/repositories";
 import { money, number, humanise, dateShort, phone as formatPhone } from "@/lib/format";
 import { labelFor, canEditRates } from "@/lib/rules";
 import {
@@ -32,15 +32,31 @@ export default function HotelDetailPage() {
     queryFn: () => hotelsRepo.roomTypes(id),
   });
 
+  const bookingsQuery = useQuery({
+    queryKey: ["hotel-reservations", id],
+    queryFn: () => reservationsRepo.forHotel(id),
+    enabled: Boolean(id),
+  });
+
+  /* ⚠️ Commercial terms live in a subcollection, not on the hotel, so
+     that "Owner and Admin only" is enforced by rules rather than by
+     this component choosing not to render them. The query is only
+     issued for roles that may read it — for anyone else Firestore
+     would deny it, which is correct but produces console noise. */
+  const canSeeCommission = can(role, "view", "commission_terms");
+  const commercial = useQuery({
+    queryKey: ["hotel-commercial", id],
+    queryFn: () => hotelsRepo.commercial(id),
+    enabled: Boolean(id) && canSeeCommission,
+  });
+
   if (hotel.isLoading) return <DetailSkeleton />;
   if (!hotel.data) return <NotFound />;
 
   const h = hotel.data;
   const rateAccess = canEditRates(role);
 
-  const bookings = db.reservations
-    .filter((r) => r.hotelId === h.id)
-    .sort((a, b) => (a.checkIn < b.checkIn ? 1 : -1));
+  const bookings = bookingsQuery.data ?? [];
   const live = bookings.filter((r) => r.status !== "cancelled" && r.status !== "draft");
   const revenue = live.reduce((s, r) => s + r.totalAmount, 0);
 
@@ -58,8 +74,11 @@ export default function HotelDetailPage() {
     },
     { key: "totalRooms", header: "Rooms", numeric: true, cell: (rt) => number(rt.totalRooms) },
     {
-      key: "baseRate", header: "Base rate", numeric: true,
-      cell: (rt) => <span className="font-medium">{money(rt.baseRate)}</span>,
+      /* No rate column. Rooms carry no price — the salesperson enters
+         the selling rate on each reservation, because Fidato negotiates
+         per booking rather than publishing a rack rate. */
+      key: "maxExtraBeds", header: "Extra beds", numeric: true,
+      cell: (rt) => <span className="tabular text-grey-600">{rt.maxExtraBeds || "—"}</span>,
     },
     {
       key: "amenities", header: "Amenities", hideBelow: "lg",
@@ -156,11 +175,19 @@ export default function HotelDetailPage() {
           <Stat label="Revenue" value={money(revenue)} />
         </Card>
         <Card className="p-5">
-          <Stat
-            label="Commission"
-            value={`${h.commissionPercent}%`}
-            hint={`Onboarded ${dateShort(h.onboardedAt)}`}
-          />
+          {canSeeCommission ? (
+            <Stat
+              label="Commission"
+              value={commercial.data ? `${commercial.data.commissionPercent}%` : "Not set"}
+              hint={`Onboarded ${dateShort(h.onboardedAt)}`}
+            />
+          ) : (
+            <Stat
+              label="Onboarded"
+              value={dateShort(h.onboardedAt)}
+              hint={humanise(h.category)}
+            />
+          )}
         </Card>
       </div>
 
@@ -317,7 +344,16 @@ export default function HotelDetailPage() {
             <CardHeader title="Commercial" />
             <CardBody className="pt-0">
               <DetailList>
-                <DetailRow label="Commission">{h.commissionPercent}%</DetailRow>
+                {canSeeCommission && (
+                  <>
+                    <DetailRow label="Commission">
+                      {commercial.data ? `${commercial.data.commissionPercent}%` : "Not set"}
+                    </DetailRow>
+                    {commercial.data?.negotiatedBy && (
+                      <DetailRow label="Negotiated by">{commercial.data.negotiatedBy}</DetailRow>
+                    )}
+                  </>
+                )}
                 <DetailRow label="Status">
                   <StatusPill tone={HOTEL_TONES[h.status] ?? "neutral"}>{h.status}</StatusPill>
                 </DetailRow>

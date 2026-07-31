@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Pencil, Mail, Phone, Globe, MapPin, Sparkles, Users } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { can } from "@/lib/permissions";
-import { companiesRepo, db } from "@/data/repositories";
+import { companiesRepo, customersRepo, reservationsRepo } from "@/data/repositories";
 import { money, percent, humanise, dateShort, phone as formatPhone } from "@/lib/format";
 import { labelFor } from "@/lib/rules";
 import { summariseCompany } from "@/features/ai/responses";
@@ -25,14 +25,24 @@ export default function CompanyDetailPage() {
     queryFn: () => companiesRepo.get(id),
   });
 
+  const contactsQuery = useQuery({
+    queryKey: ["company-contacts", id],
+    queryFn: () => customersRepo.forCompany(id),
+    enabled: Boolean(id),
+  });
+
+  const bookingsQuery = useQuery({
+    queryKey: ["company-reservations", id],
+    queryFn: () => reservationsRepo.forCompany(id),
+    enabled: Boolean(id),
+  });
+
   if (company.isLoading) return <DetailSkeleton />;
   if (!company.data) return <NotFound />;
 
   const c = company.data;
-  const contacts = db.customers.filter((x) => x.companyId === c.id);
-  const bookings = db.reservations
-    .filter((r) => r.companyId === c.id)
-    .sort((a, b) => (a.checkIn < b.checkIn ? 1 : -1));
+  const contacts = contactsQuery.data ?? [];
+  const bookings = bookingsQuery.data ?? [];
 
   const utilisation = c.creditLimit > 0 ? (c.creditUsed / c.creditLimit) * 100 : 0;
 
@@ -280,7 +290,7 @@ export default function CompanyDetailPage() {
               />
               <CardBody className="pt-0">
                 <p className="text-base text-grey-600 leading-relaxed">
-                  {summariseCompany(c.id)}
+                  {summariseCompany(c)}
                 </p>
               </CardBody>
             </Card>

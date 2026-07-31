@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { useUi } from "@/lib/session";
 import { Drawer, DrawerContent, Button } from "@/components/ui";
 import { answerFor, SUGGESTED_PROMPTS, type ChatTurn } from "@/features/ai/responses";
+import { useAssistantSnapshot } from "@/features/ai/useSnapshot";
 import logoMark from "@/assets/brand/logo-mark.svg";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -36,6 +37,7 @@ export function AiPanel() {
 }
 
 export function AiConversation({ compact = false }: { compact?: boolean }) {
+  const { snapshot } = useAssistantSnapshot();
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -54,7 +56,7 @@ export function AiConversation({ compact = false }: { compact?: boolean }) {
 
     // Simulated model latency — the shape of the wait matters for the UX.
     const reply = await new Promise<ChatTurn>((resolve) =>
-      setTimeout(() => resolve(answerFor(q)), 700 + Math.random() * 600),
+      setTimeout(() => resolve(answerFor(q, snapshot)), 700 + Math.random() * 600),
     );
 
     setThinking(false);

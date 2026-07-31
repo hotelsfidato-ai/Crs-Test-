@@ -1,473 +1,620 @@
-import { useState, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Upload, FileSpreadsheet, Check, AlertTriangle, X, ArrowLeft, ArrowRight,
+  Upload, FileSpreadsheet, Download, CheckCircle2, AlertTriangle,
+  ArrowRight, RotateCcw, FileWarning,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useActor } from "@/lib/session";
-import { customersRepo, db } from "@/data/repositories";
-import { isDuplicateEmail, isDuplicatePhone } from "@/lib/rules";
+import { importRepo } from "@/data/repositories";
 import { number } from "@/lib/format";
 import {
-  Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button,
-  NativeSelect, DataTable, EmptyState, toast, type Column,
+  Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button, Field,
+  NativeSelect, StatusPill, EmptyState, ProgressBar, Segmented, Tooltip, toast,
 } from "@/components/ui";
+import { DESCRIPTORS, type ImportDescriptor } from "@/features/import/descriptors";
+import {
+  parseFile, guessMapping, validateRows, summarise, isExcel,
+  downloadCsvTemplate, downloadExcelTemplate, downloadErrorReport,
+  type ParsedFile, type ValidatedRow,
+} from "@/features/import/engine";
+import type { ImportEntity } from "@/data/types";
 
 /* ══════════════════════════════════════════════════════════════════
-   IMPORT WIZARD
-   Upload → map columns → validate → preview → commit.
-   Validation runs the same uniqueness rules the form does, so a file
-   cannot introduce duplicates the UI would reject one at a time.
+   BULK IMPORT
+
+   Upload → map → check → commit. Four steps, and the first three
+   change nothing.
+
+   ⚠️ Nothing is written until the final button. Parsing, mapping,
+   validation and duplicate detection all happen in the browser,
+   against a file that has not left the machine. An import that
+   half-succeeds and leaves you guessing which half is worse than one
+   that refuses to start — so the whole file is judged before any of
+   it is committed.
    ══════════════════════════════════════════════════════════════════ */
 
-type Step = "upload" | "map" | "review";
+type Stage = "upload" | "map" | "review" | "done";
 
-const TARGET_FIELDS = [
-  { key: "firstName", label: "First name", required: true },
-  { key: "lastName", label: "Last name", required: true },
-  { key: "email", label: "Email", required: true },
-  { key: "phone", label: "Phone", required: true },
-  { key: "city", label: "City", required: false },
-  { key: "state", label: "State", required: false },
-] as const;
+const ENTITY_ORDER: ImportEntity[] = ["customers", "companies", "hotels"];
 
-const SAMPLE_CSV = `first_name,last_name,email,phone,city,state
-Rohan,Kulkarni,rohan.kulkarni@aster.com,+919812345601,Pune,Maharashtra
-Meera,Nair,meera.nair@bluewave.com,+919812345602,Kochi,Kerala
-Imran,Sheikh,imran.sheikh@cerulean.com,+919812345603,Hyderabad,Telangana
-Ananya,Bose,ananya.bose@dynamo.com,+919812345604,Kolkata,West Bengal
-Vikram,Desai,vikram.desai@everest.com,+919812345605,Surat,Gujarat
-Priya,Menon,priya.menon@fortis.com,+919812345606,Chennai,Tamil Nadu
-Kabir,Thakur,kabir.thakur@granite.com,+919812345607,Jaipur,Rajasthan
-Divya,Shetty,divya.shetty@helios.com,+919812345608,Mangaluru,Karnataka`;
-
-interface ParsedRow {
-  index: number;
-  values: Record<string, string>;
-}
-
-interface ValidatedRow extends ParsedRow {
-  mapped: Record<string, string>;
-  errors: string[];
-  warnings: string[];
-}
-
-function parseCsv(text: string): { headers: string[]; rows: ParsedRow[] } {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  if (!lines.length) return { headers: [], rows: [] };
-
-  const split = (line: string) =>
-    line.split(",").map((cell) => cell.trim().replace(/^"|"$/g, ""));
-
-  const headers = split(lines[0]!);
-  const rows = lines.slice(1).map((line, i) => {
-    const cells = split(line);
-    const values: Record<string, string> = {};
-    headers.forEach((h, c) => { values[h] = cells[c] ?? ""; });
-    return { index: i + 2, values };
-  });
-
-  return { headers, rows };
-}
-
-/** Guesses a mapping from header names so the common case needs no work. */
-function guessMapping(headers: string[]): Record<string, string> {
-  const map: Record<string, string> = {};
-  const normalise = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
-
-  for (const field of TARGET_FIELDS) {
-    const target = normalise(field.label);
-    const alt = normalise(field.key);
-    const match = headers.find((h) => {
-      const n = normalise(h);
-      return n === target || n === alt || n.includes(alt) || alt.includes(n);
-    });
-    if (match) map[field.key] = match;
-  }
-  return map;
-}
+/** ⚠️ Mirrors importRepo.existingKeys. Quoted in the UI, so it must match. */
+const EXISTING_SCAN_LIMIT = 2_000;
 
 export default function ImportPage() {
-  const navigate = useNavigate();
   const actor = useActor();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const [step, setStep] = useState<Step>("upload");
-  const [fileName, setFileName] = useState("");
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [entity, setEntity] = useState<ImportEntity>("customers");
+  const [stage, setStage] = useState<Stage>("upload");
+  const [parsed, setParsed] = useState<ParsedFile | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [result, setResult] = useState<{ created: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
-  function loadText(text: string, name: string) {
-    const parsed = parseCsv(text);
-    if (!parsed.rows.length) {
-      toast.error("Nothing to import", "That file has a header row but no data.");
-      return;
-    }
-    setHeaders(parsed.headers);
-    setRows(parsed.rows);
-    setMapping(guessMapping(parsed.headers));
-    setFileName(name);
-    setStep("map");
-  }
+  const descriptor = DESCRIPTORS[entity];
 
-  async function handleFile(file: File) {
-    const text = await file.text();
-    loadText(text, file.name);
-  }
-
-  const validated = useMemo<ValidatedRow[]>(() => {
-    const seenEmail = new Set<string>();
-    const seenPhone = new Set<string>();
-
-    return rows.map((row) => {
-      const mapped: Record<string, string> = {};
-      for (const field of TARGET_FIELDS) {
-        const source = mapping[field.key];
-        mapped[field.key] = source ? (row.values[source] ?? "").trim() : "";
-      }
-
-      const errors: string[] = [];
-      const warnings: string[] = [];
-
-      for (const field of TARGET_FIELDS) {
-        if (field.required && !mapped[field.key]) {
-          errors.push(`${field.label} is missing`);
-        }
-      }
-
-      if (mapped.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mapped.email)) {
-        errors.push("Email is not valid");
-      }
-      if (mapped.phone && mapped.phone.replace(/\D/g, "").length < 10) {
-        errors.push("Phone is too short");
-      }
-
-      // Within the file itself
-      const emailKey = mapped.email?.toLowerCase();
-      if (emailKey) {
-        if (seenEmail.has(emailKey)) errors.push("Duplicated inside this file");
-        seenEmail.add(emailKey);
-      }
-      const phoneKey = mapped.phone?.replace(/\D/g, "").slice(-10);
-      if (phoneKey && phoneKey.length === 10) {
-        if (seenPhone.has(phoneKey)) errors.push("Phone duplicated inside this file");
-        seenPhone.add(phoneKey);
-      }
-
-      // Against what is already stored
-      if (mapped.email && isDuplicateEmail(mapped.email, db.customers)) {
-        warnings.push("A customer already has this email");
-      }
-      if (mapped.phone && isDuplicatePhone(mapped.phone, db.customers)) {
-        warnings.push("A customer already has this phone number");
-      }
-
-      return { ...row, mapped, errors, warnings };
-    });
-  }, [rows, mapping]);
-
-  const valid = validated.filter((r) => r.errors.length === 0);
-  const invalid = validated.filter((r) => r.errors.length > 0);
-  const warned = valid.filter((r) => r.warnings.length > 0);
-
-  const missingRequired = TARGET_FIELDS.filter((f) => f.required && !mapping[f.key]);
-
-  const commit = useMutation({
-    mutationFn: () => customersRepo.importMany(valid.map((r) => r.mapped), actor),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["duplicates"] });
-      toast.success(
-        "Import complete",
-        `${result.created} customer${result.created === 1 ? "" : "s"} created.`,
-      );
-      navigate("/crm/customers");
-    },
-    onError: () => toast.error("Import failed", "No records were created."),
+  /* Collision check against what is already stored. Fetched once a file
+     is in, not on page load — most visits here are to grab a template,
+     and that should cost nothing. */
+  const existing = useQuery({
+    queryKey: ["import-existing", entity],
+    queryFn: () => importRepo.existingKeys(entity, descriptor.duplicateKeys),
+    enabled: stage === "map" || stage === "review",
+    staleTime: 60_000,
   });
 
-  const columns: Column<ValidatedRow>[] = [
-    {
-      key: "status", header: "", width: "w-10",
-      cell: (r) =>
-        r.errors.length ? (
-          <X className="size-4 text-brand-red" />
-        ) : r.warnings.length ? (
-          <AlertTriangle className="size-4 text-brand-yellow" />
-        ) : (
-          <Check className="size-4 text-success" />
-        ),
+  const validated: ValidatedRow[] = useMemo(() => {
+    if (!parsed) return [];
+    return validateRows(parsed.rows, mapping, descriptor, existing.data ?? {});
+  }, [parsed, mapping, descriptor, existing.data]);
+
+  const summary = useMemo(() => summarise(validated), [validated]);
+
+  const commit = useMutation({
+    mutationFn: () => {
+      const good = validated.filter((r) => r.errors.length === 0);
+      const documents = good.map((r) => descriptor.toDocument(r.mapped));
+      setProgress({ done: 0, total: documents.length });
+      return importRepo.commit(entity, documents, actor, (done, total) =>
+        setProgress({ done, total }),
+      );
     },
-    { key: "row", header: "Row", numeric: true, width: "w-16", cell: (r) => r.index },
-    {
-      key: "name", header: "Name",
-      cell: (r) => (
-        <span className="font-medium text-ink-900">
-          {[r.mapped.firstName, r.mapped.lastName].filter(Boolean).join(" ") || (
-            <span className="text-grey-400">—</span>
-          )}
-        </span>
+    onSuccess: (out) => {
+      setResult(out);
+      setStage("done");
+      queryClient.invalidateQueries({ queryKey: [entity] });
+      queryClient.invalidateQueries({ queryKey: ["import-existing", entity] });
+      toast.success(
+        "Import complete",
+        `${out.created} ${descriptor.label.toLowerCase()} added.`,
+      );
+    },
+    onError: () =>
+      toast.error(
+        "Import failed",
+        "Some rows may have been written. Check the list before retrying.",
       ),
-    },
-    { key: "email", header: "Email", cell: (r) => r.mapped.email || <span className="text-grey-400">—</span> },
-    {
-      key: "phone", header: "Phone", hideBelow: "md",
-      cell: (r) => <span className="tabular">{r.mapped.phone || "—"}</span>,
-    },
-    { key: "city", header: "City", hideBelow: "lg", cell: (r) => r.mapped.city || "—" },
-    {
-      key: "issues", header: "Issues",
-      cell: (r) =>
-        r.errors.length ? (
-          <span className="text-sm text-brand-red">{r.errors.join(", ")}</span>
-        ) : r.warnings.length ? (
-          <span className="text-sm text-[#8a6300]">{r.warnings.join(", ")}</span>
-        ) : (
-          <span className="text-sm text-grey-400">None</span>
-        ),
-    },
-  ];
+  });
+
+  async function handleFile(file: File) {
+    setParseError(null);
+    try {
+      const next = await parseFile(file);
+      if (!next.rows.length) {
+        setParseError("That file has headings but no rows.");
+        return;
+      }
+      setParsed(next);
+      setMapping(guessMapping(next.headers, descriptor));
+      setStage("map");
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : "Could not read that file.");
+    }
+  }
+
+  function reset() {
+    setParsed(null);
+    setMapping({});
+    setParseError(null);
+    setResult(null);
+    setStage("upload");
+  }
+
+  const autoMapped = Object.keys(mapping).length;
+  const requiredUnmapped = descriptor.fields.filter((f) => f.required && !mapping[f.key]);
 
   return (
     <Page>
       <PageHeader
         breadcrumbs={[{ label: "Customers", to: "/crm/customers" }, { label: "Import" }]}
-        title="Import customers"
-        description="Upload a CSV, map its columns, then review what will be created before anything is written."
-      />
-
-      <Stepper step={step} />
-
-      {step === "upload" && (
-        <Card className="max-w-2xl">
-          <CardBody>
-            <label
-              className={cn(
-                "flex flex-col items-center justify-center text-center",
-                "border-2 border-dashed border-grey-300 rounded-md py-14 px-6 cursor-pointer",
-                "hover:border-brand-orange hover:bg-brand-orange-50/40 transition-colors duration-150",
-              )}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const file = e.dataTransfer.files[0];
-                if (file) void handleFile(file);
-              }}
-            >
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                className="sr-only"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void handleFile(file);
-                }}
-              />
-              <span className="flex items-center justify-center size-11 rounded-full bg-grey-100 text-grey-400 mb-4">
-                <Upload className="size-5" />
-              </span>
-              <span className="text-md font-semibold text-ink-900">
-                Drop a CSV here, or browse
-              </span>
-              <span className="text-base text-grey-500 mt-1.5 max-w-sm leading-relaxed">
-                The first row must be a header. Columns are matched automatically where
-                the names are recognisable.
-              </span>
-            </label>
-
-            <div className="flex items-center gap-3 mt-5">
-              <div className="h-px bg-grey-200 flex-1" />
-              <span className="text-xs text-grey-400">or</span>
-              <div className="h-px bg-grey-200 flex-1" />
-            </div>
-
+        title="Bulk import"
+        description="Upload a CSV or Excel file. Columns are matched automatically, every row is checked, and nothing is saved until you confirm."
+        actions={
+          stage !== "upload" ? (
             <Button
               variant="secondary"
-              className="w-full mt-5"
-              leadingIcon={<FileSpreadsheet className="size-4" />}
-              onClick={() => loadText(SAMPLE_CSV, "sample-customers.csv")}
+              leadingIcon={<RotateCcw className="size-4" />}
+              onClick={reset}
             >
-              Use a sample file (8 rows)
+              Start over
             </Button>
-            <p className="text-xs text-grey-400 text-center mt-2">
-              Two rows in the sample collide with existing records, so you can see how
-              warnings behave.
-            </p>
-          </CardBody>
-        </Card>
-      )}
+          ) : undefined
+        }
+      />
 
-      {step === "map" && (
-        <Card className="max-w-2xl">
-          <CardHeader
-            title="Map the columns"
-            description={`${fileName} · ${number(rows.length)} rows · ${headers.length} columns`}
-          />
-          <CardBody className="space-y-4">
-            {TARGET_FIELDS.map((field) => (
-              <div key={field.key} className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+      {/* ── Upload ── */}
+      {stage === "upload" && (
+        <>
+          <Card className="mb-6">
+            <CardHeader
+              title="1. Choose what to import"
+              description="Each type has its own template and its own rules."
+            />
+            <CardBody>
+              <Segmented
+                value={entity}
+                onChange={(next: ImportEntity) => {
+                  setEntity(next);
+                  reset();
+                }}
+                options={ENTITY_ORDER.map((e) => ({
+                  value: e,
+                  label: DESCRIPTORS[e].label,
+                }))}
+              />
+              <p className="text-sm text-grey-600 mt-3 leading-relaxed">
+                {descriptor.description}
+              </p>
+            </CardBody>
+          </Card>
+
+          <Card className="mb-6">
+            <CardHeader
+              title="2. Start from the template"
+              description="Generated from the same rules the importer validates against, so it cannot drift out of date."
+            />
+            <CardBody>
+              <div className="flex flex-wrap gap-2 mb-5">
+                <Button
+                  variant="secondary"
+                  leadingIcon={<Download className="size-4" />}
+                  onClick={() => downloadCsvTemplate(descriptor)}
+                >
+                  Download CSV template
+                </Button>
+                <Button
+                  variant="secondary"
+                  leadingIcon={<Download className="size-4" />}
+                  onClick={() => void downloadExcelTemplate(descriptor)}
+                >
+                  Download Excel template
+                </Button>
+              </div>
+
+              <p className="text-sm text-grey-600 mb-3 leading-relaxed">
+                The Excel workbook carries a second sheet — <strong>Field guide</strong> —
+                listing every column, whether it is required, an example, and the
+                alternative headings that are accepted. You do not have to use these exact
+                headings: an export from another system usually maps itself.
+              </p>
+
+              <FieldReference descriptor={descriptor} />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="3. Upload your file" description="CSV, XLSX or XLS." />
+            <CardBody>
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) void handleFile(file);
+                }}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-3 py-12 px-6 rounded-md",
+                  "border-2 border-dashed transition-colors duration-150 text-center",
+                  dragging
+                    ? "border-brand-orange bg-brand-orange-50/50"
+                    : "border-grey-300 bg-grey-50",
+                )}
+              >
+                <FileSpreadsheet className="size-8 text-grey-400" />
                 <div>
-                  <p className="text-base text-ink-900">
-                    {field.label}
-                    {field.required && <span className="text-brand-red ml-0.5">*</span>}
-                  </p>
-                  <p className="text-sm text-grey-500">
-                    {field.required ? "Required" : "Optional"}
+                  <p className="text-base font-medium text-ink-900">Drop your file here</p>
+                  <p className="text-sm text-grey-500 mt-1">
+                    or choose one from your computer
                   </p>
                 </div>
-                <ArrowLeft className="size-4 text-grey-300" />
-                <NativeSelect
-                  value={mapping[field.key] ?? ""}
-                  invalid={field.required && !mapping[field.key]}
-                  onChange={(e) =>
-                    setMapping((m) => {
-                      const next = { ...m };
-                      if (e.target.value) next[field.key] = e.target.value;
-                      else delete next[field.key];
-                      return next;
-                    })
-                  }
-                  aria-label={`Source column for ${field.label}`}
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept=".csv,.xlsx,.xls,.xlsm,.xlsb,text/csv"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleFile(file);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  leadingIcon={<Upload className="size-4" />}
+                  onClick={() => fileInput.current?.click()}
                 >
-                  <option value="">Not mapped</option>
-                  {headers.map((h) => (
-                    <option key={h} value={h}>{h}</option>
-                  ))}
-                </NativeSelect>
+                  Choose file
+                </Button>
               </div>
-            ))}
 
-            {missingRequired.length > 0 && (
-              <p className="flex items-start gap-2 text-sm text-brand-red pt-2">
-                <AlertTriangle className="size-4 shrink-0 mt-px" />
-                Map {missingRequired.map((f) => f.label.toLowerCase()).join(", ")} before
-                continuing.
+              {parseError && (
+                <div className="flex items-start gap-3 mt-4 p-4 rounded-md bg-brand-red-50 border border-brand-red-100">
+                  <FileWarning className="size-4 text-brand-red shrink-0 mt-0.5" />
+                  <p className="text-sm text-brand-red leading-relaxed">{parseError}</p>
+                </div>
+              )}
+
+              <p className="text-xs text-grey-400 mt-4 leading-relaxed">
+                Your file is read in this browser. Nothing is sent anywhere until you
+                confirm the import two screens from now.
               </p>
+            </CardBody>
+          </Card>
+        </>
+      )}
+
+      {/* ── Mapping ── */}
+      {stage === "map" && parsed && (
+        <Card>
+          <CardHeader
+            title="Check the column mapping"
+            description={`${parsed.fileName} · ${number(parsed.rows.length)} row${parsed.rows.length === 1 ? "" : "s"} · ${autoMapped} of ${descriptor.fields.length} columns matched automatically`}
+            actions={
+              isExcel(parsed.fileName) && parsed.sheets && parsed.sheets.length > 1 ? (
+                <StatusPill tone="neutral" dot={false}>
+                  Sheet: {parsed.activeSheet}
+                </StatusPill>
+              ) : undefined
+            }
+          />
+          <CardBody className="space-y-4">
+            {requiredUnmapped.length > 0 && (
+              <div className="flex items-start gap-3 p-4 rounded-md bg-brand-yellow-50 border border-brand-yellow-100">
+                <AlertTriangle className="size-4 text-[#8a6300] shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-base font-medium text-[#8a6300]">
+                    {requiredUnmapped.length} required column
+                    {requiredUnmapped.length === 1 ? "" : "s"} not matched
+                  </p>
+                  <p className="text-sm text-[#8a6300] mt-1 leading-relaxed">
+                    Pick the right column for{" "}
+                    {requiredUnmapped.map((f) => f.label).join(", ")}. Every row will be
+                    rejected without them.
+                  </p>
+                </div>
+              </div>
             )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {descriptor.fields.map((field) => (
+                <Field
+                  key={field.key}
+                  label={field.label}
+                  required={field.required}
+                  hint={field.hint ?? `e.g. ${field.example}`}
+                >
+                  {({ id }) => (
+                    <NativeSelect
+                      id={id}
+                      value={mapping[field.key] ?? ""}
+                      onChange={(e) =>
+                        setMapping((prev) => {
+                          const next = { ...prev };
+                          if (e.target.value) next[field.key] = e.target.value;
+                          else delete next[field.key];
+                          return next;
+                        })
+                      }
+                    >
+                      <option value="">— not in my file —</option>
+                      {parsed.headers.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </NativeSelect>
+                  )}
+                </Field>
+              ))}
+            </div>
           </CardBody>
           <CardFooter>
-            <Button variant="ghost" onClick={() => setStep("upload")}>
-              Back
-            </Button>
+            <Button variant="ghost" onClick={reset}>Back</Button>
             <Button
-              variant="primary"
-              disabled={missingRequired.length > 0}
               trailingIcon={<ArrowRight className="size-4" />}
-              onClick={() => setStep("review")}
+              onClick={() => setStage("review")}
             >
-              Review {number(rows.length)} rows
+              Check {number(parsed.rows.length)} row{parsed.rows.length === 1 ? "" : "s"}
             </Button>
           </CardFooter>
         </Card>
       )}
 
-      {step === "review" && (
+      {/* ── Review ── */}
+      {stage === "review" && parsed && (
         <>
-          <div className="grid gap-4 grid-cols-3 mb-5 max-w-2xl">
-            <Card className="p-4">
-              <p className="text-2xs font-medium uppercase tracking-wide text-grey-400">
-                Will import
-              </p>
-              <p className="text-2xl font-semibold text-success tabular mt-1.5">
-                {valid.length}
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
+            <Card className="p-5">
+              <p className="text-sm text-grey-500">Rows in file</p>
+              <p className="text-2xl font-semibold text-ink-900 tabular mt-1">
+                {number(summary.total)}
               </p>
             </Card>
-            <Card className="p-4">
-              <p className="text-2xs font-medium uppercase tracking-wide text-grey-400">
-                With warnings
-              </p>
-              <p className="text-2xl font-semibold text-[#8a6300] tabular mt-1.5">
-                {warned.length}
+            <Card className="p-5">
+              <p className="text-sm text-grey-500">Will import</p>
+              <p className="text-2xl font-semibold text-success tabular mt-1">
+                {number(summary.willImport)}
               </p>
             </Card>
-            <Card className="p-4">
-              <p className="text-2xs font-medium uppercase tracking-wide text-grey-400">
-                Skipped
+            <Card className="p-5">
+              <p className="text-sm text-grey-500">With warnings</p>
+              <p className="text-2xl font-semibold text-[#8a6300] tabular mt-1">
+                {number(summary.withWarnings)}
               </p>
-              <p className="text-2xl font-semibold text-brand-red tabular mt-1.5">
-                {invalid.length}
+            </Card>
+            <Card className="p-5">
+              <p className="text-sm text-grey-500">Rejected</p>
+              <p className="text-2xl font-semibold text-brand-red tabular mt-1">
+                {number(summary.skipped)}
               </p>
             </Card>
           </div>
 
-          <DataTable
-            columns={columns}
-            rows={validated}
-            rowKey={(r) => String(r.index)}
-            stickyHeader={false}
-            empty={<EmptyState compact title="Nothing to review" />}
-          />
+          <Card>
+            <CardHeader
+              title="Row by row"
+              description="Rejected rows are skipped; the rest are imported. Warnings do not block anything."
+              actions={
+                summary.skipped > 0 ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leadingIcon={<Download className="size-3.5" />}
+                    onClick={() => downloadErrorReport(validated, descriptor)}
+                  >
+                    Download rejected rows
+                  </Button>
+                ) : undefined
+              }
+            />
+            <CardBody className="pt-0">
+              {commit.isPending && (
+                <div className="mb-5">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-sm text-grey-600">
+                      Writing {number(progress.done)} of {number(progress.total)}…
+                    </p>
+                    <p className="text-sm tabular text-grey-500">
+                      {progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%
+                    </p>
+                  </div>
+                  <ProgressBar
+                    value={progress.total ? (progress.done / progress.total) * 100 : 0}
+                    tone="accent"
+                  />
+                </div>
+              )}
 
-          <div className="flex items-center justify-between gap-4 mt-5 flex-wrap">
-            <p className="text-sm text-grey-500 max-w-lg leading-relaxed">
-              Rows with errors are skipped. Rows with warnings still import — resolve
-              them afterwards on the{" "}
-              <Link to="/crm/merge" className="text-brand-orange hover:underline">
-                duplicates
-              </Link>{" "}
-              screen. Imported customers arrive as leads owned by you.
-            </p>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={() => setStep("map")}>
-                Back
+              <RowPreview rows={validated} descriptor={descriptor} />
+            </CardBody>
+            <CardFooter>
+              <Button variant="ghost" onClick={() => setStage("map")}>
+                Back to mapping
               </Button>
               <Button
-                variant="primary"
-                disabled={valid.length === 0}
                 loading={commit.isPending}
+                disabled={summary.willImport === 0}
                 onClick={() => commit.mutate()}
               >
-                Import {valid.length} customer{valid.length === 1 ? "" : "s"}
+                Import {number(summary.willImport)} {descriptor.label.toLowerCase()}
               </Button>
-            </div>
-          </div>
+            </CardFooter>
+          </Card>
+
+          <p className="text-xs text-grey-400 mt-4 leading-relaxed">
+            Duplicate warnings are checked against the {number(EXISTING_SCAN_LIMIT)} most
+            recent stored records — enough to catch a re-uploaded file, not a full audit of
+            the book. The uniqueness rule at save time is what actually prevents
+            duplicates, and the duplicates screen is where any that slip through get
+            merged.
+          </p>
         </>
+      )}
+
+      {/* ── Done ── */}
+      {stage === "done" && result && (
+        <Card>
+          <EmptyState
+            icon={<CheckCircle2 />}
+            title={`${number(result.created)} ${descriptor.label.toLowerCase()} imported`}
+            description={
+              summary.skipped > 0
+                ? `${number(summary.skipped)} row${summary.skipped === 1 ? " was" : "s were"} rejected and not imported. Download them, fix them, and upload again.`
+                : "Every row in the file was imported."
+            }
+            action={
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button onClick={() => navigate(`/crm/${entity}`)}>
+                  View {descriptor.label.toLowerCase()}
+                </Button>
+                {summary.skipped > 0 && (
+                  <Button
+                    variant="secondary"
+                    leadingIcon={<Download className="size-4" />}
+                    onClick={() => downloadErrorReport(validated, descriptor)}
+                  >
+                    Download rejected rows
+                  </Button>
+                )}
+                <Button variant="ghost" onClick={reset}>
+                  Import another file
+                </Button>
+              </div>
+            }
+          />
+        </Card>
       )}
     </Page>
   );
 }
 
-function Stepper({ step }: { step: Step }) {
-  const steps: { key: Step; label: string }[] = [
-    { key: "upload", label: "Upload" },
-    { key: "map", label: "Map columns" },
-    { key: "review", label: "Review & import" },
-  ];
-  const currentIndex = steps.findIndex((s) => s.key === step);
+/* ── Pieces ────────────────────────────────────────────────────── */
+
+function FieldReference({ descriptor }: { descriptor: ImportDescriptor }) {
+  return (
+    <div className="rounded-md border border-grey-200 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-base">
+          <thead className="bg-grey-50 border-b border-grey-200">
+            <tr>
+              <th className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9">
+                Column
+              </th>
+              <th className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9">
+                Required
+              </th>
+              <th className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9">
+                Example
+              </th>
+              <th className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9 hidden lg:table-cell">
+                Notes
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {descriptor.fields.map((f) => (
+              <tr key={f.key} className="border-b border-grey-100 last:border-b-0">
+                <td className="px-4 py-2.5">
+                  <span className="font-medium text-ink-900">{f.label}</span>
+                  {f.aliases.length > 0 && (
+                    <Tooltip content={`Also accepts: ${f.aliases.join(", ")}`}>
+                      <span className="ml-1.5 text-2xs text-grey-400 cursor-help">
+                        +{f.aliases.length} aliases
+                      </span>
+                    </Tooltip>
+                  )}
+                </td>
+                <td className="px-4 py-2.5">
+                  {f.required ? (
+                    <StatusPill tone="danger" dot={false}>Required</StatusPill>
+                  ) : (
+                    <span className="text-sm text-grey-400">Optional</span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-sm text-grey-600">{f.example}</td>
+                <td className="px-4 py-2.5 text-sm text-grey-500 hidden lg:table-cell">
+                  {f.hint ?? "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** ⚠️ Capped. A 5,000-row file would otherwise render 5,000 DOM rows. */
+const PREVIEW_LIMIT = 100;
+
+function RowPreview({
+  rows, descriptor,
+}: {
+  rows: ValidatedRow[];
+  descriptor: ImportDescriptor;
+}) {
+  // Problems first — they are the reason anyone reads this table.
+  const ordered = [...rows].sort(
+    (a, b) =>
+      b.errors.length - a.errors.length ||
+      b.warnings.length - a.warnings.length ||
+      a.rowNumber - b.rowNumber,
+  );
+  const shown = ordered.slice(0, PREVIEW_LIMIT);
+  const primary = descriptor.fields.slice(0, 3);
 
   return (
-    <ol className="flex items-center gap-2 mb-6 flex-wrap">
-      {steps.map((s, i) => {
-        const done = i < currentIndex;
-        const active = i === currentIndex;
-        return (
-          <li key={s.key} className="flex items-center gap-2">
-            <span
-              className={cn(
-                "flex items-center justify-center size-6 rounded-full text-2xs font-semibold tabular",
-                done
-                  ? "bg-success text-white"
-                  : active
-                    ? "bg-brand-orange text-white"
-                    : "bg-grey-100 text-grey-400",
-              )}
-            >
-              {done ? <Check className="size-3" /> : i + 1}
-            </span>
-            <span
-              className={cn(
-                "text-base",
-                active ? "text-ink-900 font-medium" : "text-grey-500",
-              )}
-            >
-              {s.label}
-            </span>
-            {i < steps.length - 1 && <span className="w-8 h-px bg-grey-200 mx-1" />}
-          </li>
-        );
-      })}
-    </ol>
+    <>
+      <div className="rounded-md border border-grey-200 overflow-hidden">
+        <div className="overflow-x-auto max-h-[520px]">
+          <table className="w-full text-base">
+            <thead className="bg-grey-50 border-b border-grey-200 sticky top-0">
+              <tr>
+                <th className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9 w-16">
+                  Row
+                </th>
+                {primary.map((f) => (
+                  <th
+                    key={f.key}
+                    className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9"
+                  >
+                    {f.label}
+                  </th>
+                ))}
+                <th className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9">
+                  Result
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <tr
+                  key={r.rowNumber}
+                  className={cn(
+                    "border-b border-grey-100 last:border-b-0",
+                    r.errors.length > 0 && "bg-brand-red-50/40",
+                  )}
+                >
+                  <td className="px-4 py-2.5 tabular text-grey-500">{r.rowNumber}</td>
+                  {primary.map((f) => (
+                    <td
+                      key={f.key}
+                      className="px-4 py-2.5 text-ink-900 truncate max-w-[220px]"
+                    >
+                      {r.mapped[f.key] || <span className="text-grey-300">—</span>}
+                    </td>
+                  ))}
+                  <td className="px-4 py-2.5">
+                    {r.errors.length > 0 ? (
+                      <span className="text-sm text-brand-red">{r.errors.join("; ")}</span>
+                    ) : r.warnings.length > 0 ? (
+                      <span className="text-sm text-[#8a6300]">{r.warnings.join("; ")}</span>
+                    ) : (
+                      <span className="text-sm text-grey-400">Ready</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {rows.length > PREVIEW_LIMIT && (
+        <p className="text-xs text-grey-400 mt-3">
+          Showing the first {PREVIEW_LIMIT} of {number(rows.length)} rows, problems first.
+          All {number(rows.length)} were checked.
+        </p>
+      )}
+    </>
   );
 }

@@ -266,7 +266,7 @@ export default function CustomerDetailPage() {
               />
               <CardBody className="pt-0">
                 <p className="text-base text-grey-600 leading-relaxed">
-                  {summariseCustomer(c.id)}
+                  {summariseCustomer(c)}
                 </p>
               </CardBody>
             </Card>

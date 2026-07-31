@@ -14,7 +14,6 @@ interface Point {
   month: string;
   label: string;
   revenue: number;
-  projected: boolean;
 }
 
 export default function ForecastReportPage() {
@@ -23,8 +22,8 @@ export default function ForecastReportPage() {
     queryFn: () => reportsRepo.forecast(6),
   });
 
-  const history = (data?.history ?? []) as Point[];
-  const projection = (data?.projection ?? []) as Point[];
+  const history: Point[] = data?.history ?? [];
+  const projection: Point[] = data?.projection ?? [];
 
   // One continuous series, with the projected half held in a second
   // key so the chart can render it distinctly.

@@ -410,7 +410,7 @@ export default function DashboardPage() {
             <CardBody>
               {recent.data?.items[0] ? (
                 <p className="text-base text-grey-600 leading-relaxed">
-                  {summariseReservation(recent.data.items[0].id)}
+                  {summariseReservation(recent.data.items[0])}
                 </p>
               ) : (
                 <p className="text-base text-grey-500">Nothing to brief on yet.</p>

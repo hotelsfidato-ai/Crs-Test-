@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+﻿import { useEffect, useMemo } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -6,16 +6,16 @@ import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useActor, useScope } from "@/lib/session";
-import { customersRepo, companiesRepo, db } from "@/data/repositories";
-import { isDuplicateEmail, isDuplicatePhone } from "@/lib/rules";
-import { GUEST_PREFERENCES } from "@/data/seed/names";
+import { customersRepo, companiesRepo } from "@/data/repositories";
+import { useDebounced } from "@/features/shared/useDebounced";
+import { GUEST_PREFERENCES } from "@/lib/vocabulary";
 import {
   Page, PageHeader, Card, CardBody, CardFooter, Button, Field, Input,
   Textarea, NativeSelect, Combobox, Checkbox, Skeleton, toast,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 
-/* Validation mirrors the business rules in lib/rules.ts — email and
+/* Validation mirrors the business rules in lib/rules.ts â€” email and
    phone must be unique across the platform. */
 
 const schema = z.object({
@@ -81,11 +81,11 @@ export default function CustomerFormPage() {
 
   const companyOptions = useMemo(
     () => [
-      { value: "", label: "No company — individual guest" },
+      { value: "", label: "No company â€” individual guest" },
       ...(companies.data ?? []).map((c) => ({
         value: c.id,
         label: c.name,
-        description: `${c.industry} · ${c.city}`,
+        description: `${c.industry} Â· ${c.city}`,
       })),
     ],
     [companies.data],
@@ -94,10 +94,25 @@ export default function CustomerFormPage() {
   const email = form.watch("email");
   const phone = form.watch("phone");
 
-  // Live duplicate warning, not a hard block — the merge screen is
-  // the proper place to resolve these.
-  const duplicateEmail = email && isDuplicateEmail(email, db.customers, id);
-  const duplicatePhone = phone && isDuplicatePhone(phone, db.customers, id);
+  /* Live duplicate warning, not a hard block — the merge screen is the
+     proper place to resolve these.
+
+     ⚠️ Phase 1 scanned the in-memory seed. Against Firestore that would
+     mean reading the whole customer book on every keystroke, so this is
+     an indexed equality lookup on the normalised fields — one read —
+     debounced so typing an address does not fire eleven of them. */
+  const debouncedEmail = useDebounced(email, 500);
+  const debouncedPhone = useDebounced(phone, 500);
+
+  const duplicates = useQuery({
+    queryKey: ["customer-duplicate", debouncedEmail, debouncedPhone, id],
+    queryFn: () => customersRepo.findDuplicate(debouncedEmail ?? "", debouncedPhone ?? "", id),
+    enabled: Boolean(debouncedEmail || debouncedPhone),
+    staleTime: 30_000,
+  });
+
+  const duplicateEmail = Boolean(duplicates.data?.byEmail);
+  const duplicatePhone = Boolean(duplicates.data?.byPhone);
 
   const save = useMutation({
     mutationFn: (values: FormValues) => {
@@ -213,7 +228,7 @@ export default function CustomerFormPage() {
                         value={field.value ?? ""}
                         onChange={field.onChange}
                         options={companyOptions}
-                        placeholder="Search companies…"
+                        placeholder="Search companiesâ€¦"
                       />
                     )}
                   />
@@ -300,7 +315,7 @@ export default function CustomerFormPage() {
               name="vip"
               render={({ field }) => (
                 <Checkbox
-                  label="Flag as VIP — the property is notified before arrival"
+                  label="Flag as VIP â€” the property is notified before arrival"
                   checked={field.value}
                   onCheckedChange={field.onChange}
                 />
@@ -353,3 +368,4 @@ function FormSkeleton() {
     </Page>
   );
 }
+

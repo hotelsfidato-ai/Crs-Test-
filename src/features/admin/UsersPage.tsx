@@ -1,17 +1,31 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Users, ShieldCheck } from "lucide-react";
-import { adminRepo, db } from "@/data/repositories";
-import { ROLE_LABELS, type Role } from "@/lib/permissions";
+import { adminRepo } from "@/data/repositories";
+import { useActor } from "@/lib/session";
+import { ASSIGNABLE_ROLES, ROLE_LABELS, type Role } from "@/lib/permissions";
 import { dateShort, relative, humanise } from "@/lib/format";
 import {
   Page, PageHeader, Button, FilterBar, DataTable, Pagination, EmptyState,
-  StatusPill, Card, Stat, Avatar, type Column,
+  StatusPill, Card, CardHeader, CardBody, Stat, Avatar, toast, type Column,
 } from "@/components/ui";
 import { useListState } from "@/features/shared/useListState";
-import type { User } from "@/data/types";
+import { InviteUserDialog } from "./InviteUserDialog";
+import type { User, UserStatus } from "@/data/types";
 
-const FILTER_KEYS = ["role", "isActive"];
+const FILTER_KEYS = ["role", "status"];
+
+const STATUS_TONE: Record<UserStatus, "success" | "warning" | "neutral"> = {
+  active: "success",
+  invited: "warning",
+  disabled: "neutral",
+};
+
+const STATUS_LABEL: Record<UserStatus, string> = {
+  active: "Active",
+  invited: "Invited",
+  disabled: "Disabled",
+};
 
 export default function UsersPage() {
   const list = useListState({
@@ -25,8 +39,15 @@ export default function UsersPage() {
     queryFn: () => adminRepo.users(list.query),
   });
 
-  const active = db.users.filter((u) => u.isActive);
-  const roleCount = new Set(db.users.map((u) => u.role)).size;
+  /* Counted server-side. Reading every user just to length-check them
+     costs a document read each, and this strip renders on every visit. */
+  const stats = useQuery({
+    queryKey: ["user-stats"],
+    queryFn: () => adminRepo.userStats(),
+  });
+
+  const byRole = stats.data?.byRole ?? {};
+  const rolesInUse = Object.values(byRole).filter((n) => n > 0).length;
 
   const columns: Column<User>[] = [
     {
@@ -44,7 +65,7 @@ export default function UsersPage() {
     {
       key: "role", header: "Role", sortable: true,
       cell: (u) => (
-        <StatusPill tone={u.role === "super_admin" ? "accent" : "neutral"} dot={false}>
+        <StatusPill tone={u.role === "owner" ? "accent" : "neutral"} dot={false}>
           {ROLE_LABELS[u.role as Role] ?? humanise(u.role)}
         </StatusPill>
       ),
@@ -70,10 +91,10 @@ export default function UsersPage() {
       cell: (u) => <span className="text-grey-500">{relative(u.lastSeenAt)}</span>,
     },
     {
-      key: "isActive", header: "Status", sortable: true,
+      key: "status", header: "Status", sortable: true,
       cell: (u) => (
-        <StatusPill tone={u.isActive ? "success" : "neutral"}>
-          {u.isActive ? "Active" : "Suspended"}
+        <StatusPill tone={STATUS_TONE[u.status] ?? "neutral"}>
+          {STATUS_LABEL[u.status] ?? humanise(u.status)}
         </StatusPill>
       ),
     },
@@ -89,32 +110,35 @@ export default function UsersPage() {
         title="Users"
         description="Everyone with access to the platform, and what each of them can do."
         actions={
-          <Button asChild variant="secondary" leadingIcon={<ShieldCheck className="size-4" />}>
-            <Link to="/admin/roles">Roles &amp; permissions</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="secondary" leadingIcon={<ShieldCheck className="size-4" />}>
+              <Link to="/admin/roles">Roles &amp; permissions</Link>
+            </Button>
+            <InviteUserDialog />
+          </div>
         }
       />
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="p-5">
-          <Stat label="Users" value={db.users.length} hint={`${active.length} active`} />
-        </Card>
-        <Card className="p-5">
-          <Stat label="Roles in use" value={roleCount} hint="Of 8 defined" />
-        </Card>
-        <Card className="p-5">
           <Stat
-            label="Property staff"
-            value={db.users.filter((u) => u.role === "hotel_manager").length}
+            label="Users"
+            value={stats.data?.total ?? 0}
+            hint={`${stats.data?.active ?? 0} active`}
           />
         </Card>
         <Card className="p-5">
           <Stat
-            label="Sales team"
-            value={
-              db.users.filter((u) => u.role === "salesperson" || u.role === "sales_manager").length
-            }
+            label="Roles in use"
+            value={rolesInUse}
+            hint={`Of ${ASSIGNABLE_ROLES.length} assignable`}
           />
+        </Card>
+        <Card className="p-5">
+          <Stat label="Sales team" value={byRole.salesperson ?? 0} />
+        </Card>
+        <Card className="p-5">
+          <Stat label="Finance" value={byRole.finance ?? 0} />
         </Card>
       </div>
 
@@ -125,17 +149,20 @@ export default function UsersPage() {
         filters={[
           {
             key: "role", label: "Role",
-            options: (Object.keys(ROLE_LABELS) as Role[]).map((r) => ({
+            // ⚠️ Assignable roles only. `automation` is the n8n service
+            // account and the two dormant roles grant nothing — offering
+            // them here would imply they can be handed to a person.
+            options: ASSIGNABLE_ROLES.map((r: Role) => ({
               value: r,
               label: ROLE_LABELS[r],
             })),
           },
           {
-            key: "isActive", label: "Status",
-            options: [
-              { value: "true", label: "Active" },
-              { value: "false", label: "Suspended" },
-            ],
+            key: "status", label: "Status",
+            options: (["active", "invited", "disabled"] as UserStatus[]).map((s) => ({
+              value: s,
+              label: STATUS_LABEL[s],
+            })),
           },
         ]}
         values={list.filters}
@@ -175,11 +202,81 @@ export default function UsersPage() {
         />
       )}
 
-      <p className="text-xs text-grey-400 mt-4">
-        There is no login in Phase 1 — use the role switcher in the top bar to view the
-        platform as any of these roles. Real accounts and sign-in arrive with Firebase
-        Auth in Phase 2.
+      <PendingInvitations />
+
+      <p className="text-xs text-grey-400 mt-4 leading-relaxed">
+        Inviting someone records the role they will get. They create their own account and
+        password at the sign-up screen using the invited address — no one, including an
+        administrator, ever handles someone else's password. Until they do, they have no
+        access at all.
       </p>
     </Page>
+  );
+}
+
+/* ── Pending invitations ───────────────────────────────────────────
+   Kept separate from the users table because an invitation is not a
+   user. Merging them into one list makes it look as though somebody
+   already has access when they do not.                              */
+
+function PendingInvitations() {
+  const actor = useActor();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["invitations"],
+    queryFn: () => adminRepo.invitations(),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (email: string) => adminRepo.revokeInvitation(email, actor),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invitations"] });
+      toast.success("Invitation withdrawn", "That address can no longer claim a role.");
+    },
+    onError: () => toast.error("Could not withdraw", "Nothing was changed."),
+  });
+
+  const invitations = data ?? [];
+  if (isLoading || invitations.length === 0) return null;
+
+  return (
+    <Card className="mt-8">
+      <CardHeader
+        title="Pending invitations"
+        description="Nobody here has access yet. Access begins when they complete sign-up."
+      />
+      <CardBody className="pt-0 space-y-2">
+        {invitations.map((invite) => (
+          <div
+            key={invite.id}
+            className="flex items-center justify-between gap-4 py-2.5 border-b border-grey-100 last:border-b-0"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <Avatar name={invite.name || invite.email} color="#ccd0d4" size="md" />
+              <div className="min-w-0">
+                <p className="font-medium text-ink-900 truncate">
+                  {invite.name || invite.email}
+                </p>
+                <p className="text-sm text-grey-500 truncate">
+                  {invite.email} · invited by {invite.invitedByName}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <StatusPill tone="warning">{ROLE_LABELS[invite.role]}</StatusPill>
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={revoke.isPending && revoke.variables === invite.email}
+                onClick={() => revoke.mutate(invite.email)}
+              >
+                Withdraw
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardBody>
+    </Card>
   );
 }

@@ -1,4 +1,5 @@
 import type { Role } from "@/lib/permissions";
+import type { GstVersion } from "@/lib/tax";
 
 /* ══════════════════════════════════════════════════════════════════
    DOMAIN TYPES
@@ -50,13 +51,18 @@ export interface Hotel extends Auditable {
   shortName: string;
   city: string;
   state: string;
+  country: string;
   address: string;
+  /** Primary contact, promoted out of contacts[] for the list screens. */
+  contactPerson: string;
+  email: string;
+  phone: string;
   category: HotelCategory;
   status: HotelStatus;
   starRating: number;
   totalRooms: number;
   description: string;
-  /** Free-text room mix from the fact sheet, e.g. "Deluxe Room - 115 Rooms". */
+  /** Free-text room mix as the property describes it, e.g. "Deluxe Room - 115 Rooms". */
   roomMix: string[];
   features: string[];
   facilities: string[];
@@ -64,10 +70,31 @@ export interface Hotel extends Auditable {
   thingsToDo: string[];
   distances: HotelDistance[];
   contacts: HotelContact[];
-  /** Managing user id — hotel managers are pinned to their property. */
+  /** Managing user id — dormant while hotel_manager has no grants. */
   managerId?: string;
-  commissionPercent: number;
   onboardedAt: IsoDate;
+
+  /* ⚠️ commissionPercent deliberately absent. Firestore rules are
+     document-level, so a field on a readable document is readable by
+     everyone who can read it. Commission lives in the subcollection
+     below, guarded by its own rule. */
+}
+
+/**
+ * `hotels/{hotelId}/private/commercial` — a single document.
+ *
+ * ⚠️ Owner and Admin only. This is the ONLY place commission may live.
+ * Putting it on the hotel document would expose it to every role via
+ * the SDK or the REST API regardless of what the interface renders.
+ */
+export interface HotelCommercial {
+  hotelId: string;
+  commissionPercent: number;
+  contractNotes: string;
+  negotiatedBy: string;
+  effectiveFrom: IsoDate;
+  updatedAt: IsoDateTime;
+  updatedBy: string;
 }
 
 /* ── roomTypes ─────────────────────────────────────────────────── */
@@ -81,29 +108,41 @@ export interface RoomType extends Auditable {
   description: string;
   totalRooms: number;
   maxOccupancy: number;
-  baseRate: number;
-  extraAdultRate: number;
+  /** Caps the extra-bed input in the reservation wizard. */
+  maxExtraBeds: number;
   amenities: string[];
   sizeSqft: number;
+
+  /* ⚠️ No pricing. Selling rates are entered per reservation by the
+     salesperson — see ReservationRoom. */
 }
 
-/* ── ratePlans ─────────────────────────────────────────────────── */
+/* ── seasons (replaces ratePlans) ──────────────────────────────── */
 
-export type MealPlan = "EP" | "CP" | "MAP" | "AP";
+export type MealPlan = "EP" | "AP" | "MAP" | "ALL_INCLUSIVE";
 
-export interface RatePlan extends Auditable {
+export const MEAL_PLAN_LABELS: Record<MealPlan, string> = {
+  EP: "Room only",
+  AP: "All meals",
+  MAP: "Breakfast and one meal",
+  ALL_INCLUSIVE: "All inclusive",
+};
+
+/**
+ * A date window with its own meal-plan combinations and policy.
+ *
+ * Carries no money — that moved to the reservation. A season defines
+ * *applicability*, not price.
+ */
+export interface Season extends Auditable {
   id: string;
   hotelId: string;
   hotelName: string;
-  roomTypeId: string;
-  roomTypeName: string;
   name: string;
-  code: string;
-  mealPlan: MealPlan;
-  rate: number;
-  /** Season window this plan applies to. */
   validFrom: IsoDate;
   validTo: IsoDate;
+  /** Which of the four meal plans apply in this window. */
+  mealPlans: MealPlan[];
   minNights: number;
   cancellationPolicy: string;
   isActive: boolean;
@@ -196,6 +235,12 @@ export interface Customer extends Auditable {
   lastStayAt?: IsoDateTime;
   lastActivityAt: IsoDateTime;
   notes: string;
+  /**
+   * Set when this record was folded into another during a merge.
+   * The row is kept, not deleted — an absorbed record still has to be
+   * findable when someone asks why a reservation moved.
+   */
+  mergedIntoId?: string;
 }
 
 /* ── reservations ──────────────────────────────────────────────── */
@@ -217,16 +262,34 @@ export type BookingChannel =
   | "phone"
   | "walk_in";
 
+/** How the booking is settled. Distinct from PaymentMethod, which is
+    how money physically arrived against an invoice. */
+export type PaymentTerm = "DP" | "RA" | "BTC";
+
+export const PAYMENT_TERM_LABELS: Record<PaymentTerm, string> = {
+  DP: "Direct payment",
+  RA: "Room advance",
+  BTC: "Bill to company",
+};
+
 export interface ReservationRoom {
   roomTypeId: string;
   roomTypeName: string;
-  ratePlanId: string;
-  ratePlanName: string;
   mealPlan: MealPlan;
+  /** Resolved from the check-in date. Absent when no season matches. */
+  seasonId?: string;
+  seasonName?: string;
   quantity: number;
-  ratePerNight: number;
   adults: number;
   children: number;
+  /** ⚠️ Per line, not per room. Label this clearly in the UI. */
+  extraBeds: number;
+
+  /* Entered by the salesperson at booking time and frozen thereafter.
+     A later rate change never alters an existing folio. */
+  sellingRate: number;
+  extraBedRate: number;
+  childRate: number;
 }
 
 export interface ReservationGuest {
@@ -284,6 +347,27 @@ export interface Reservation extends Auditable {
   specialRequests: string;
   internalNotes: string;
   invoiceId?: string;
+
+  /* ── Commercial terms ── */
+  paymentTerm: PaymentTerm;
+
+  /* ── Hotel confirmation, recorded after the property confirms ── */
+  hotelConfirmationNumber?: string;
+  hotelRepName?: string;
+  confirmedAt?: IsoDateTime;
+
+  /* ── Tax provenance ──
+     Which band table produced taxAmount. Historical folios are never
+     recomputed, so this is how an old figure stays explainable. */
+  gstVersion: GstVersion;
+  /** Effective blended rate, for display. Tax is computed per line. */
+  gstRate: number;
+
+  /* ── Phase 2.5 write-back. Written by n8n, never by the app. ──
+     voucherUrl doubles as the idempotency check: a retry must not
+     send a second voucher. */
+  voucherUrl?: string;
+  voucherSentAt?: IsoDateTime;
 }
 
 /* ── invoices & payments ───────────────────────────────────────── */
@@ -319,6 +403,14 @@ export interface Invoice extends Auditable {
   amountPaid: number;
   amountDue: number;
   notes: string;
+
+  /** Which band table produced taxAmount. */
+  gstVersion: GstVersion;
+  createdFrom: "reservation" | "manual";
+
+  /* Phase 2.5 write-back. */
+  invoicePdfUrl?: string;
+  invoiceSentAt?: IsoDateTime;
 }
 
 export type PaymentMethod = "bank_transfer" | "upi" | "card" | "cash" | "cheque";
@@ -356,22 +448,63 @@ export interface Commission extends Auditable {
 
 /* ── users ─────────────────────────────────────────────────────── */
 
+export type UserStatus = "invited" | "active" | "disabled";
+
 export interface User extends Auditable {
+  /** Equals the Firebase Auth uid once the invitation is claimed. */
   id: string;
+  /** Absent until claimed. Its presence is what makes a record live. */
+  authUid?: string;
   name: string;
+  /** The invitation key. Immutable after claiming. */
   email: string;
   phone: string;
+
+  /* ⚠️ The two most dangerous fields in the system. A user able to
+     write either can promote themselves to Owner. Security rules must
+     forbid self-modification — see docs/phase-2/04. */
   role: Role;
-  /** Hotel managers are pinned to one property. */
+  status: UserStatus;
+
+  branch: string;
+  department: string;
+  /** Dormant, retained for the hotel_manager role. */
   hotelId?: string;
   hotelName?: string;
-  department: string;
-  isActive: boolean;
+  invitedAt?: IsoDateTime;
   lastSeenAt: IsoDateTime;
   avatarColor: string;
 }
 
 /* ── auditLogs ─────────────────────────────────────────────────── */
+
+/**
+ * A pending invitation.
+ *
+ * ⚠️ A separate collection, keyed by the lower-cased email — NOT a
+ * `users` row with status "invited". The security rules find the
+ * caller's profile at `users/{authUid}`, which only exists once the
+ * person has signed up. An invitation has no uid yet, so it cannot
+ * live there without making the role lookup a query, and rules cannot
+ * query.
+ *
+ * The deterministic id is also what lets a rule check "this signed-in
+ * account is claiming the invitation addressed to its own email".
+ */
+export interface Invitation {
+  /** The document id: the invited email, lower-cased. */
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  department: string;
+  branch: string;
+  hotelId?: string;
+  hotelName?: string;
+  invitedAt: IsoDateTime;
+  invitedBy: string;
+  invitedByName: string;
+}
 
 export type AuditAction =
   | "created"
@@ -513,6 +646,97 @@ export interface OrgSettings {
   financialYearStart: string;
   approvalThreshold: number;
   defaultCommissionPercent: number;
+}
+
+/* ── automationQueue ───────────────────────────────────────────────
+   Business events are written here and NOT processed. Phase 2.5 has
+   n8n poll this collection. Written in the same transaction as the
+   entity, so an event can never describe a document that does not
+   exist.                                                            */
+
+export type AutomationEventType =
+  | "reservation.created"
+  | "reservation.confirmed"
+  | "reservation.approved"
+  | "reservation.cancelled"
+  | "reservation.checked_in"
+  | "reservation.checked_out"
+  | "invoice.created"
+  | "payment.recorded"
+  | "customer.created"
+  | "company.created"
+  | "hotel.created"
+  | "user.invited";
+
+export type AutomationEventStatus = "pending" | "processing" | "done" | "failed";
+
+export interface AutomationEvent {
+  id: string;
+  type: AutomationEventType;
+  entityType: "reservation" | "invoice" | "payment" | "customer" | "company" | "hotel" | "user";
+  entityId: string;
+  /** Denormalised so the queue viewer renders without extra reads. */
+  entityLabel: string;
+  /** ⚠️ Minimal — ids, not copies. n8n re-reads the document. */
+  payload: Record<string, unknown>;
+
+  status: AutomationEventStatus;
+  attempts: number;
+  lastError?: string;
+
+  /* Lease fields. Firestore has no atomic claim over REST, so a worker
+     takes a lease and an expired lease is reclaimable. */
+  lockedBy?: string;
+  lockedAt?: IsoDateTime;
+  leaseExpiresAt?: IsoDateTime;
+
+  createdAt: IsoDateTime;
+  createdBy: string;
+  processedAt?: IsoDateTime;
+}
+
+/* ── Resumable jobs ────────────────────────────────────────────────
+   Merge and import can exceed a single write batch, and the tab can
+   close mid-run. Both are therefore jobs with a visible phase and a
+   cursor, not fire-and-forget operations.                           */
+
+export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
+
+export interface MergeJob {
+  id: string;
+  survivorId: string;
+  absorbedIds: string[];
+  status: JobStatus;
+  phase: "repointing_reservations" | "repointing_invoices" | "patching_survivor" | "removing_absorbed" | "done";
+  cursor?: string;
+  processed: number;
+  total: number;
+  error?: string;
+  startedAt: IsoDateTime;
+  actorId: string;
+}
+
+export type ImportEntity = "customers" | "companies" | "hotels";
+
+export interface ImportIssue {
+  row: number;
+  field?: string;
+  message: string;
+  severity: "error" | "warning";
+}
+
+export interface ImportJob {
+  id: string;
+  entity: ImportEntity;
+  fileName: string;
+  status: JobStatus;
+  cursor: number;
+  total: number;
+  created: number;
+  skipped: number;
+  issues: ImportIssue[];
+  startedAt: IsoDateTime;
+  actorId: string;
 }
 
 /* ── Query helpers (Firestore-shaped) ──────────────────────────── */

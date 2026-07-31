@@ -6,38 +6,67 @@
    ══════════════════════════════════════════════════════════════════ */
 
 export const ROLES = [
-  "super_admin",
+  "owner",
   "admin",
-  "sales_manager",
+  "manager",
   "salesperson",
-  "hotel_manager",
   "finance",
-  "support",
   "viewer",
+  /* Dormant — defined with no grants. See DORMANT_ROLES below. */
+  "hotel_manager",
+  "support",
+  /* System — the n8n service account. Never assigned to a person. */
+  "automation",
 ] as const;
 
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Retained with **no grants**. `canAccess` denies by default, so an
+ * empty grant map is genuinely closed — a dormant role reaches nothing.
+ *
+ * Kept because the row-level scoping they drive is built and tested,
+ * and property staff seeing their own arrivals is a plausible return
+ * once a live inventory feed exists. Re-enable by restoring grants;
+ * no other code changes.
+ */
+export const DORMANT_ROLES: Role[] = ["hotel_manager", "support"];
+
+/** Non-human roles. Never offered in a picker. */
+export const SYSTEM_ROLES: Role[] = ["automation"];
+
+/**
+ * The only roles that may be assigned to a person.
+ *
+ * ⚠️ If `automation` ever becomes selectable, someone can grant a person
+ * the n8n service account's write access to automationQueue.
+ */
+export const ASSIGNABLE_ROLES: Role[] = ROLES.filter(
+  (r) => !DORMANT_ROLES.includes(r) && !SYSTEM_ROLES.includes(r),
+);
+
 export const ROLE_LABELS: Record<Role, string> = {
-  super_admin: "Super Admin",
+  owner: "Owner",
   admin: "Admin",
-  sales_manager: "Sales Manager",
+  manager: "Manager",
   salesperson: "Salesperson",
-  hotel_manager: "Hotel Manager",
   finance: "Finance",
-  support: "Support",
   viewer: "Viewer",
+  hotel_manager: "Hotel Manager",
+  support: "Support",
+  automation: "Automation",
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  super_admin: "Unrestricted. Owns roles, integrations and system settings.",
-  admin: "Runs the platform day to day. No control over roles or billing.",
-  sales_manager: "Sees the whole sales org, approves high-value bookings.",
+  owner: "Unrestricted. Sole authority over roles, commission and settings.",
+  admin: "Runs the platform day to day. Cannot assign roles.",
+  manager: "Sales leadership. Approves high-value bookings and sees invoices.",
   salesperson: "Own accounts only. Creates customers and reservations.",
-  hotel_manager: "One property. Inventory and arrivals, never pricing.",
   finance: "Invoices, payments, commissions and financial reporting.",
-  support: "Read-heavy. Can annotate records but not alter commercials.",
   viewer: "Read-only across the platform. No write access anywhere.",
+  hotel_manager: "Dormant. One property, arrivals and inventory, never pricing.",
+  support: "Dormant. Read-heavy, annotates records without altering commercials.",
+  automation: "Service account for n8n. Not a person.",
 };
 
 /* ── Resources & actions ───────────────────────────────────────── */
@@ -50,6 +79,13 @@ export const RESOURCES = [
   "reservation_approval",
   "hotel",
   "inventory",
+  /* Room types, meal plans and seasons. Carries no pricing — selling
+     rates are entered per reservation. */
+  "room_config",
+  /* ⚠️ Commission lives in hotels/{id}/private/commercial, not on the
+     hotel document. Firestore rules are document-level, so a field on a
+     readable document is readable by everyone who can read it. */
+  "commission_terms",
   "rate",
   "invoice",
   "payment",
@@ -91,6 +127,8 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   reservation_approval: "Approvals",
   hotel: "Properties",
   inventory: "Inventory",
+  room_config: "Room configuration",
+  commission_terms: "Commission terms",
   rate: "Rate plans",
   invoice: "Invoices",
   payment: "Payments",
@@ -123,10 +161,20 @@ const ALL: readonly Action[] = ACTIONS;
 const READ: readonly Action[] = ["view"];
 const READ_EXPORT: readonly Action[] = ["view", "export"];
 
-/* ── The matrix ────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   THE MATRIX
+
+   Six assignable roles, two dormant, one system account.
+
+   ⚠️ Two cells decide the sensitive requirements:
+     · commission_terms — Owner and Admin only. Finance is deliberately
+       excluded: commission is a negotiated commercial term, not an
+       accounting figure.
+     · role — Owner alone. Without this an admin can promote themselves.
+   ══════════════════════════════════════════════════════════════════ */
 
 const MATRIX: Record<Role, ResourceGrants> = {
-  super_admin: Object.fromEntries(RESOURCES.map((r) => [r, ALL])) as ResourceGrants,
+  owner: Object.fromEntries(RESOURCES.map((r) => [r, ALL])) as ResourceGrants,
 
   admin: {
     dashboard: READ,
@@ -134,34 +182,31 @@ const MATRIX: Record<Role, ResourceGrants> = {
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export"],
     reservation_approval: ["view", "approve"],
-    hotel: ["view", "create", "edit", "export"],
-    inventory: ["view", "edit"],
-    rate: ["view", "create", "edit"],
+    hotel: ["view", "create", "edit", "import", "export"],
+    room_config: ["view", "create", "edit"],
+    commission_terms: ["view", "edit"],
     invoice: ["view", "create", "edit", "export"],
     payment: ["view", "create", "edit", "export"],
     commission: READ_EXPORT,
     report: READ_EXPORT,
-    automation: ["view", "create", "edit"],
+    automation: ["view", "edit"],
     notification: ["view", "create", "edit"],
     ai: READ,
     user: ["view", "create", "edit"],
     audit_log: READ_EXPORT,
-    setting: ["view", "edit"],
+    setting: READ,
   },
 
-  sales_manager: {
+  manager: {
     dashboard: READ,
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export"],
     reservation_approval: ["view", "approve"],
     hotel: READ_EXPORT,
-    inventory: READ,
-    rate: READ,
-    invoice: READ_EXPORT,
-    commission: READ_EXPORT,
+    room_config: READ,
+    invoice: ["view", "create", "export"],
     report: READ_EXPORT,
-    automation: READ,
     notification: READ,
     ai: READ,
     user: READ,
@@ -170,27 +215,12 @@ const MATRIX: Record<Role, ResourceGrants> = {
 
   salesperson: {
     dashboard: READ,
-    // Scoped further by ownership — see scope() below.
+    // Scoped further by ownership — see scopeRecords().
     customer: ["view", "create", "edit", "export"],
     company: ["view", "create", "edit", "export"],
     reservation: ["view", "create", "edit", "cancel", "export"],
     hotel: READ,
-    inventory: READ,
-    rate: READ,
-    invoice: READ,
-    commission: READ,
-    report: READ,
-    notification: READ,
-    ai: READ,
-  },
-
-  hotel_manager: {
-    dashboard: READ,
-    reservation: ["view", "export"],
-    // One property only — scoped by hotelId. Pricing is deliberately absent.
-    hotel: ["view", "edit"],
-    inventory: ["view", "edit"],
-    rate: READ,
+    room_config: READ,
     report: READ,
     notification: READ,
     ai: READ,
@@ -202,6 +232,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
     company: READ,
     reservation: READ_EXPORT,
     hotel: READ,
+    // Invoices and payments, but NOT commission_terms. Deliberate.
     invoice: ["view", "create", "edit", "approve", "export"],
     payment: ["view", "create", "edit", "export"],
     commission: ["view", "edit", "approve", "export"],
@@ -211,32 +242,28 @@ const MATRIX: Record<Role, ResourceGrants> = {
     audit_log: READ,
   },
 
-  support: {
-    dashboard: READ,
-    customer: ["view", "edit"],
-    company: READ,
-    reservation: ["view", "edit"],
-    hotel: READ,
-    inventory: READ,
-    invoice: READ,
-    report: READ,
-    notification: ["view", "create"],
-    ai: READ,
-  },
-
   viewer: {
     dashboard: READ,
     customer: READ,
     company: READ,
     reservation: READ,
     hotel: READ,
-    inventory: READ,
-    rate: READ,
-    invoice: READ,
+    room_config: READ,
     report: READ,
     notification: READ,
   },
+
+  /* ── Dormant. Empty maps are genuinely closed. ── */
+  hotel_manager: {},
+  support: {},
+
+  /* ── System. n8n only touches the queue and its write-back fields. ── */
+  automation: {
+    automation: ["view", "edit"],
+    notification: ["view", "create"],
+  },
 };
+
 
 /* ── Public API ────────────────────────────────────────────────── */
 
@@ -280,7 +307,7 @@ export interface ScopeContext {
   hotelId?: string;
 }
 
-/** Restricts a list to what the current actor is allowed to see. */
+/** Restricts an in-memory list to what the current actor may see. */
 export function scopeRecords<T extends { ownerId?: string; hotelId?: string }>(
   ctx: ScopeContext,
   records: T[],
@@ -292,4 +319,35 @@ export function scopeRecords<T extends { ownerId?: string; hotelId?: string }>(
     return records.filter((r) => !r.hotelId || r.hotelId === ctx.hotelId);
   }
   return records;
+}
+
+export interface ScopeConstraint {
+  field: "ownerId" | "hotelId";
+  value: string;
+}
+
+/**
+ * The same scoping expressed as Firestore query constraints.
+ *
+ * ⚠️ This is not an optimisation — it is required. Firestore security
+ * rules filter documents one at a time; a query that *could* return a
+ * document the rules would reject fails entirely rather than returning
+ * a subset. So the query must narrow to what the rules allow, and the
+ * two must agree exactly.
+ *
+ * ⚠️ Note this is stricter than `scopeRecords`, which also admits
+ * records with no owner. An equality query cannot express "mine or
+ * unowned", so unowned records are invisible to a salesperson in a
+ * list. They remain reachable by direct id, which the rules permit.
+ * If unassigned leads must appear in lists, give them a sentinel
+ * ownerId rather than leaving the field absent.
+ */
+export function scopeConstraints(ctx: ScopeContext): ScopeConstraint[] {
+  if (ctx.role === "salesperson") {
+    return [{ field: "ownerId", value: ctx.userId }];
+  }
+  if (ctx.role === "hotel_manager" && ctx.hotelId) {
+    return [{ field: "hotelId", value: ctx.hotelId }];
+  }
+  return [];
 }

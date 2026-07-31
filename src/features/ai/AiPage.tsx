@@ -4,6 +4,7 @@ import { Sparkles, Send, RotateCcw, Info, FileText, Mail } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useCurrentUser } from "@/lib/session";
 import { answerFor, SUGGESTED_PROMPTS, type ChatTurn } from "./responses";
+import { useAssistantSnapshot } from "./useSnapshot";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, Textarea,
   StatusPill, toast,
@@ -34,6 +35,7 @@ const GENERATORS = [
 
 export default function AiPage() {
   const user = useCurrentUser();
+  const { snapshot } = useAssistantSnapshot();
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -54,7 +56,7 @@ export default function AiPage() {
     // A brief pause so the exchange reads as a conversation rather
     // than an instant lookup.
     window.setTimeout(() => {
-      setTurns((prev) => [...prev, answerFor(trimmed)]);
+      setTurns((prev) => [...prev, answerFor(trimmed, snapshot)]);
       setThinking(false);
     }, 420);
   }

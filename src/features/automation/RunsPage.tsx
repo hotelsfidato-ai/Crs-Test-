@@ -1,22 +1,35 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { History } from "lucide-react";
-import { automationRepo, db } from "@/data/repositories";
-import { number, percent, dateTime, humanise } from "@/lib/format";
+import { automationRepo } from "@/data/repositories";
+import { number, dateTime, relative, humanise } from "@/lib/format";
 import {
   Page, PageHeader, FilterBar, DataTable, Pagination, EmptyState,
   StatusPill, Card, Stat, type Column,
 } from "@/components/ui";
 import { useListState } from "@/features/shared/useListState";
-import type { AutomationRun } from "@/data/types";
+import type { AutomationEvent, AutomationEventStatus } from "@/data/types";
 
-const FILTER_KEYS = ["status", "trigger"];
+/* ══════════════════════════════════════════════════════════════════
+   THE AUTOMATION QUEUE
 
-const RUN_TONES = {
-  success: "success",
+   Phase 1 showed n8n *runs*, invented. Phase 2 shows the real thing:
+   the events this application writes and does not process.
+
+   ⚠️ The distinction matters operationally. A row sitting at "pending"
+   means the app did its job and n8n has not collected it yet — that is
+   an n8n problem, not a Fidato one, and the screen has to make that
+   readable at a glance or every stall gets escalated to the wrong team.
+   ══════════════════════════════════════════════════════════════════ */
+
+const FILTER_KEYS = ["status", "type"];
+
+const EVENT_TONES: Record<AutomationEventStatus, "success" | "danger" | "info" | "warning"> = {
+  done: "success",
   failed: "danger",
-  running: "info",
-} as const;
+  processing: "info",
+  pending: "warning",
+};
 
 export default function RunsPage() {
   const navigate = useNavigate();
@@ -27,60 +40,61 @@ export default function RunsPage() {
   });
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["automation-runs", list.query],
-    queryFn: () => automationRepo.runs(list.query),
+    queryKey: ["automation-queue", list.query],
+    queryFn: () => automationRepo.queue(list.query),
   });
 
-  const all = db.automationRuns;
-  const failed = all.filter((r) => r.status === "failed");
-  const successRate = all.length ? ((all.length - failed.length) / all.length) * 100 : 100;
-  const avgDuration = all.length
-    ? all.reduce((s, r) => s + r.durationMs, 0) / all.length / 1000
-    : 0;
+  const stats = useQuery({
+    queryKey: ["automation-stats"],
+    queryFn: () => automationRepo.queueStats(),
+  });
 
-  const columns: Column<AutomationRun>[] = [
+
+
+  const columns: Column<AutomationEvent>[] = [
     {
-      key: "status", header: "Result", sortable: true,
-      cell: (r) => (
-        <StatusPill tone={RUN_TONES[r.status] ?? "neutral"}>{humanise(r.status)}</StatusPill>
+      key: "status", header: "State", sortable: true,
+      cell: (e) => (
+        <StatusPill tone={EVENT_TONES[e.status] ?? "neutral"}>{humanise(e.status)}</StatusPill>
       ),
     },
     {
-      key: "workflowName", header: "Workflow", sortable: true,
-      cell: (r) => <span className="font-medium text-ink-900">{r.workflowName}</span>,
+      key: "type", header: "Event", sortable: true,
+      cell: (e) => <span className="font-medium text-ink-900">{humanise(e.type)}</span>,
     },
     {
       key: "entityLabel", header: "Record",
-      cell: (r) => (
+      cell: (e) => (
         <div className="min-w-0">
-          <p className="text-ink-900 truncate">{r.entityLabel}</p>
-          <p className="text-sm text-grey-500">{humanise(r.trigger)}</p>
+          <p className="text-ink-900 truncate">{e.entityLabel}</p>
+          <p className="text-sm text-grey-500">{humanise(e.entityType)}</p>
         </div>
       ),
     },
     {
-      key: "startedAt", header: "Started", sortable: true, hideBelow: "md",
-      cell: (r) => <span className="tabular text-grey-600">{dateTime(r.startedAt)}</span>,
+      key: "createdAt", header: "Queued", sortable: true, hideBelow: "md",
+      cell: (e) => <span className="tabular text-grey-600">{dateTime(e.createdAt)}</span>,
     },
     {
-      key: "durationMs", header: "Duration", numeric: true, sortable: true, hideBelow: "lg",
-      cell: (r) => <span className="tabular">{(r.durationMs / 1000).toFixed(1)}s</span>,
-    },
-    {
-      key: "steps", header: "Steps", numeric: true, hideBelow: "xl",
-      cell: (r) => (
-        <span className="tabular text-grey-600">
-          {r.stepsCompleted}/{r.stepsTotal}
-        </span>
-      ),
-    },
-    {
-      key: "error", header: "Detail",
-      cell: (r) =>
-        r.error ? (
-          <span className="text-sm text-brand-red">{r.error}</span>
+      key: "processedAt", header: "Collected", sortable: true, hideBelow: "lg",
+      cell: (e) =>
+        e.processedAt ? (
+          <span className="tabular text-grey-600">{relative(e.processedAt)}</span>
         ) : (
-          <span className="text-sm text-grey-400">Completed</span>
+          <span className="text-sm text-grey-400">Waiting for n8n</span>
+        ),
+    },
+    {
+      key: "attempts", header: "Tries", numeric: true, hideBelow: "xl",
+      cell: (e) => <span className="tabular text-grey-600">{e.attempts}</span>,
+    },
+    {
+      key: "lastError", header: "Detail",
+      cell: (e) =>
+        e.lastError ? (
+          <span className="text-sm text-brand-red">{e.lastError}</span>
+        ) : (
+          <span className="text-sm text-grey-400">—</span>
         ),
     },
   ];
@@ -88,38 +102,36 @@ export default function RunsPage() {
   return (
     <Page>
       <PageHeader
-        breadcrumbs={[{ label: "Automation", to: "/automation" }, { label: "Run history" }]}
-        title="Run history"
-        description="Every automation execution, newest first. Failures show the reason and how far the workflow got."
+        breadcrumbs={[{ label: "Automation", to: "/automation" }, { label: "Event queue" }]}
+        title="Event queue"
+        description="Every business event this platform has published, newest first. Fidato writes them; n8n collects and acts on them."
       />
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="p-5">
-          <Stat label="Runs" value={number(all.length)} />
+          <Stat label="Events" value={number(stats.data?.total ?? 0)} />
         </Card>
         <Card className="p-5">
-          <Stat label="Success rate" value={percent(successRate)} />
+          <Stat label="Processed" value={number(stats.data?.done ?? 0)} />
         </Card>
         <Card className="p-5">
-          <Stat label="Failures" value={failed.length} />
+          <Stat label="Pending" value={stats.data?.pending ?? 0} hint="Awaiting n8n" />
         </Card>
         <Card className="p-5">
-          <Stat label="Average duration" value={`${avgDuration.toFixed(1)}s`} />
+          <Stat label="Failed" value={stats.data?.failed ?? 0} />
         </Card>
       </div>
 
       <FilterBar
         search={list.search}
         onSearchChange={list.setSearch}
-        searchPlaceholder="Search workflow or record…"
+        searchPlaceholder="Search event or record…"
         filters={[
           {
-            key: "status", label: "Result",
-            options: [
-              { value: "success", label: "Success" },
-              { value: "failed", label: "Failed" },
-              { value: "running", label: "Running" },
-            ],
+            key: "status", label: "State",
+            options: (["pending", "processing", "done", "failed"] as AutomationEventStatus[]).map(
+              (s) => ({ value: s, label: humanise(s) }),
+            ),
           },
         ]}
         values={list.filters}
@@ -134,7 +146,7 @@ export default function RunsPage() {
         loading={isLoading}
         error={error}
         onRetry={refetch}
-        onRowClick={(r) => navigate(`/automation/${r.workflowId}`)}
+        onRowClick={(e) => navigate(entityLink(e))}
         sortBy={list.sortBy}
         sortDir={list.sortDir}
         onSort={list.toggleSort}
@@ -144,8 +156,8 @@ export default function RunsPage() {
           <EmptyState
             compact
             icon={<History />}
-            title="No runs recorded"
-            description="Automation runs will appear here once workflows start firing."
+            title="No events queued"
+            description="Events appear here the moment a reservation, invoice or customer is created. An empty queue on a busy day means writes are not reaching Firestore."
           />
         }
       />
@@ -161,4 +173,16 @@ export default function RunsPage() {
       )}
     </Page>
   );
+}
+
+/** Takes you to the record the event is about, not to a run log. */
+function entityLink(event: AutomationEvent): string {
+  switch (event.entityType) {
+    case "reservation": return `/reservations/${event.entityId}`;
+    case "invoice": return `/invoices/${event.entityId}`;
+    case "customer": return `/crm/customers/${event.entityId}`;
+    case "company": return `/crm/companies/${event.entityId}`;
+    case "hotel": return `/hotels/${event.entityId}`;
+    default: return "/automation/runs";
+  }
 }

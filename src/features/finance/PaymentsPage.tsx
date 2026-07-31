@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet } from "lucide-react";
-import { financeRepo, db } from "@/data/repositories";
+import { financeRepo } from "@/data/repositories";
 import { money, dateTime, humanise } from "@/lib/format";
 import {
   Page, PageHeader, FilterBar, DataTable, Pagination, EmptyState,
@@ -25,9 +25,10 @@ export default function PaymentsPage() {
     queryFn: () => financeRepo.payments(list.query),
   });
 
-  const total = db.payments.reduce((s, p) => s + p.amount, 0);
-  const unreconciled = db.payments.filter((p) => !p.reconciled);
-  const unreconciledValue = unreconciled.reduce((s, p) => s + p.amount, 0);
+  const totals = useQuery({
+    queryKey: ["payment-totals"],
+    queryFn: () => financeRepo.paymentTotals(),
+  });
 
   const columns: Column<Payment>[] = [
     {
@@ -75,19 +76,27 @@ export default function PaymentsPage() {
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 mb-6">
         <Card className="p-5">
-          <Stat label="Received" value={money(total)} hint={`${db.payments.length} payments`} />
+          <Stat
+            label="Received"
+            value={money(totals.data?.received ?? 0)}
+            hint={`${totals.data?.count ?? 0} payments`}
+          />
         </Card>
         <Card className="p-5">
           <Stat
             label="Unreconciled"
-            value={money(unreconciledValue)}
-            hint={`${unreconciled.length} to match`}
+            value={money(totals.data?.unreconciledValue ?? 0)}
+            hint={`${totals.data?.unreconciledCount ?? 0} to match`}
           />
         </Card>
         <Card className="p-5">
           <Stat
             label="Average receipt"
-            value={db.payments.length ? money(Math.round(total / db.payments.length)) : "—"}
+            value={
+              totals.data?.count
+                ? money(Math.round(totals.data.received / totals.data.count))
+                : "—"
+            }
           />
         </Card>
       </div>

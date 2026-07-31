@@ -6,7 +6,8 @@ import {
   ACTION_LABELS, can, type Role, type Action, type Resource,
 } from "@/lib/permissions";
 import { BUSINESS_RULES } from "@/lib/rules";
-import { db } from "@/data/repositories";
+import { useQuery } from "@tanstack/react-query";
+import { adminRepo } from "@/data/repositories";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, StatusPill, Tooltip,
 } from "@/components/ui";
@@ -25,6 +26,7 @@ const ACTIONS = Object.keys(ACTION_LABELS) as Action[];
 
 export default function RolesPage() {
   const currentRole = useSession((s) => s.role);
+  const stats = useQuery({ queryKey: ["user-stats"], queryFn: () => adminRepo.userStats() });
 
   return (
     <Page>
@@ -36,7 +38,7 @@ export default function RolesPage() {
       {/* ── Role cards ── */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-8">
         {ROLES.map((role) => {
-          const count = db.users.filter((u) => u.role === role).length;
+          const count = stats.data?.byRole[role] ?? 0;
           const grants = RESOURCES.reduce(
             (sum, resource) => sum + ACTIONS.filter((a) => can(role, a, resource)).length,
             0,

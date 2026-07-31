@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Mail, MessageSquare, Smartphone, Monitor, Code2 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { notificationsRepo, db } from "@/data/repositories";
+import { notificationsRepo } from "@/data/repositories";
 import { humanise } from "@/lib/format";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, StatusPill, Skeleton,
@@ -156,7 +156,6 @@ function TemplateCard({
   template: NotificationTemplate;
   mode: Mode;
 }) {
-  const workflow = db.automationWorkflows.find((w) => w.trigger === t.event);
   const body = mode === "preview" ? render(t.body) : t.body;
   const subject = t.subject ? (mode === "preview" ? render(t.subject) : t.subject) : undefined;
 
@@ -167,13 +166,14 @@ function TemplateCard({
         description={
           <span className="flex items-center gap-2 flex-wrap">
             <span>Fires on {humanise(t.event)}</span>
-            {workflow && (
-              <Tooltip content={`Used by the "${workflow.name}" workflow`}>
-                <StatusPill tone="neutral" dot={false}>
-                  Automated
-                </StatusPill>
-              </Tooltip>
-            )}
+            {/* The template says what goes out; n8n decides when. The
+                app never sends anything itself, so this pill states the
+                boundary rather than claiming a delivery it cannot make. */}
+            <Tooltip content="Delivered by an n8n workflow, not by this application">
+              <StatusPill tone="neutral" dot={false}>
+                Automated
+              </StatusPill>
+            </Tooltip>
           </span>
         }
         actions={

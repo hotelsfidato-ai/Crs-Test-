@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollText, Info } from "lucide-react";
-import { adminRepo, db } from "@/data/repositories";
+import { adminRepo } from "@/data/repositories";
 import { dateTime, relative, humanise, number } from "@/lib/format";
 import {
   Page, PageHeader, FilterBar, DataTable, Pagination, EmptyState,
@@ -46,9 +46,9 @@ export default function AuditLogPage() {
     queryFn: () => adminRepo.auditLog(list.query),
   });
 
-  const all = db.auditLogs;
-  const today = all.filter((a) => relative(a.at).includes("hour") || relative(a.at) === "just now");
-  const actors = new Set(all.map((a) => a.actorId)).size;
+  const stats = useQuery({ queryKey: ["audit-stats"], queryFn: () => adminRepo.auditStats() });
+
+    
 
   const columns: Column<AuditLog>[] = [
     {
@@ -107,19 +107,16 @@ export default function AuditLogPage() {
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="p-5">
-          <Stat label="Entries" value={number(all.length)} />
+          <Stat label="Entries" value={number(stats.data?.total ?? 0)} hint="Recent window" />
         </Card>
         <Card className="p-5">
-          <Stat label="Recent" value={today.length} hint="Last few hours" />
+          <Stat label="Actors" value={stats.data?.actors ?? 0} hint="People and automations" />
         </Card>
         <Card className="p-5">
-          <Stat label="Actors" value={actors} hint="People and automations" />
+          <Stat label="Cancellations" value={stats.data?.cancellations ?? 0} />
         </Card>
         <Card className="p-5">
-          <Stat
-            label="Cancellations"
-            value={all.filter((a) => a.action === "cancelled").length}
-          />
+          <Stat label="Retention" value="Append-only" hint="Never edited or deleted" />
         </Card>
       </div>
 

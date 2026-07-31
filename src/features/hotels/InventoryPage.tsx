@@ -35,9 +35,14 @@ export default function InventoryPage() {
     queryFn: () => hotelsRepo.roomTypes(id),
   });
 
+  /* The window is a date range now, not a day count — Firestore ranges
+     over the stored `date` string, so the screen has to name both ends. */
+  const from = isoDate(TODAY);
+  const to = isoDate(new Date(TODAY.getTime() + horizon * 86_400_000));
+
   const inventory = useQuery({
-    queryKey: ["hotel-inventory", id, horizon],
-    queryFn: () => hotelsRepo.inventory(id, horizon),
+    queryKey: ["hotel-inventory", id, from, to],
+    queryFn: () => hotelsRepo.inventory(id, from, to),
   });
 
   const days = useMemo(() => {
@@ -176,7 +181,7 @@ export default function InventoryPage() {
                     <div className="w-[200px] shrink-0 px-4 py-2.5 border-r border-grey-200 min-w-0">
                       <p className="text-sm font-medium text-ink-900 truncate">{rt.name}</p>
                       <p className="text-2xs text-grey-400 tabular">
-                        {rt.totalRooms} rooms · {money(rt.baseRate)}
+                        {rt.totalRooms} rooms · sleeps {rt.maxOccupancy}
                       </p>
                     </div>
 

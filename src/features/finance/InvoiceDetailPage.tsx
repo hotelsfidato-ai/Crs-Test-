@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer, Send, Wallet, Building2 } from "lucide-react";
 import { useSession, useActor } from "@/lib/session";
 import { can } from "@/lib/permissions";
-import { financeRepo, db } from "@/data/repositories";
+import { financeRepo, companiesRepo, adminRepo } from "@/data/repositories";
 import { money, moneyPrecise, dateShort, dateTime, humanise } from "@/lib/format";
 import {
   Page, PageHeader, Button, Card, CardHeader, CardBody, StatusPill,
@@ -13,7 +13,22 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
-import type { Payment } from "@/data/types";
+import type { Payment, OrgSettings } from "@/data/types";
+
+/** Shown until Admin → Settings has been filled in. Deliberately empty. */
+const BLANK_ORG: OrgSettings = {
+  legalName: "Organisation name not set",
+  brandName: "Organisation name not set",
+  gstin: "—",
+  registeredAddress: "Registered address not set — Admin → Settings",
+  supportEmail: "—",
+  supportPhone: "—",
+  currency: "INR",
+  timezone: "Asia/Kolkata",
+  financialYearStart: "04-01",
+  approvalThreshold: 0,
+  defaultCommissionPercent: 0,
+};
 
 export default function InvoiceDetailPage() {
   const { id = "" } = useParams();
@@ -29,12 +44,24 @@ export default function InvoiceDetailPage() {
     queryFn: () => financeRepo.paymentsForInvoice(id),
   });
 
+  const orgQuery = useQuery({ queryKey: ["settings"], queryFn: () => adminRepo.settings() });
+  const companyQuery = useQuery({
+    queryKey: ["company", invoice.data?.companyId],
+    queryFn: () => companiesRepo.get(invoice.data!.companyId!),
+    enabled: Boolean(invoice.data?.companyId),
+  });
+
   if (invoice.isLoading) return <DetailSkeleton />;
   if (!invoice.data) return <NotFound />;
 
   const inv = invoice.data;
-  const org = db.orgSettings;
-  const company = inv.companyId ? db.companies.find((c) => c.id === inv.companyId) : undefined;
+  const company = companyQuery.data ?? undefined;
+
+  /* ⚠️ An invoice is a legal document, and the header on it is the
+     entity issuing it. If org settings have not been filled in yet the
+     placeholders below are visibly wrong rather than plausibly wrong —
+     a blank GSTIN is noticed, an inherited one is not. */
+  const org: OrgSettings = orgQuery.data ?? BLANK_ORG;
 
   return (
     <Page>

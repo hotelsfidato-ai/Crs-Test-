@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Receipt, Download } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { can } from "@/lib/permissions";
-import { financeRepo, db } from "@/data/repositories";
+import { financeRepo } from "@/data/repositories";
 import { money, dateShort, humanise } from "@/lib/format";
 import {
   Page, PageHeader, Button, FilterBar, DataTable, Pagination, EmptyState,
@@ -28,10 +28,10 @@ export default function InvoicesPage() {
     queryFn: () => financeRepo.invoices(list.query),
   });
 
-  const outstanding = db.invoices.reduce((s, i) => s + i.amountDue, 0);
-  const overdue = db.invoices.filter((i) => i.status === "overdue");
-  const overdueValue = overdue.reduce((s, i) => s + i.amountDue, 0);
-  const collected = db.invoices.reduce((s, i) => s + i.amountPaid, 0);
+  const totals = useQuery({
+    queryKey: ["invoice-totals"],
+    queryFn: () => financeRepo.invoiceTotals(),
+  });
 
   const columns: Column<Invoice>[] = [
     {
@@ -118,19 +118,21 @@ export default function InvoicesPage() {
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="p-5">
-          <Stat label="Invoices" value={db.invoices.length} />
+          <Stat label="Invoices" value={totals.data?.count ?? 0} />
         </Card>
         <Card className="p-5">
-          <Stat label="Collected" value={money(collected)} />
+          <Stat label="Collected" value={money(totals.data?.collected ?? 0)} />
         </Card>
         <Card className="p-5">
-          <Stat label="Outstanding" value={money(outstanding)} />
+          <Stat label="Outstanding" value={money(totals.data?.outstanding ?? 0)} />
         </Card>
         <Card className="p-5">
           <Stat
             label="Overdue"
-            value={money(overdueValue)}
-            hint={`${overdue.length} invoice${overdue.length === 1 ? "" : "s"}`}
+            value={money(totals.data?.overdueValue ?? 0)}
+            hint={`${totals.data?.overdueCount ?? 0} invoice${
+              totals.data?.overdueCount === 1 ? "" : "s"
+            }`}
           />
         </Card>
       </div>

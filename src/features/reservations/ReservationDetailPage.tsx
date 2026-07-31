@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,7 +8,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useSession, useActor } from "@/lib/session";
 import { can } from "@/lib/permissions";
-import { reservationsRepo } from "@/data/repositories";
+import { reservationsRepo, lineTotal } from "@/data/repositories";
 import {
   money, moneyPrecise, dateShort, dateTime, nightsLabel, humanise, relative,
 } from "@/lib/format";
@@ -16,7 +16,7 @@ import {
   canCancelReservation, canEditReservation, labelFor, nextStatuses, isTerminal,
 } from "@/lib/rules";
 import { summariseReservation } from "@/features/ai/responses";
-import { CANCELLATION_REASONS } from "@/data/seed/names";
+import { CANCELLATION_REASONS } from "@/lib/vocabulary";
 import {
   Page, PageHeader, Button, Card, CardHeader, CardBody, DetailList, DetailRow,
   StatusPill, RESERVATION_TONES, Skeleton, Tabs, TabsList, TabsTrigger,
@@ -24,7 +24,7 @@ import {
   Textarea, Field, toast, Stat, EmptyState, Tooltip, Avatar,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
-import type { ReservationStatus } from "@/data/types";
+import { MEAL_PLAN_LABELS, type ReservationStatus } from "@/data/types";
 
 export default function ReservationDetailPage() {
   const { id = "" } = useParams();
@@ -75,7 +75,7 @@ export default function ReservationDetailPage() {
           { label: r.reference },
         ]}
         title={r.reference}
-        description={`${r.customerName} · ${r.hotelName}, ${r.hotelCity}`}
+        description={`${r.customerName} Â· ${r.hotelName}, ${r.hotelCity}`}
         badge={
           <div className="flex items-center gap-2">
             <StatusPill tone={RESERVATION_TONES[r.status] ?? "neutral"}>
@@ -136,7 +136,7 @@ export default function ReservationDetailPage() {
               </Button>
             )}
 
-            {/* Cancel is always offered where legal — there is no delete. */}
+            {/* Cancel is always offered where legal â€” there is no delete. */}
             {cancelCheck.allowed ? (
               <CancelDialog
                 reference={r.reference}
@@ -156,7 +156,7 @@ export default function ReservationDetailPage() {
         }
       />
 
-      {/* ── Locked / approval banners ── */}
+      {/* â”€â”€ Locked / approval banners â”€â”€ */}
       {r.status === "pending_approval" && (
         <Card className="mb-6 border-brand-yellow-100 bg-brand-yellow-50">
           <CardBody className="flex items-start gap-3 py-4">
@@ -164,7 +164,7 @@ export default function ReservationDetailPage() {
             <div className="min-w-0">
               <p className="text-base font-medium text-[#8a6300]">Waiting on approval</p>
               <p className="text-sm text-[#8a6300] mt-1 leading-relaxed">
-                At {money(r.totalAmount)} this booking is at or above the ₹50,000
+                At {money(r.totalAmount)} this booking is at or above the â‚¹50,000
                 threshold. It stays unconfirmed until a sales manager or admin signs it
                 off. Raised by {r.ownerName} {relative(r.createdAt)}.
               </p>
@@ -180,22 +180,22 @@ export default function ReservationDetailPage() {
             <div className="min-w-0">
               <p className="text-base font-medium text-brand-red">Cancelled</p>
               <p className="text-sm text-brand-red mt-1 leading-relaxed">
-                {r.cancellationReason || "No reason recorded"} · cancelled by{" "}
-                {r.cancelledBy} on {r.cancelledAt ? dateTime(r.cancelledAt) : "—"}. The
-                record is kept for audit — reservations are never deleted.
+                {r.cancellationReason || "No reason recorded"} Â· cancelled by{" "}
+                {r.cancelledBy} on {r.cancelledAt ? dateTime(r.cancelledAt) : "â€”"}. The
+                record is kept for audit â€” reservations are never deleted.
               </p>
             </div>
           </CardBody>
         </Card>
       )}
 
-      {/* ── Summary strip ── */}
+      {/* â”€â”€ Summary strip â”€â”€ */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="p-5">
           <Stat
             label="Stay"
             value={dateShort(r.checkIn)}
-            hint={`${nightsLabel(r.checkIn, r.checkOut)} → ${dateShort(r.checkOut)}`}
+            hint={`${nightsLabel(r.checkIn, r.checkOut)} â†’ ${dateShort(r.checkOut)}`}
           />
         </Card>
         <Card className="p-5">
@@ -227,7 +227,7 @@ export default function ReservationDetailPage() {
               <TabsTrigger value="documents">Documents</TabsTrigger>
             </TabsList>
 
-            {/* ── Folio ── */}
+            {/* â”€â”€ Folio â”€â”€ */}
             <TabsContent value="folio">
               <Card>
                 <CardHeader title="Charges" description="Room lines and taxes" />
@@ -254,20 +254,24 @@ export default function ReservationDetailPage() {
                         <tr key={i} className="border-b border-grey-100">
                           <td className="px-5 py-3">
                             <p className="text-ink-900">
-                              {room.roomTypeName} × {room.quantity}
+                              {room.roomTypeName} Ã— {room.quantity}
                             </p>
                             <p className="text-sm text-grey-500">
-                              {room.ratePlanName} · {room.mealPlan}
+                              {MEAL_PLAN_LABELS[room.mealPlan] ?? room.mealPlan}
+                              {room.seasonName ? ` · ${room.seasonName}` : ""}
+                              {room.extraBeds > 0
+                                ? ` · ${room.extraBeds} extra bed${room.extraBeds === 1 ? "" : "s"}`
+                                : ""}
                             </p>
                           </td>
                           <td className="px-5 py-3 text-right tabular text-grey-600">
                             {r.nights}
                           </td>
                           <td className="px-5 py-3 text-right tabular text-grey-600">
-                            {money(room.ratePerNight)}
+                            {money(room.sellingRate)}
                           </td>
                           <td className="px-5 py-3 text-right tabular font-medium">
-                            {money(room.ratePerNight * room.quantity * r.nights)}
+                            {money(lineTotal(room, r.nights))}
                           </td>
                         </tr>
                       ))}
@@ -284,7 +288,7 @@ export default function ReservationDetailPage() {
                     {r.discountAmount > 0 && (
                       <FolioRow
                         label="Corporate discount"
-                        value={`− ${moneyPrecise(r.discountAmount)}`}
+                        value={`âˆ’ ${moneyPrecise(r.discountAmount)}`}
                         tone="success"
                       />
                     )}
@@ -306,7 +310,7 @@ export default function ReservationDetailPage() {
                     {r.specialRequests && (
                       <div>
                         <p className="text-2xs font-semibold uppercase tracking-wide text-grey-400 mb-1.5">
-                          Special requests — sent to the property
+                          Special requests â€” sent to the property
                         </p>
                         <p className="text-base text-ink-900 leading-relaxed">
                           {r.specialRequests}
@@ -316,7 +320,7 @@ export default function ReservationDetailPage() {
                     {r.internalNotes && (
                       <div>
                         <p className="text-2xs font-semibold uppercase tracking-wide text-grey-400 mb-1.5">
-                          Internal — never shown to the guest
+                          Internal â€” never shown to the guest
                         </p>
                         <p className="text-base text-grey-600 leading-relaxed">
                           {r.internalNotes}
@@ -328,7 +332,7 @@ export default function ReservationDetailPage() {
               )}
             </TabsContent>
 
-            {/* ── Guests ── */}
+            {/* â”€â”€ Guests â”€â”€ */}
             <TabsContent value="guests">
               <Card>
                 <ul className="divide-y divide-grey-100">
@@ -350,7 +354,7 @@ export default function ReservationDetailPage() {
               </Card>
             </TabsContent>
 
-            {/* ── Timeline ── */}
+            {/* â”€â”€ Timeline â”€â”€ */}
             <TabsContent value="timeline">
               <Card>
                 {audit.isLoading ? (
@@ -394,7 +398,7 @@ export default function ReservationDetailPage() {
                               </p>
                             )}
                             <p className="text-xs text-grey-400 mt-1.5">
-                              {entry.actorName} · {dateTime(entry.at)}
+                              {entry.actorName} Â· {dateTime(entry.at)}
                             </p>
                           </div>
                         </li>
@@ -405,7 +409,7 @@ export default function ReservationDetailPage() {
               </Card>
             </TabsContent>
 
-            {/* ── Documents ── */}
+            {/* â”€â”€ Documents â”€â”€ */}
             <TabsContent value="documents">
               <Card>
                 <ul className="divide-y divide-grey-100">
@@ -450,7 +454,7 @@ export default function ReservationDetailPage() {
           </Tabs>
         </div>
 
-        {/* ── Side rail ── */}
+        {/* â”€â”€ Side rail â”€â”€ */}
         <div className="space-y-6">
           <Card>
             <CardHeader title="Booking" />
@@ -517,7 +521,7 @@ export default function ReservationDetailPage() {
               />
               <CardBody className="pt-0">
                 <p className="text-base text-grey-600 leading-relaxed">
-                  {summariseReservation(r.id)}
+                  {summariseReservation(r)}
                 </p>
               </CardBody>
             </Card>
@@ -537,7 +541,7 @@ export default function ReservationDetailPage() {
   );
 }
 
-/* ── Dialogs ───────────────────────────────────────────────────── */
+/* â”€â”€ Dialogs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function ApproveDialog({
   onApprove, amount, pending,
@@ -557,7 +561,7 @@ function ApproveDialog({
       </DialogTrigger>
       <DialogContent
         title="Approve this reservation?"
-        description={`${money(amount)} — approving confirms the booking and releases the guest confirmation.`}
+        description={`${money(amount)} â€” approving confirms the booking and releases the guest confirmation.`}
         footer={
           <>
             <DialogClose asChild>
@@ -605,7 +609,7 @@ function CancelDialog({
       </DialogTrigger>
       <DialogContent
         title={`Cancel ${reference}?`}
-        description="The reservation is kept and marked cancelled — records are never deleted."
+        description="The reservation is kept and marked cancelled â€” records are never deleted."
         footer={
           <>
             <DialogClose asChild>
@@ -637,7 +641,7 @@ function CancelDialog({
   );
 }
 
-/* ── Pieces ────────────────────────────────────────────────────── */
+/* â”€â”€ Pieces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function FolioRow({
   label, value, tone,
@@ -702,3 +706,4 @@ function DetailSkeleton() {
     </Page>
   );
 }
+

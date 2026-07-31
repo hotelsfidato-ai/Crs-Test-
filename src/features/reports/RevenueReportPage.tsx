@@ -142,7 +142,7 @@ export default function RevenueReportPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={channels.data ?? []}
+                      data={channels.data?.rows ?? []}
                       dataKey="revenue"
                       nameKey="channel"
                       innerRadius={54}
@@ -150,7 +150,7 @@ export default function RevenueReportPage() {
                       paddingAngle={2}
                       stroke="none"
                     >
-                      {(channels.data ?? []).map((_, i) => (
+                      {(channels.data?.rows ?? []).map((_, i) => (
                         <Cell key={i} fill={CHANNEL_COLORS[i % CHANNEL_COLORS.length]} />
                       ))}
                     </Pie>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Ban, ArrowRight, ShieldCheck } from "lucide-react";
@@ -7,7 +7,7 @@ import { can } from "@/lib/permissions";
 import { reservationsRepo } from "@/data/repositories";
 import { money, dateShort, relative, humanise } from "@/lib/format";
 import { APPROVAL_THRESHOLD } from "@/lib/rules";
-import { CANCELLATION_REASONS } from "@/data/seed/names";
+import { CANCELLATION_REASONS } from "@/lib/vocabulary";
 import {
   Page, PageHeader, Card, CardBody, Button, EmptyState, StatusPill,
   Skeleton, Stat, Dialog, DialogContent, DialogTrigger, DialogClose,
@@ -15,11 +15,11 @@ import {
 } from "@/components/ui";
 import type { Reservation } from "@/data/types";
 
-/* ══════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    APPROVAL QUEUE
-   Everything at or above ₹50,000 that has not yet been signed off,
-   largest first — the ones holding up the most money get seen first.
-   ══════════════════════════════════════════════════════════════════ */
+   Everything at or above â‚¹50,000 that has not yet been signed off,
+   largest first â€” the ones holding up the most money get seen first.
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 export default function ApprovalsPage() {
   const role = useSession((s) => s.role);
@@ -48,7 +48,7 @@ export default function ApprovalsPage() {
             <ShieldCheck className="size-4 text-grey-400 shrink-0 mt-0.5" />
             <p className="text-base text-grey-600 leading-relaxed">
               You can see this queue but not act on it. Approving is limited to sales
-              managers and admins — switch role in the top bar to try it.
+              managers and admins â€” switch role in the top bar to try it.
             </p>
           </CardBody>
         </Card>
@@ -64,7 +64,7 @@ export default function ApprovalsPage() {
         <Card className="p-5">
           <Stat
             label="Largest"
-            value={rows[0] ? money(rows[0].totalAmount) : "—"}
+            value={rows[0] ? money(rows[0].totalAmount) : "â€”"}
             hint={rows[0]?.hotelName}
           />
         </Card>
@@ -81,7 +81,7 @@ export default function ApprovalsPage() {
           <EmptyState
             icon={<CheckCircle2 />}
             title="The queue is clear"
-            description="Nothing is waiting on approval. Bookings above ₹50,000 will appear here automatically."
+            description="Nothing is waiting on approval. Bookings above â‚¹50,000 will appear here automatically."
             action={
               <Button asChild variant="secondary" size="sm">
                 <Link to="/reservations">All reservations</Link>
@@ -145,7 +145,7 @@ function ApprovalCard({
 
             <p className="text-base text-ink-900 mt-2">
               {r.customerName}
-              {r.companyName && <span className="text-grey-500"> · {r.companyName}</span>}
+              {r.companyName && <span className="text-grey-500"> Â· {r.companyName}</span>}
             </p>
             <p className="text-base text-grey-600 mt-0.5">
               {r.hotelName}, {r.hotelCity}
@@ -153,7 +153,7 @@ function ApprovalCard({
 
             <div className="flex items-center gap-x-5 gap-y-1 flex-wrap mt-3 text-sm text-grey-500">
               <span className="tabular">
-                {dateShort(r.checkIn)} → {dateShort(r.checkOut)}
+                {dateShort(r.checkIn)} â†’ {dateShort(r.checkOut)}
               </span>
               <span>
                 {r.nights} night{r.nights === 1 ? "" : "s"}
@@ -163,7 +163,7 @@ function ApprovalCard({
               </span>
               <span className="flex items-center gap-1.5">
                 <Avatar name={r.ownerName} color="#9aa2a9" size="xs" />
-                {r.ownerName} · {relative(r.createdAt)}
+                {r.ownerName} Â· {relative(r.createdAt)}
               </span>
             </div>
           </div>
@@ -230,7 +230,7 @@ function ApproveDialog({
       </DialogTrigger>
       <DialogContent
         title={`Approve ${reference}?`}
-        description={`${money(amount)} — this confirms the booking and releases the guest confirmation.`}
+        description={`${money(amount)} â€” this confirms the booking and releases the guest confirmation.`}
         footer={
           <>
             <DialogClose asChild>
@@ -310,3 +310,4 @@ function DeclineDialog({
     </Dialog>
   );
 }
+
