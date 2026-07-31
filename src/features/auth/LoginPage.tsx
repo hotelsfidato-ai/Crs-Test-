@@ -1,18 +1,18 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FirebaseError } from "firebase/app";
 import { signIn, useSession, type AuthIssue } from "@/lib/session";
 import { Button, Field, Input, fieldProps } from "@/components/ui";
 import { AuthLayout } from "./AuthLayout";
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════════════
    SIGN IN
 
    âš ï¸ One error message for every failure mode. "No such account" and
    "wrong password" told apart is an account-enumeration oracle: it
    lets anyone confirm which colleagues have logins here. Firebase
    distinguishes them; this screen deliberately does not.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════════════ */
 
 const GENERIC_ERROR = "That email and password combination was not recognised.";
 

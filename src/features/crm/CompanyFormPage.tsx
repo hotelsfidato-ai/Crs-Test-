@@ -1,4 +1,4 @@
-﻿import { useEffect } from "react";
+import { useEffect } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -145,7 +145,7 @@ export default function CompanyFormPage() {
               <Field label="Industry" required error={errors.industry?.message}>
                 {({ id: f, invalid }) => (
                   <NativeSelect id={f} invalid={invalid} {...form.register("industry")}>
-                    <option value="">Selectâ€¦</option>
+                    <option value="">Select…</option>
                     {INDUSTRIES.map((i) => (
                       <option key={i} value={i}>{i}</option>
                     ))}

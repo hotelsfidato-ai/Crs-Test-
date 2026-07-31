@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 
-/* Validation mirrors the business rules in lib/rules.ts â€” email and
+/* Validation mirrors the business rules in lib/rules.ts — email and
    phone must be unique across the platform. */
 
 const schema = z.object({
@@ -81,11 +81,11 @@ export default function CustomerFormPage() {
 
   const companyOptions = useMemo(
     () => [
-      { value: "", label: "No company â€” individual guest" },
+      { value: "", label: "No company — individual guest" },
       ...(companies.data ?? []).map((c) => ({
         value: c.id,
         label: c.name,
-        description: `${c.industry} Â· ${c.city}`,
+        description: `${c.industry} · ${c.city}`,
       })),
     ],
     [companies.data],
@@ -228,7 +228,7 @@ export default function CustomerFormPage() {
                         value={field.value ?? ""}
                         onChange={field.onChange}
                         options={companyOptions}
-                        placeholder="Search companiesâ€¦"
+                        placeholder="Search companies…"
                       />
                     )}
                   />
@@ -315,7 +315,7 @@ export default function CustomerFormPage() {
               name="vip"
               render={({ field }) => (
                 <Checkbox
-                  label="Flag as VIP â€” the property is notified before arrival"
+                  label="Flag as VIP — the property is notified before arrival"
                   checked={field.value}
                   onCheckedChange={field.onChange}
                 />

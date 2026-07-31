@@ -1,19 +1,19 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { MailCheck } from "lucide-react";
 import { requestPasswordReset } from "@/lib/session";
 import { Button, Field, Input, fieldProps } from "@/components/ui";
 import { AuthLayout } from "./AuthLayout";
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════════════
    PASSWORD RESET
 
    âš ï¸ Always reports success. Telling the visitor "no account with that
    address" turns this form into a way to test which email addresses
    belong to staff here. The link is sent when the account exists and
-   silently not sent when it does not â€” the screen reads identically
+   silently not sent when it does not — the screen reads identically
    either way.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════════════ */
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");

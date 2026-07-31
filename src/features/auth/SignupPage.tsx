@@ -1,22 +1,22 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FirebaseError } from "firebase/app";
 import { claimInvitation, NoInvitationError } from "@/lib/session";
 import { Button, Field, Input, fieldProps } from "@/components/ui";
 import { AuthLayout } from "./AuthLayout";
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════════════
    COMPLETE AN INVITATION
 
    âš ï¸ This is not open registration, even though the form is public.
    Firebase Spark has no Admin SDK, so an administrator cannot create
-   an account for someone â€” the person must create their own. What the
+   an account for someone — the person must create their own. What the
    administrator controls is the `users` record, and without one the
    session listener signs the account straight back out.
 
    The password is typed here and nowhere else. No administrator sets
    it, sees it, or resets it to a known value.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════════════ */
 
 const MIN_PASSWORD = 10;
 

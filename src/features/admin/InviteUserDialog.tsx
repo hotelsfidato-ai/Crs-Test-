@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserPlus } from "lucide-react";
 import { adminRepo, hotelsRepo } from "@/data/repositories";
@@ -13,19 +13,19 @@ import {
   Field, Input, NativeSelect, fieldProps, toast,
 } from "@/components/ui";
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ══════════════════════════════════════════════════════════════════
    INVITE A USER
 
    âš ï¸ This creates the *record*, not the account. On the Spark plan
    there is no Admin SDK, so nobody here can mint an Auth user or set a
-   password â€” the invited person creates their own credentials at
+   password — the invited person creates their own credentials at
    /signup, and the record below is what turns that anonymous account
    into someone with a role.
 
    That ordering is a feature: no administrator ever handles another
    person's password, because there is no point in the flow where one
    exists to handle.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ══════════════════════════════════════════════════════════════════ */
 
 export function InviteUserDialog() {
   const actor = useActor();
@@ -48,7 +48,7 @@ export function InviteUserDialog() {
 
   /**
    * âš ï¸ Only an Owner may create another Owner. Otherwise an Admin can
-   * promote themselves to Owner in two moves â€” invite an Owner account
+   * promote themselves to Owner in two moves — invite an Owner account
    * at an address they control, then sign in as it.
    */
   const offerableRoles = ASSIGNABLE_ROLES.filter(
@@ -206,7 +206,7 @@ export function InviteUserDialog() {
                 <option value="">All properties</option>
                 {(hotels.data ?? []).map((h) => (
                   <option key={h.id} value={h.id}>
-                    {h.name} â€” {h.city}
+                    {h.name} — {h.city}
                   </option>
                 ))}
               </NativeSelect>
