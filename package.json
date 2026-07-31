@@ -27,26 +27,32 @@
     "@tanstack/react-query": "^5.101.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "firebase": "^12.17.0",
     "lucide-react": "^1.27.0",
+    "papaparse": "^5.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-hook-form": "^7.83.0",
     "react-router-dom": "^7.18.1",
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.6.0",
+    "xlsx": "^0.18.5",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.2",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/ui": "^4.1.10",
     "oxlint": "^1.71.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
   },
   "description": "Fidato Hotels — internal hospitality ERP / central reservation system"
 }
