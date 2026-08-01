@@ -603,3 +603,42 @@ describe("lead ownership between salespeople", () => {
     }
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════
+   THE n8n WEBHOOK CONFIGURATION
+
+   Lives at settings/webhook. Readable by every active user because the
+   browser has to read it to push an event; writable only by Owner and
+   Admin, because changing the URL redirects every future booking.
+   ══════════════════════════════════════════════════════════════════ */
+
+describe("the webhook configuration", () => {
+  it("is readable by any active user, since the browser posts the event", async () => {
+    for (const person of [SALES_A, CRS, FINANCE, VIEWER]) {
+      await assertSucceeds(getDoc(doc(as(env, person), "settings", "webhook")));
+    }
+  });
+
+  /* ⚠️ Redirecting the endpoint silently reroutes every guest email and
+     every property notification. That is an administrator's decision. */
+  it("is writable only by owner and admin", async () => {
+    for (const person of [OWNER, ADMIN]) {
+      await assertSucceeds(
+        setDoc(doc(as(env, person), "settings", "webhook"), {
+          url: "https://n8n.example.com/webhook/x", enabled: true,
+        }),
+      );
+    }
+    for (const person of [CRS, MANAGER, SALES_A, FINANCE, VIEWER]) {
+      await assertFails(
+        setDoc(doc(as(env, person), "settings", "webhook"), {
+          url: "https://evil.example.com/webhook", enabled: true,
+        }),
+      );
+    }
+  });
+
+  it("cannot be read at all by someone with no profile", async () => {
+    await assertFails(getDoc(doc(asStranger(env), "settings", "webhook")));
+  });
+});

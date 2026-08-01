@@ -649,6 +649,32 @@ export interface AutomationRun {
 
 /* ── settings ──────────────────────────────────────────────────── */
 
+/**
+ * `settings/webhook` — the n8n endpoint this platform pushes to.
+ *
+ * ⚠️ The URL is stored in Firestore, so any signed-in user can read it.
+ * That is acceptable only because an n8n webhook URL is a *destination*,
+ * not a credential: knowing it lets someone send events, not read
+ * anything. The shared `secret` is what n8n verifies to reject those.
+ *
+ * ⚠️ The secret is therefore NOT a secret from staff — it is in the
+ * browser. It defends against outsiders who guess the URL, nothing
+ * more. Do not reuse it anywhere that matters.
+ */
+export interface WebhookConfig {
+  url: string;
+  /** Sent as `X-Fidato-Signature`. n8n should reject a mismatch. */
+  secret: string;
+  enabled: boolean;
+  /** Which event types are pushed. Empty means all of them. */
+  events: AutomationEventType[];
+  lastTestAt?: IsoDateTime;
+  lastTestStatus?: "ok" | "failed";
+  lastTestDetail?: string;
+  updatedAt?: IsoDateTime;
+  updatedBy?: string;
+}
+
 export interface Integration {
   id: string;
   name: string;

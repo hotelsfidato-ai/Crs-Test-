@@ -10,6 +10,7 @@ import {
   Stat, EmptyState, Button, toast,
 } from "@/components/ui";
 import type { Integration } from "@/data/types";
+import { WebhookCard } from "./WebhookCard";
 
 const STATUS_TONES = {
   connected: "success",
@@ -46,8 +47,13 @@ export default function IntegrationsPage() {
     <Page>
       <PageHeader
         title="Integrations"
-        description="Systems the platform talks to. Most are wired up in Phases 2 and 3 — what is shown here is the intended topology."
+        description="Everything outside this platform goes through n8n. Configure the seam below; the catalogue underneath is what n8n connects to."
       />
+
+      {/* The one integration that is real and configurable today. */}
+      <div className="mb-8">
+        <WebhookCard />
+      </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="p-5">

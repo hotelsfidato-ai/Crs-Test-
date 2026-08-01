@@ -6,14 +6,16 @@ import {
 import { db } from "@/lib/firebase";
 import { computeTax, CURRENT_GST_VERSION } from "@/lib/tax";
 import { ASSIGNABLE_ROLES, type ScopeContext } from "@/lib/permissions";
+import { postWebhook, shouldSend } from "@/lib/webhook";
 
 const ROLE_KEYS = ASSIGNABLE_ROLES;
 import type {
   Hotel, HotelCommercial, RoomType, Season, Company, Customer, Reservation,
   ReservationRoom, Invoice, Payment, Commission, User, AuditLog, AppNotification,
-  NotificationTemplate, AutomationEvent, Integration, OrgSettings,
+  NotificationTemplate, AutomationEvent, AutomationEventType, Integration, OrgSettings,
   ListQuery, ListResult, ReservationStatus, ImportEntity,
   InventoryDay, AutomationWorkflow, AutomationRun, AutomationStatus, Invitation,
+  WebhookConfig,
 } from "@/data/types";
 import {
   type Actor, fromDoc, toDoc, getOne, listAll, runQuery, countWhere,
@@ -24,6 +26,34 @@ import {
 } from "./defaults";
 
 export type { Actor };
+
+/* ── The n8n push ──────────────────────────────────────────────────
+   See src/lib/webhook.ts for why this is best-effort and why the
+   queue, not this call, is the source of truth.                     */
+
+async function pushToN8n(
+  event: AutomationEventType,
+  entityId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const config = await getOne<WebhookConfig>("settings", "webhook");
+    if (!shouldSend(config, event)) return;
+
+    await postWebhook(config!, {
+      event,
+      sentAt: new Date().toISOString(),
+      source: "fidato-crs",
+      eventId: entityId,
+      data,
+    });
+  } catch {
+    /* Swallowed on purpose. The automationQueue entry survives, so n8n
+       still collects this on its next poll. Surfacing a webhook error
+       to someone who just saved a booking would be reporting a failure
+       that did not happen. */
+  }
+}
 
 /* ══════════════════════════════════════════════════════════════════
    FIRESTORE REPOSITORIES
@@ -751,7 +781,21 @@ export const reservationsRepo = {
       entityLabel: reference, actor,
     });
 
-    return (await getOne<Reservation>("reservations", ref.id))!;
+    const created = (await getOne<Reservation>("reservations", ref.id))!;
+
+    /* ⚠️ Best-effort push so n8n acts now rather than on its next poll.
+       Deliberately NOT awaited into the caller's success path: the
+       booking is already committed and the queued event above is the
+       durable record. A failed webhook must never make a saved
+       reservation look like it failed. */
+    void pushToN8n("reservation.created", ref.id, {
+      reservation: created,
+      customer,
+      company,
+      hotel,
+    });
+
+    return created;
   },
 
   setStatus: async (
@@ -1045,6 +1089,30 @@ export const adminRepo = {
   updateSettings: async (patch: Partial<OrgSettings>): Promise<OrgSettings> => {
     await setDoc(doc(db, "settings", "org"), toDoc(patch), { merge: true });
     return (await getOne<OrgSettings>("settings", "org"))!;
+  },
+
+  /**
+   * The n8n webhook configuration.
+   *
+   * ⚠️ Lives in `settings`, which every active user can read. See the
+   * note on WebhookConfig — the URL is a destination, not a credential.
+   */
+  webhook: async (): Promise<WebhookConfig | null> =>
+    getOne<WebhookConfig>("settings", "webhook"),
+
+  saveWebhook: async (patch: Partial<WebhookConfig>, actor: Actor): Promise<WebhookConfig> => {
+    await setDoc(
+      doc(db, "settings", "webhook"),
+      { ...toDoc(patch), updatedAt: serverTimestamp(), updatedBy: actor.id },
+      { merge: true },
+    );
+    await recordAudit({
+      entityType: "integration", entityId: "webhook", entityLabel: "n8n webhook",
+      action: "updated",
+      summary: patch.enabled === false ? "Webhook disabled" : "Webhook configuration saved",
+      actor,
+    });
+    return (await getOne<WebhookConfig>("settings", "webhook"))!;
   },
 
   /** The queue viewer. Read-only in Phase 2. */

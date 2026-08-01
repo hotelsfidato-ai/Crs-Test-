@@ -6,6 +6,7 @@ import { canAccess, type Resource } from "@/lib/permissions";
 import { Forbidden } from "@/features/shared/Forbidden";
 import { NotFound } from "@/features/shared/NotFound";
 import { RouteFallback } from "@/features/shared/RouteFallback";
+import { ErrorBoundary } from "@/features/shared/ErrorBoundary";
 
 /* Code-split by feature so the first paint stays quick even though
    the platform carries ~35 screens. */
@@ -102,6 +103,16 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * ⚠️ Keyed on the pathname so navigating away from a broken screen
+ * clears the error. Without the key the boundary latches, and the whole
+ * app looks dead until a reload.
+ */
+function ScreenBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>;
+}
+
 export function AppRoutes() {
   useAuthListener();
 
@@ -125,6 +136,7 @@ export function AppRoutes() {
         <Route
           path="*"
           element={
+            <ScreenBoundary>
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -308,6 +320,7 @@ export function AppRoutes() {
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
+            </ScreenBoundary>
           }
         />
       </Route>

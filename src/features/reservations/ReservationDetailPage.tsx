@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Ban, Lock, Mail, FileText, Sparkles, Building2,
-  Hotel as HotelIcon, User, Download, LogIn, LogOut,
+  Hotel as HotelIcon, User, LogIn, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useSession, useActor } from "@/lib/session";
@@ -24,6 +24,7 @@ import {
   Field, toast, Stat, EmptyState, Tooltip, Avatar,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
+import { VoucherButton } from "./VoucherButton";
 import { MEAL_PLAN_LABELS, type ReservationStatus } from "@/data/types";
 
 export default function ReservationDetailPage() {
@@ -91,18 +92,7 @@ export default function ReservationDetailPage() {
         }
         actions={
           <>
-            <Button
-              variant="secondary"
-              leadingIcon={<Download className="size-4" />}
-              onClick={() =>
-                toast.success(
-                  "Voucher generated",
-                  "In Phase 2 this renders the branded PDF and emails it to the guest.",
-                )
-              }
-            >
-              Voucher
-            </Button>
+            <VoucherButton reservation={r} />
 
             {transitions.includes("checked_in") && editCheck.allowed && (
               <Button
