@@ -55,35 +55,82 @@ export function delta(value: number, digits = 1): string {
   return `${sign}${Math.abs(value).toFixed(digits)}%`;
 }
 
-/* ── Dates ─────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+   DATES
 
-export function dateShort(value: string | Date): string {
-  return format(new Date(value), "d MMM yyyy");
+   ⚠️ EVERY formatter here must survive bad input.
+
+   date-fns `format()` throws `RangeError: Invalid time value` on an
+   invalid date. In a table cell that throw unmounts the entire React
+   tree — one user row with a missing `lastSeenAt` blanked the whole
+   Users screen, which is exactly how this was found.
+
+   A date is missing far more often than it looks:
+     · `serverTimestamp()` reads back as null until the server confirms
+       it, so a freshly written document has null timestamps for a moment;
+     · documents written by hand in the Firebase console rarely carry
+       every timestamp;
+     · optional fields (`lastStayAt`, `contractEnd`) are absent by design.
+
+   So these return a dash rather than throwing. A missing date shown as
+   "—" is correct and readable; a missing date that destroys the screen
+   is neither.
+   ══════════════════════════════════════════════════════════════════ */
+
+/** Shown wherever a date is absent or unparseable. */
+export const NO_DATE = "—";
+
+/** null when the value cannot become a real date. */
+function toDate(value: string | Date | null | undefined): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export function dateCompact(value: string | Date): string {
-  return format(new Date(value), "d MMM");
+/** True when a value would render as a real date. */
+export function isValidDate(value: string | Date | null | undefined): boolean {
+  return toDate(value) !== null;
 }
 
-export function dateLong(value: string | Date): string {
-  return format(new Date(value), "EEEE, d MMMM yyyy");
+export function dateShort(value: string | Date | null | undefined): string {
+  const d = toDate(value);
+  return d ? format(d, "d MMM yyyy") : NO_DATE;
 }
 
-export function dateTime(value: string | Date): string {
-  return format(new Date(value), "d MMM yyyy, h:mm a");
+export function dateCompact(value: string | Date | null | undefined): string {
+  const d = toDate(value);
+  return d ? format(d, "d MMM") : NO_DATE;
 }
 
-export function timeOnly(value: string | Date): string {
-  return format(new Date(value), "h:mm a");
+export function dateLong(value: string | Date | null | undefined): string {
+  const d = toDate(value);
+  return d ? format(d, "EEEE, d MMMM yyyy") : NO_DATE;
 }
 
-export function relative(value: string | Date): string {
-  return formatDistanceToNow(new Date(value), { addSuffix: true });
+export function dateTime(value: string | Date | null | undefined): string {
+  const d = toDate(value);
+  return d ? format(d, "d MMM yyyy, h:mm a") : NO_DATE;
+}
+
+export function timeOnly(value: string | Date | null | undefined): string {
+  const d = toDate(value);
+  return d ? format(d, "h:mm a") : NO_DATE;
+}
+
+export function relative(value: string | Date | null | undefined): string {
+  const d = toDate(value);
+  return d ? formatDistanceToNow(d, { addSuffix: true }) : NO_DATE;
 }
 
 /** "3 nights" — reservations are priced and read by night, not by day. */
-export function nights(checkIn: string | Date, checkOut: string | Date): number {
-  return differenceInCalendarDays(new Date(checkOut), new Date(checkIn));
+export function nights(
+  checkIn: string | Date | null | undefined,
+  checkOut: string | Date | null | undefined,
+): number {
+  const from = toDate(checkIn);
+  const to = toDate(checkOut);
+  // 0 rather than NaN — NaN propagates into every total downstream.
+  return from && to ? differenceInCalendarDays(to, from) : 0;
 }
 
 export function nightsLabel(checkIn: string | Date, checkOut: string | Date): string {
@@ -92,8 +139,9 @@ export function nightsLabel(checkIn: string | Date, checkOut: string | Date): st
 }
 
 /** ISO date (yyyy-MM-dd) — the storage format for all date-only fields. */
-export function isoDate(value: Date): string {
-  return format(value, "yyyy-MM-dd");
+export function isoDate(value: Date | string | null | undefined): string {
+  const d = toDate(value);
+  return d ? format(d, "yyyy-MM-dd") : "";
 }
 
 /* ── Text ──────────────────────────────────────────────────────── */

@@ -67,24 +67,53 @@ export function NoResultsState({
   );
 }
 
+/**
+ * ⚠️ Shows the real error, not a reassuring sentence.
+ *
+ * "This is usually temporary" was actively misleading: the failure it
+ * hid most often was a missing Firestore composite index, which is
+ * permanent and needs a one-line fix. Retrying forever was the only
+ * thing the old copy suggested.
+ *
+ * This is an internal back office. The people who see an error are the
+ * people who report it, so the message they can read is worth more
+ * than a tidy one they cannot act on.
+ */
 export function ErrorState({
   title = "Something went wrong",
-  description = "The data could not be loaded. This is usually temporary.",
+  description,
+  error,
   onRetry,
   className,
 }: {
   title?: string;
   description?: string;
+  error?: unknown;
   onRetry?: () => void;
   className?: string;
 }) {
+  const detail = describeError(error);
+  const body =
+    description ?? detail.message ?? "The data could not be loaded.";
+
   return (
     <div className={cn("flex flex-col items-center justify-center text-center py-14 px-6", className)}>
       <div className="flex items-center justify-center size-11 rounded-full bg-brand-red-50 text-brand-red mb-4">
         <AlertCircle className="size-5" />
       </div>
-      <p className="text-md font-semibold text-ink-900">{title}</p>
-      <p className="text-base text-grey-500 mt-1.5 max-w-sm leading-relaxed">{description}</p>
+      <p className="text-md font-semibold text-ink-900">{detail.title ?? title}</p>
+      <p className="text-base text-grey-500 mt-1.5 max-w-md leading-relaxed">{body}</p>
+
+      {detail.indexUrl && (
+        <a
+          href={detail.indexUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 text-sm text-brand-orange hover:underline font-medium"
+        >
+          Create the missing index in Firebase →
+        </a>
+      )}
       {onRetry && (
         <Button
           size="sm"
@@ -180,4 +209,52 @@ export function Spinner({ className }: { className?: string }) {
       />
     </svg>
   );
+}
+
+/* ── Error interpretation ──────────────────────────────────────────
+   Firestore's errors carry the fix inside the message. Pulling it out
+   turns a dead end into a next step.                                */
+
+interface ErrorDetail {
+  title?: string;
+  message?: string;
+  /** Firestore's own "create this index" console link, when present. */
+  indexUrl?: string;
+}
+
+export function describeError(error: unknown): ErrorDetail {
+  if (!error) return {};
+  const raw = error instanceof Error ? error.message : String(error);
+
+  /* ⚠️ The one we have already been bitten by. A query filtering on one
+     field and ordering by another throws until the index exists, and
+     Firestore helpfully includes a link that builds it. */
+  const indexUrl = raw.match(/https:\/\/console\.firebase\.google\.com\/[^\s)]+/)?.[0];
+  if (raw.includes("requires an index") || indexUrl) {
+    return {
+      title: "This list needs a database index",
+      message:
+        "Firestore cannot sort these records without one. Create it from the link " +
+        "below, then add it to firestore.indexes.json so the next deploy keeps it.",
+      indexUrl,
+    };
+  }
+
+  if (raw.includes("Missing or insufficient permissions")) {
+    return {
+      title: "You do not have access to this",
+      message:
+        "The security rules refused this read. If you should be able to see it, your " +
+        "role needs changing — an administrator can do that from Admin → Users.",
+    };
+  }
+
+  if (raw.includes("offline") || raw.includes("Failed to get document because the client is offline")) {
+    return {
+      title: "No connection",
+      message: "The app cannot reach Firestore. Check the network and try again.",
+    };
+  }
+
+  return { message: raw };
 }

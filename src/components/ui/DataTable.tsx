@@ -60,7 +60,7 @@ export function DataTable<T>({
   if (error) {
     return (
       <div className={cn("bg-white border border-grey-200 rounded-md", className)}>
-        <ErrorState onRetry={onRetry} />
+        <ErrorState error={error} onRetry={onRetry} />
       </div>
     );
   }
