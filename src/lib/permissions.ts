@@ -245,11 +245,24 @@ const MATRIX: Record<Role, ResourceGrants> = {
     audit_log: READ,
   },
 
+  /**
+   * ⚠️ Create but not edit.
+   *
+   * A salesperson adds their own leads and cannot alter them
+   * afterwards. The reason is that a customer record is what an
+   * invoice and a commission are attached to: changing an email or a
+   * company after a booking exists silently redirects a voucher, or
+   * moves a stay onto a different account. Corrections go through the
+   * CRS desk, Admin or Owner, who see the whole book and can tell
+   * whether an edit is a fix or a reassignment.
+   *
+   * Nothing is deletable by anyone — see firestore.rules.
+   */
   salesperson: {
     dashboard: READ,
     // Scoped further by ownership — see scopeRecords().
-    customer: ["view", "create", "edit", "export"],
-    company: ["view", "create", "edit", "export"],
+    customer: ["view", "create", "export"],
+    company: ["view", "create", "export"],
     reservation: ["view", "create", "edit", "cancel", "export"],
     hotel: READ,
     room_config: READ,

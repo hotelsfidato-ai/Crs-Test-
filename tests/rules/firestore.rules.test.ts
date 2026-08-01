@@ -642,3 +642,72 @@ describe("the webhook configuration", () => {
     await assertFails(getDoc(doc(asStranger(env), "settings", "webhook")));
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════
+   A SALESPERSON CREATES BUT DOES NOT AMEND
+
+   They add their own leads and cannot alter them afterwards. A
+   customer record is what an invoice and a commission attach to, so
+   changing an email or a company after a booking exists silently
+   redirects a voucher or moves a stay onto another account.
+   ══════════════════════════════════════════════════════════════════ */
+
+describe("a salesperson's write access to leads", () => {
+  it("can still create a customer and a company they own", async () => {
+    const db = as(env, SALES_A);
+    await assertSucceeds(
+      setDoc(doc(db, "customers", "fresh_lead"), {
+        ownerId: SALES_A.uid, fullName: "New Lead",
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(db, "companies", "fresh_account"), {
+        ownerId: SALES_A.uid, name: "New Account",
+      }),
+    );
+  });
+
+  /* ⚠️ The point of the change: even their OWN record is read-only
+     once created. */
+  it("cannot edit their own customer after creating it", async () => {
+    await assertFails(
+      updateDoc(doc(as(env, SALES_A), "customers", "owned_by_a"), {
+        email: "redirected@example.com",
+      }),
+    );
+  });
+
+  it("cannot edit their own company after creating it", async () => {
+    await assertFails(
+      updateDoc(doc(as(env, SALES_A), "companies", "owned_by_a"), {
+        negotiatedDiscountPercent: 50,
+      }),
+    );
+  });
+
+  it("cannot delete either, and neither can anyone else", async () => {
+    for (const person of [SALES_A, CRS, MANAGER, ADMIN, OWNER]) {
+      await assertFails(deleteDoc(doc(as(env, person), "customers", "owned_by_a")));
+      await assertFails(deleteDoc(doc(as(env, person), "companies", "owned_by_a")));
+    }
+  });
+
+  it("leaves corrections to the CRS desk, admin, manager and owner", async () => {
+    for (const person of [CRS, MANAGER, ADMIN, OWNER]) {
+      await assertSucceeds(
+        updateDoc(doc(as(env, person), "customers", "owned_by_a"), { city: "Pune" }),
+      );
+      await assertSucceeds(
+        updateDoc(doc(as(env, person), "companies", "owned_by_a"), { city: "Pune" }),
+      );
+    }
+  });
+
+  /* Their bookings are unaffected — a salesperson still runs their own
+     reservations end to end. */
+  it("does not affect their own reservations", async () => {
+    await assertSucceeds(
+      updateDoc(doc(as(env, SALES_A), "reservations", "owned_by_a"), { status: "checked_in" }),
+    );
+  });
+});

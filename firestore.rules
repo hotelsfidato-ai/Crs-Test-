@@ -81,6 +81,22 @@ service cloud.firestore {
       return isAnyRole(['owner', 'admin', 'crs_manager', 'manager', 'salesperson']);
     }
 
+    /**
+     * ⚠️ May AMEND an existing customer or company.
+     *
+     * A salesperson is deliberately absent. They add their own leads
+     * and cannot alter them afterwards, because a customer record is
+     * what an invoice and a commission attach to — changing an email
+     * or a company after a booking exists silently redirects a voucher
+     * or moves a stay onto a different account.
+     *
+     * Corrections go through the CRS desk, Admin or Owner, who see the
+     * whole book and can tell a fix from a reassignment.
+     */
+    function amendsAccounts() {
+      return isAnyRole(['owner', 'admin', 'crs_manager', 'manager']);
+    }
+
     /* ⚠️ `automation` is the n8n service account. It may read business
        records and drain the queue. It may never touch users, roles or
        commercial terms. */
@@ -245,14 +261,17 @@ service cloud.firestore {
     match /customers/{customerId} {
       allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
       allow create: if active() && worksAccounts() && writingOwnRecord();
-      allow update: if active() && worksAccounts() && ownsOrUnscoped(resource);
+      allow update: if active() && amendsAccounts();
+
+      /* ⚠️ Never, by anyone. A customer carries stay history, invoices
+         and commission. Mark them inactive instead. */
       allow delete: if false;
     }
 
     match /companies/{companyId} {
       allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
       allow create: if active() && worksAccounts() && writingOwnRecord();
-      allow update: if active() && worksAccounts() && ownsOrUnscoped(resource);
+      allow update: if active() && amendsAccounts();
       allow delete: if false;
     }
 
