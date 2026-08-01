@@ -35,7 +35,12 @@ export default function RunsPage() {
   const navigate = useNavigate();
   const list = useListState({
     filterKeys: FILTER_KEYS,
-    defaultSortBy: "startedAt",
+    /* ⚠️ createdAt, not startedAt. A queue event has no startedAt —
+       that field belonged to the old n8n *run* records. Firestore
+       excludes documents missing the orderBy field, so sorting by it
+       returned nothing at all and the queue silently looked empty
+       rather than erroring. */
+    defaultSortBy: "createdAt",
     defaultSortDir: "desc",
   });
 
