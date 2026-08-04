@@ -1,0 +1,155 @@
+{
+  "name": "Fidato — Reservation confirmed (SMTP)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fidato-reservation",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "rawBody": false
+        }
+      },
+      "id": "1e1bbd6f-79b7-4a42-a405-bdfe76efb41d",
+      "name": "Reservation confirmed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-320, 224],
+      "webhookId": "fidato-reservation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, reference: $json.body.data.voucher.reference }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "66f03088-bfbb-4b27-b528-cd0e9df0ec16",
+      "name": "Reply immediately",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-128, 224]
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Base64 -> binary PDF.\n *\n * Throws with an instruction rather than returning an empty\n * attachment: a zero-byte PDF silently attached to a guest's\n * confirmation is worse than an execution that stops and says why.\n */\nconst d = $('Reservation confirmed').first().json.body.data;\nconst b64 = d.voucher.pdfBase64;\n\nif (!b64) {\n  throw new Error(\n    'No PDF in the payload. Tick \"Also attach a ready-made PDF\" in ' +\n    'Fidato -> Admin -> Integrations and save, then create a booking.'\n  );\n}\n\nreturn [{\n  json: { filename: d.voucher.filename },\n  binary: {\n    data: {\n      data: b64,\n      mimeType: 'application/pdf',\n      fileName: d.voucher.filename,\n    },\n  },\n}];"
+      },
+      "id": "428dac28-c990-463b-a2f6-9f0e7d037f0a",
+      "name": "PDF to binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [64, 224]
+    },
+    {
+      "parameters": {
+        "fromEmail": "Fidato Hotels <crs@fidatohotels.com>",
+        "toEmail": "={{ $('Reservation confirmed').item.json.body.data.to }}",
+        "subject": "={{ $('Reservation confirmed').item.json.body.data.email.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $('Reservation confirmed').item.json.body.data.email.text }}",
+        "html": "={{ $('Reservation confirmed').item.json.body.data.email.html }}",
+        "options": {
+          "attachments": "data",
+          "replyTo": "crs@fidatohotels.com",
+          "appendAttribution": false
+        }
+      },
+      "id": "9ddf636f-38bb-4ca9-83b9-1620a2329a14",
+      "name": "Email the voucher",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [304, 0],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "crs@fidatohotels.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "data",
+        "name": "={{ $('Reservation confirmed').item.json.body.data.voucher.filename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv",
+          "mode": "list",
+          "cachedResultName": "Voucher ",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv"
+        },
+        "options": {}
+      },
+      "id": "ccd95980-3508-474d-9ebe-bc0594a84db1",
+      "name": "Save PDF to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [304, 224],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FyMFPiLDaVuqoPk8",
+          "name": "Google Drive account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "REPLACE_WITH_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('Reservation confirmed').item.json.body.data.guestPhone }}",
+        "messageType": "document",
+        "mediaPath": "useMediaFile",
+        "mediaPropertyName": "data",
+        "additionalFields": {
+          "mediaFilename": "={{ $('Reservation confirmed').item.json.body.data.voucher.filename }}",
+          "mediaCaption": "=Your booking at {{ $('Reservation confirmed').item.json.body.data.hotel.name }} is confirmed. Reference {{ $('Reservation confirmed').item.json.body.data.reservation.reference }}."
+        }
+      },
+      "id": "b7c41d02-9f1a-4f88-9a2e-0f6d2c3a51e7",
+      "name": "WhatsApp the guest",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [304, 448],
+      "disabled": true,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "REPLACE_ME",
+          "name": "WhatsApp account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Reservation confirmed": {
+      "main": [[{ "node": "Reply immediately", "type": "main", "index": 0 }]]
+    },
+    "Reply immediately": {
+      "main": [[{ "node": "PDF to binary", "type": "main", "index": 0 }]]
+    },
+    "PDF to binary": {
+      "main": [
+        [
+          { "node": "Email the voucher", "type": "main", "index": 0 },
+          { "node": "Save PDF to Drive", "type": "main", "index": 0 },
+          { "node": "WhatsApp the guest", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "488ffd76350a7d87c0df6b398b72bc6199b892052883143985aca748255680d8"
+  }
+}
