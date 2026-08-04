@@ -11,11 +11,11 @@
           "rawBody": false
         }
       },
-      "id": "webhook-in",
+      "id": "1e1bbd6f-79b7-4a42-a405-bdfe76efb41d",
       "name": "Reservation confirmed",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-160, 300],
+      "position": [-240, 224],
       "webhookId": "fidato-reservation"
     },
     {
@@ -30,11 +30,53 @@
           }
         }
       },
-      "id": "respond",
+      "id": "66f03088-bfbb-4b27-b528-cd0e9df0ec16",
       "name": "Reply immediately",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [60, 300]
+      "position": [-32, 224]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "pdfBase64",
+              "value": "={{ $('Reservation confirmed').item.json.body.data.voucher.pdfBase64 }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "filename",
+              "value": "={{ $('Reservation confirmed').item.json.body.data.voucher.filename }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6c3bbd69-72bd-4802-a329-5a5c4276cdf9",
+      "name": "Pick voucher PDF",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [176, 224]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "pdfBase64",
+        "options": {
+          "fileName": "={{ $json.filename }}",
+          "mimeType": "application/pdf",
+          "destinationKey": "data"
+        }
+      },
+      "id": "428dac28-c990-463b-a2f6-9f0e7d037f0a",
+      "name": "PDF to binary",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [384, 224]
     },
     {
       "parameters": {
@@ -43,69 +85,55 @@
         "emailType": "html",
         "message": "={{ $('Reservation confirmed').item.json.body.data.email.html }}",
         "options": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              { "property": "data" }
+            ]
+          }
         }
       },
-      "id": "gmail-send",
+      "id": "9ddf636f-38bb-4ca9-83b9-1620a2329a14",
       "name": "Email the voucher",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [320, 100],
+      "position": [640, 0],
+      "webhookId": "5a9f0a85-c293-492e-8280-35ffd80e796e",
       "credentials": {
-        "gmailOAuth2": { "id": "REPLACE_ME", "name": "Gmail account" }
+        "gmailOAuth2": {
+          "id": "3sxxT8HlBNXuSHn1",
+          "name": "Fidato hotels"
+        }
       }
     },
     {
       "parameters": {
-        "operation": "toText",
-        "sourceProperty": "voucherHtml",
-        "binaryPropertyName": "data",
-        "options": {
-          "fileName": "={{ $('Reservation confirmed').item.json.body.data.voucher.reference }}.html",
-          "mimeType": "text/html"
-        }
-      },
-      "id": "to-file",
-      "name": "Voucher to file",
-      "type": "n8n-nodes-base.convertToFile",
-      "typeVersion": 1.1,
-      "position": [320, 300]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "a1",
-              "name": "voucherHtml",
-              "value": "={{ $('Reservation confirmed').item.json.body.data.voucher.html }}",
-              "type": "string"
-            }
-          ]
+        "inputDataFieldName": "data",
+        "name": "={{ $('Reservation confirmed').item.json.body.data.voucher.filename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv",
+          "mode": "list",
+          "cachedResultName": "Voucher ",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv"
         },
         "options": {}
       },
-      "id": "pick-html",
-      "name": "Pick voucher HTML",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [140, 300]
-    },
-    {
-      "parameters": {
-        "inputDataFieldName": "data",
-        "name": "={{ $('Reservation confirmed').item.json.body.data.voucher.reference }}.html",
-        "driveId": { "__rl": true, "mode": "list", "value": "My Drive" },
-        "folderId": { "__rl": true, "mode": "list", "value": "root" },
-        "options": {}
-      },
-      "id": "drive-upload",
-      "name": "Save to Drive",
+      "id": "ccd95980-3508-474d-9ebe-bc0594a84db1",
+      "name": "Save PDF to Drive",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [540, 300],
+      "position": [640, 224],
       "credentials": {
-        "googleDriveOAuth2Api": { "id": "REPLACE_ME", "name": "Google Drive account" }
+        "googleDriveOAuth2Api": {
+          "id": "FyMFPiLDaVuqoPk8",
+          "name": "Google Drive account 2"
+        }
       }
     },
     {
@@ -113,16 +141,25 @@
         "operation": "send",
         "phoneNumberId": "REPLACE_WITH_PHONE_NUMBER_ID",
         "recipientPhoneNumber": "={{ $('Reservation confirmed').item.json.body.data.guestPhone }}",
-        "textBody": "=Dear {{ $('Reservation confirmed').item.json.body.data.voucher.model.guestName }}, your booking at {{ $('Reservation confirmed').item.json.body.data.voucher.model.hotelName }} is confirmed.\n\nReference: {{ $('Reservation confirmed').item.json.body.data.voucher.model.reference }}\nCheck in: {{ $('Reservation confirmed').item.json.body.data.voucher.model.checkIn }}\nCheck out: {{ $('Reservation confirmed').item.json.body.data.voucher.model.checkOut }}\n\nYour voucher has been emailed to you. — Fidato Hotels",
-        "additionalFields": {}
+        "messageType": "document",
+        "mediaPath": "useMediaFile",
+        "mediaPropertyName": "data",
+        "additionalFields": {
+          "mediaFilename": "={{ $('Reservation confirmed').item.json.body.data.voucher.filename }}",
+          "mediaCaption": "=Your booking at {{ $('Reservation confirmed').item.json.body.data.hotel.name }} is confirmed. Reference {{ $('Reservation confirmed').item.json.body.data.reservation.reference }}."
+        }
       },
-      "id": "whatsapp",
+      "id": "b7c41d02-9f1a-4f88-9a2e-0f6d2c3a51e7",
       "name": "WhatsApp the guest",
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1,
-      "position": [320, 500],
+      "position": [640, 448],
+      "disabled": true,
       "credentials": {
-        "whatsAppApi": { "id": "REPLACE_ME", "name": "WhatsApp account" }
+        "whatsAppApi": {
+          "id": "REPLACE_ME",
+          "name": "WhatsApp account"
+        }
       }
     }
   ],
@@ -131,21 +168,25 @@
       "main": [[{ "node": "Reply immediately", "type": "main", "index": 0 }]]
     },
     "Reply immediately": {
+      "main": [[{ "node": "Pick voucher PDF", "type": "main", "index": 0 }]]
+    },
+    "Pick voucher PDF": {
+      "main": [[{ "node": "PDF to binary", "type": "main", "index": 0 }]]
+    },
+    "PDF to binary": {
       "main": [
         [
           { "node": "Email the voucher", "type": "main", "index": 0 },
-          { "node": "Pick voucher HTML", "type": "main", "index": 0 },
+          { "node": "Save PDF to Drive", "type": "main", "index": 0 },
           { "node": "WhatsApp the guest", "type": "main", "index": 0 }
         ]
       ]
-    },
-    "Pick voucher HTML": {
-      "main": [[{ "node": "Voucher to file", "type": "main", "index": 0 }]]
-    },
-    "Voucher to file": {
-      "main": [[{ "node": "Save to Drive", "type": "main", "index": 0 }]]
     }
   },
   "settings": { "executionOrder": "v1" },
-  "pinData": {}
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "488ffd76350a7d87c0df6b398b72bc6199b892052883143985aca748255680d8"
+  }
 }
