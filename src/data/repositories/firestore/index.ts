@@ -708,15 +708,24 @@ export const reservationsRepo = {
       channel: input.channel ?? "direct_sales",
       paymentTerm: input.paymentTerm,
 
-      customerId: customer.id, customerName: customer.fullName,
-      ...(company ? { companyId: company.id, companyName: company.name } : {}),
-      hotelId: hotel.id, hotelName: hotel.name, hotelCity: hotel.city,
+      /* ⚠️ Every denormalised field is coalesced, and it is not
+         defensive noise. Firestore rejects a write containing ANY
+         undefined value — the whole transaction aborts, nothing is
+         saved, and the wizard can only say "could not create".
+
+         A customer with no phone, or a property typed into the console
+         without a city, is enough to do it. `toDoc()` strips undefined
+         elsewhere, but it is shallow and this object nests `guests`,
+         so the fallbacks have to live here. */
+      customerId: customer.id, customerName: customer.fullName ?? "",
+      ...(company ? { companyId: company.id, companyName: company.name ?? "" } : {}),
+      hotelId: hotel.id, hotelName: hotel.name ?? "", hotelCity: hotel.city ?? "",
 
       checkIn: input.checkIn, checkOut: input.checkOut, nights,
       rooms: input.rooms,
       guests: [{
-        name: customer.fullName, email: customer.email,
-        phone: customer.phone, isPrimary: true,
+        name: customer.fullName ?? "", email: customer.email ?? "",
+        phone: customer.phone ?? "", isPrimary: true,
       }],
       totalRooms: input.rooms.reduce((s, r) => s + r.quantity, 0),
       totalAdults: input.rooms.reduce((s, r) => s + r.adults * r.quantity, 0),

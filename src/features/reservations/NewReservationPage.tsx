@@ -6,7 +6,7 @@ import {
   Check, ChevronLeft, ChevronRight, AlertTriangle, Minus, Plus, Star,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { useActor, useSession } from "@/lib/session";
+import { useActor, useSession, useScope } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import {
   adminRepo, companiesRepo, customersRepo, hotelsRepo, reservationsRepo,
@@ -17,7 +17,7 @@ import { GST_THRESHOLD } from "@/lib/tax";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button, Field,
   Combobox, DateRangePicker, Textarea, Input, NativeSelect, StatusPill, Skeleton,
-  EmptyState, StarRating, toast,
+  EmptyState, StarRating, toast, describeError,
 } from "@/components/ui";
 import {
   MEAL_PLANS, MEAL_PLAN_LABELS, MEAL_PLAN_SHORT, PAYMENT_TERM_LABELS,
@@ -69,6 +69,7 @@ interface RoomSelection {
 export default function NewReservationPage() {
   const navigate = useNavigate();
   const actor = useActor();
+  const scope = useScope();
   const queryClient = useQueryClient();
   const [params] = useSearchParams();
 
@@ -109,9 +110,14 @@ export default function NewReservationPage() {
 
   const assignedOwner = assignableOwners.find((u) => u.id === ownerId);
 
+  /* ⚠️ Scoped, like every other customer list. Without the scope this
+     issues an unfiltered query, and Firestore fails a query outright
+     when it *could* return a document the rules would refuse — so a
+     salesperson got an empty customer picker rather than their own
+     leads. See scopeConstraints in lib/permissions. */
   const customers = useQuery({
-    queryKey: ["customers-all"],
-    queryFn: () => customersRepo.all(),
+    queryKey: ["customers-all", scope],
+    queryFn: () => customersRepo.all(scope),
   });
 
   const hotels = useQuery({
@@ -216,7 +222,13 @@ export default function NewReservationPage() {
       );
       navigate(`/reservations/${reservation.id}`);
     },
-    onError: () => toast.error("Could not create", "Nothing was saved. Try again."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(
+        detail.title ?? "Could not create",
+        detail.message ?? "Nothing was saved. Try again.",
+      );
+    },
   });
 
   /* ⚠️ Any ONE of the three is enough, but not none. Mirrors
@@ -262,9 +274,11 @@ export default function NewReservationPage() {
                       id={id}
                       value={customerId}
                       onChange={setCustomerId}
+                      loading={customers.isLoading}
+                      error={customers.error}
                       options={(customers.data ?? []).map((c) => ({
                         value: c.id,
-                        label: c.fullName,
+                        label: c.fullName || c.email || "Unnamed customer",
                         description: `${c.email}${c.companyName ? ` · ${c.companyName}` : ""}`,
                       }))}
                       placeholder="Search customers…"

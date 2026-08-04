@@ -10,6 +10,7 @@ import { INDUSTRIES } from "@/lib/vocabulary";
 import {
   Page, PageHeader, Card, CardBody, CardFooter, Button, Field, Input,
   Textarea, NativeSelect, Skeleton, toast,
+describeError,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 
@@ -85,7 +86,10 @@ export default function CompanyFormPage() {
       );
       navigate(`/crm/companies/${company.id}`);
     },
-    onError: () => toast.error("Could not save", "Something went wrong. Try again."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not save", detail.message ?? "Something went wrong. Try again.");
+    },
   });
 
   if (isEdit && existing.isLoading) return <FormSkeleton />;

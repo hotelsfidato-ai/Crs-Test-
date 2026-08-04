@@ -11,6 +11,7 @@ import { relative } from "@/lib/format";
 import {
   Card, CardHeader, CardBody, CardFooter, Button, Field, Input,
   Checkbox, StatusPill, Skeleton, fieldProps, toast,
+describeError,
 } from "@/components/ui";
 import { postWebhook, sampleReservationPayload, type WebhookResult } from "@/lib/webhook";
 import type { AutomationEventType, WebhookConfig } from "@/data/types";
@@ -68,7 +69,10 @@ export function WebhookCard() {
       queryClient.invalidateQueries({ queryKey: ["webhook-config"] });
       toast.success("Webhook saved", enabled ? "Events will be pushed to n8n." : "Saved, but disabled.");
     },
-    onError: () => toast.error("Could not save", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not save", detail.message ?? "Nothing was changed.");
+    },
   });
 
   async function runTest() {

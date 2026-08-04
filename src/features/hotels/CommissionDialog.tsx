@@ -6,6 +6,7 @@ import { useActor } from "@/lib/session";
 import {
   Button, Dialog, DialogContent, DialogTrigger, DialogClose,
   Field, Input, Textarea, fieldProps, toast,
+describeError,
 } from "@/components/ui";
 import type { HotelCommercial } from "@/data/types";
 
@@ -57,7 +58,10 @@ export function CommissionDialog({
       toast.success("Commercial terms saved", `${hotelName} is now at ${value}%.`);
       setOpen(false);
     },
-    onError: () => toast.error("Could not save", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not save", detail.message ?? "Nothing was changed.");
+    },
   });
 
   return (

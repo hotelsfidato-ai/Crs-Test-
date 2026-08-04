@@ -271,20 +271,32 @@ const MATRIX: Record<Role, ResourceGrants> = {
     ai: READ,
   },
 
+  /**
+   * ⚠️ No `commission` and no `audit_log`, and both absences are load
+   * bearing rather than oversights.
+   *
+   * Finance handles what Fidato BILLS — invoices and payments. What
+   * Fidato EARNS is a commercial term, and commission rows are denied
+   * to finance in firestore.rules with a test asserting it. Granting
+   * them here did not widen access; it only put two entries in the
+   * navigation that opened and then failed, because the rules are the
+   * real boundary and the matrix merely decides what renders.
+   *
+   * The same applied to the audit log. If either is ever reopened to
+   * finance, change firestore.rules FIRST — a grant here alone buys a
+   * broken page, not a permission.
+   */
   finance: {
     dashboard: READ,
     customer: READ,
     company: READ,
     reservation: READ_EXPORT,
     hotel: READ,
-    // Invoices and payments, but NOT commission_terms. Deliberate.
     invoice: ["view", "create", "edit", "approve", "export"],
     payment: ["view", "create", "edit", "export"],
-    commission: ["view", "edit", "approve", "export"],
     report: READ_EXPORT,
     notification: READ,
     ai: READ,
-    audit_log: READ,
   },
 
   viewer: {

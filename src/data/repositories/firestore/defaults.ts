@@ -36,6 +36,12 @@ export const HOTEL_DEFAULTS: Record<string, unknown> = {
   email: "",
   phone: "",
   country: "India",
+  /* Copied onto every reservation for the property. Absent here means
+     an undefined on the booking, which Firestore refuses. */
+  name: "",
+  shortName: "",
+  city: "",
+  state: "",
 };
 
 export const ROOM_TYPE_DEFAULTS: Record<string, unknown> = {
@@ -81,8 +87,20 @@ export const COMPANY_DEFAULTS: Record<string, unknown> = {
   status: "prospect",
 };
 
+/**
+ * ⚠️ `email` and `phone` are here for a specific failure. Creating a
+ * reservation copies them onto the booking's guest list, and Firestore
+ * rejects a write containing undefined — so one customer saved without
+ * a phone number made every booking for that customer abort with
+ * "nothing was saved" and no usable reason.
+ */
 export const CUSTOMER_DEFAULTS: Record<string, unknown> = {
   preferences: [],
+  fullName: "",
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
   city: "",
   state: "",
   notes: "",

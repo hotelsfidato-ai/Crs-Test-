@@ -41,7 +41,7 @@ export default function ReservationsPage() {
       ),
     },
     {
-      key: "hotelName", header: "Property", sortable: true,
+      key: "hotelName", header: "Property",
       cell: (r) => (
         <div className="min-w-0">
           <p className="text-ink-900 truncate">{r.hotelName}</p>
@@ -73,7 +73,7 @@ export default function ReservationsPage() {
       ),
     },
     {
-      key: "status", header: "Status", sortable: true,
+      key: "status", header: "Status",
       cell: (r) => (
         <StatusPill tone={RESERVATION_TONES[r.status] ?? "neutral"}>
           {labelFor(r.status)}

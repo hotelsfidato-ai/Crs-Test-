@@ -6,6 +6,7 @@ import { useActor } from "@/lib/session";
 import {
   Button, Dialog, DialogContent, DialogTrigger, DialogClose,
   Field, Input, Textarea, fieldProps, toast,
+describeError,
 } from "@/components/ui";
 import type { RoomType } from "@/data/types";
 
@@ -91,7 +92,10 @@ export function RoomTypeDialog({
       );
       setOpen(false);
     },
-    onError: () => toast.error("Could not save", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not save", detail.message ?? "Nothing was changed.");
+    },
   });
 
   const ready = draft.name.trim().length > 1;
@@ -261,7 +265,10 @@ export function DeleteRoomTypeButton({
       queryClient.invalidateQueries({ queryKey: ["hotel-room-types", hotelId] });
       toast.success("Room type removed", `${roomType.name} is no longer bookable.`);
     },
-    onError: () => toast.error("Could not remove", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not remove", detail.message ?? "Nothing was changed.");
+    },
   });
 
   return (

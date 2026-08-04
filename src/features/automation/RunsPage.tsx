@@ -58,13 +58,13 @@ export default function RunsPage() {
 
   const columns: Column<AutomationEvent>[] = [
     {
-      key: "status", header: "State", sortable: true,
+      key: "status", header: "State",
       cell: (e) => (
         <StatusPill tone={EVENT_TONES[e.status] ?? "neutral"}>{humanise(e.status)}</StatusPill>
       ),
     },
     {
-      key: "type", header: "Event", sortable: true,
+      key: "type", header: "Event",
       cell: (e) => <span className="font-medium text-ink-900">{humanise(e.type)}</span>,
     },
     {

@@ -35,7 +35,7 @@ export default function InvoicesPage() {
 
   const columns: Column<Invoice>[] = [
     {
-      key: "number", header: "Invoice", sortable: true,
+      key: "number", header: "Invoice",
       cell: (i) => (
         <div className="min-w-0">
           <p className="font-medium text-ink-900 tabular truncate">{i.number}</p>
@@ -72,7 +72,7 @@ export default function InvoicesPage() {
       ),
     },
     {
-      key: "status", header: "Status", sortable: true,
+      key: "status", header: "Status",
       cell: (i) => (
         <StatusPill tone={INVOICE_TONES[i.status] ?? "neutral"}>
           {humanise(i.status)}
@@ -91,7 +91,7 @@ export default function InvoicesPage() {
         ),
     },
     {
-      key: "totalAmount", header: "Total", numeric: true, sortable: true,
+      key: "totalAmount", header: "Total", numeric: true,
       cell: (i) => <span className="font-medium">{money(i.totalAmount)}</span>,
     },
   ];

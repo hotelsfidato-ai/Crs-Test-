@@ -67,13 +67,13 @@ export default function CustomersPage() {
     },
     { key: "city", header: "City", hideBelow: "lg", cell: (c) => c.city },
     {
-      key: "status", header: "Status", sortable: true,
+      key: "status", header: "Status",
       cell: (c) => (
         <StatusPill tone={CUSTOMER_TONES[c.status] ?? "neutral"}>{c.status}</StatusPill>
       ),
     },
     {
-      key: "totalReservations", header: "Stays", numeric: true, sortable: true, hideBelow: "md",
+      key: "totalReservations", header: "Stays", numeric: true, hideBelow: "md",
       cell: (c) => number(c.totalReservations),
     },
     {
@@ -81,7 +81,7 @@ export default function CustomersPage() {
       cell: (c) => (c.totalRevenue ? money(c.totalRevenue) : <span className="text-grey-400">—</span>),
     },
     {
-      key: "ownerName", header: "Lead owner", sortable: true, hideBelow: "lg",
+      key: "ownerName", header: "Lead owner", hideBelow: "lg",
       cell: (c) => <OwnerTag ownerId={c.ownerId} ownerName={c.ownerName} />,
     },
     {

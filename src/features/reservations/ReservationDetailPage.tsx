@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useSession, useActor } from "@/lib/session";
-import { can } from "@/lib/permissions";
+import { can, canAccess } from "@/lib/permissions";
 import { reservationsRepo, lineTotal } from "@/data/repositories";
 import {
   money, moneyPrecise, dateShort, dateTime, nightsLabel, humanise,
@@ -22,6 +22,7 @@ import {
   StatusPill, RESERVATION_TONES, Skeleton, Tabs, TabsList, TabsTrigger,
   TabsContent, Dialog, DialogContent, DialogTrigger, DialogClose, NativeSelect,
   Field, toast, Stat, EmptyState, Tooltip, Avatar,
+describeError,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 import { VoucherButton } from "./VoucherButton";
@@ -38,9 +39,14 @@ export default function ReservationDetailPage() {
     queryFn: () => reservationsRepo.get(id),
   });
 
+  /* ⚠️ Only fetched by roles the rules let read auditLogs. Asking
+     anyway returned a permission error that the tab rendered as
+     "No activity recorded" — a timeline claiming nothing happened is
+     worse than one that is absent. */
   const audit = useQuery({
     queryKey: ["reservation-audit", id],
     queryFn: () => reservationsRepo.audit(id),
+    enabled: canAccess(role, "audit_log"),
   });
 
   const setStatus = useMutation({
@@ -54,7 +60,10 @@ export default function ReservationDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["kpis"] });
       toast.success(`Reservation ${labelFor(updated.status).toLowerCase()}`, updated.reference);
     },
-    onError: () => toast.error("Could not update", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not update", detail.message ?? "Nothing was changed.");
+    },
   });
 
   if (reservation.isLoading) return <DetailSkeleton />;

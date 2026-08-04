@@ -8,6 +8,7 @@ import { dateShort, relative, humanise } from "@/lib/format";
 import {
   Page, PageHeader, Button, FilterBar, DataTable, Pagination, EmptyState,
   StatusPill, Card, CardHeader, CardBody, Stat, Avatar, toast, type Column,
+describeError,
 } from "@/components/ui";
 import { useListState } from "@/features/shared/useListState";
 import { InviteUserDialog } from "./InviteUserDialog";
@@ -63,7 +64,7 @@ export default function UsersPage() {
       ),
     },
     {
-      key: "role", header: "Role", sortable: true,
+      key: "role", header: "Role",
       cell: (u) => (
         <StatusPill tone={u.role === "owner" ? "accent" : "neutral"} dot={false}>
           {ROLE_LABELS[u.role as Role] ?? humanise(u.role)}
@@ -91,7 +92,7 @@ export default function UsersPage() {
       cell: (u) => <span className="text-grey-500">{relative(u.lastSeenAt)}</span>,
     },
     {
-      key: "status", header: "Status", sortable: true,
+      key: "status", header: "Status",
       cell: (u) => (
         <StatusPill tone={STATUS_TONE[u.status] ?? "neutral"}>
           {STATUS_LABEL[u.status] ?? humanise(u.status)}
@@ -99,7 +100,7 @@ export default function UsersPage() {
       ),
     },
     {
-      key: "createdAt", header: "Joined", sortable: true, hideBelow: "xl",
+      key: "createdAt", header: "Joined", hideBelow: "xl",
       cell: (u) => <span className="tabular text-grey-500">{dateShort(u.createdAt)}</span>,
     },
   ];
@@ -234,7 +235,10 @@ function PendingInvitations() {
       queryClient.invalidateQueries({ queryKey: ["invitations"] });
       toast.success("Invitation withdrawn", "That address can no longer claim a role.");
     },
-    onError: () => toast.error("Could not withdraw", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not withdraw", detail.message ?? "Nothing was changed.");
+    },
   });
 
   const invitations = data ?? [];

@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Popover, PopoverTrigger, PopoverContent } from "./Overlays";
+import { describeError } from "./States";
 
 /* ══════════════════════════════════════════════════════════════════
    COMBOBOX
@@ -31,12 +32,23 @@ export interface ComboboxProps<T extends string> {
   className?: string;
   /** Rendered above the list — e.g. a "Create new" affordance. */
   footer?: ReactNode;
+  /**
+   * ⚠️ Pass these whenever the options come from a query.
+   *
+   * Without them an empty list is indistinguishable from a failed one:
+   * a picker that says "No matches." while the fetch is erroring sends
+   * you looking for missing records that are sitting in the database.
+   * That mistake cost several rounds of debugging on the customer
+   * picker, which is why they are separate states now.
+   */
+  loading?: boolean;
+  error?: unknown;
 }
 
 export function Combobox<T extends string>({
   value, onChange, options, placeholder = "Select…",
   searchPlaceholder = "Search…", emptyMessage = "No matches.",
-  disabled, invalid, id, className, footer,
+  disabled, invalid, id, className, footer, loading, error,
 }: ComboboxProps<T>) {
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState("");
@@ -107,7 +119,20 @@ export function Combobox<T extends string>({
             roles a screen reader hears a dialog full of buttons rather
             than a set of choices. */}
         <div role="listbox" className="max-h-64 overflow-y-auto scrollbar-quiet p-1">
-          {filtered.length === 0 ? (
+          {error ? (
+            /* The reason, verbatim where Firestore gives one. An
+               internal tool's user is the person who reports the bug. */
+            <div className="px-3 py-5 text-center">
+              <p className="text-sm font-medium text-brand-red">
+                {describeError(error).title ?? "Could not load the list"}
+              </p>
+              <p className="text-sm text-grey-500 mt-1 leading-relaxed">
+                {describeError(error).message ?? "Nothing was loaded."}
+              </p>
+            </div>
+          ) : loading ? (
+            <p className="px-3 py-6 text-center text-sm text-grey-500">Loading…</p>
+          ) : filtered.length === 0 ? (
             <p className="px-3 py-6 text-center text-sm text-grey-500">{emptyMessage}</p>
           ) : (
             filtered.map((opt) => (

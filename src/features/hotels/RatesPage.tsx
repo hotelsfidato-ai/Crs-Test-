@@ -11,6 +11,7 @@ import {
   Page, PageHeader, Card, CardBody, CardHeader, Button, DataTable, Skeleton,
   StatusPill, Dialog, DialogContent, DialogTrigger, DialogClose, Field, Input,
   Textarea, EmptyState, Tooltip, Checkbox, toast, Stat, type Column,
+describeError,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 import {
@@ -257,7 +258,10 @@ function SeasonDialog({
       );
       setOpen(false);
     },
-    onError: () => toast.error("Could not save", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not save", detail.message ?? "Nothing was changed.");
+    },
   });
 
   /* ⚠️ An inverted range silently matches nothing — every booking then

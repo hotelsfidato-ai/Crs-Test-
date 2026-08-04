@@ -48,7 +48,7 @@ export default function CompaniesPage() {
       ),
     },
     {
-      key: "tier", header: "Tier", sortable: true,
+      key: "tier", header: "Tier",
       cell: (c) => (
         <StatusPill tone={TIER_TONES[c.tier]} dot={false}>
           {humanise(c.tier)}
@@ -57,7 +57,7 @@ export default function CompaniesPage() {
     },
     { key: "city", header: "City", hideBelow: "lg", cell: (c) => c.city },
     {
-      key: "status", header: "Status", sortable: true, hideBelow: "md",
+      key: "status", header: "Status", hideBelow: "md",
       cell: (c) => (
         <StatusPill tone={COMPANY_TONES[c.status] ?? "neutral"}>{c.status}</StatusPill>
       ),
@@ -81,7 +81,7 @@ export default function CompaniesPage() {
       },
     },
     {
-      key: "totalReservations", header: "Bookings", numeric: true, sortable: true, hideBelow: "md",
+      key: "totalReservations", header: "Bookings", numeric: true, hideBelow: "md",
       cell: (c) => number(c.totalReservations),
     },
     {
@@ -94,7 +94,7 @@ export default function CompaniesPage() {
         ),
     },
     {
-      key: "ownerName", header: "Lead owner", sortable: true, hideBelow: "lg",
+      key: "ownerName", header: "Lead owner", hideBelow: "lg",
       cell: (c) => <OwnerTag ownerId={c.ownerId} ownerName={c.ownerName} />,
     },
     {

@@ -710,4 +710,37 @@ describe("a salesperson's write access to leads", () => {
       updateDoc(doc(as(env, SALES_A), "reservations", "owned_by_a"), { status: "checked_in" }),
     );
   });
+
+  /* ⚠️ The regression this guards against: creating a reservation bumps
+     the customer/company roll-up counters in the same transaction, from
+     the owning salesperson's own session. Without this carve-out, every
+     booking a salesperson made failed at the last step. */
+  it("can still bump the roll-up counters on their own customer and company", async () => {
+    await assertSucceeds(
+      updateDoc(doc(as(env, SALES_A), "customers", "owned_by_a"), {
+        totalReservations: 4, totalRevenue: 52000, lastActivityAt: "2026-08-04",
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(as(env, SALES_A), "companies", "owned_by_a"), {
+        totalReservations: 4, totalRevenue: 52000, lastActivityAt: "2026-08-04",
+      }),
+    );
+  });
+
+  it("cannot smuggle another field in alongside a roll-up update", async () => {
+    await assertFails(
+      updateDoc(doc(as(env, SALES_A), "customers", "owned_by_a"), {
+        totalReservations: 4, email: "redirected@example.com",
+      }),
+    );
+  });
+
+  it("cannot bump roll-up counters on someone else's customer or company", async () => {
+    await assertFails(
+      updateDoc(doc(as(env, SALES_B), "customers", "owned_by_a"), {
+        totalReservations: 4, totalRevenue: 52000, lastActivityAt: "2026-08-04",
+      }),
+    );
+  });
 });

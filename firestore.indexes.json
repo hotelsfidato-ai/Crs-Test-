@@ -9,76 +9,6 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "fullName",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalRevenue",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "ownerName",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
           "fieldPath": "lastActivityAt",
           "order": "ASCENDING"
         }
@@ -93,8 +23,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -103,7 +33,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
@@ -117,12 +47,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "fullName",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -131,7 +61,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
@@ -145,12 +75,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
-          "order": "ASCENDING"
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -177,8 +107,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -187,7 +117,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "source",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
@@ -201,26 +131,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "source",
-          "order": "ASCENDING"
-        },
-        {
           "fieldPath": "status",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "source",
-          "order": "ASCENDING"
         },
         {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "fullName",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -229,7 +145,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "source",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
@@ -243,12 +159,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "source",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
-          "order": "ASCENDING"
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -275,8 +191,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -285,11 +201,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
+          "fieldPath": "source",
           "order": "ASCENDING"
         },
         {
@@ -303,16 +215,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "ownerId",
+          "fieldPath": "source",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "fullName",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -321,11 +229,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
+          "fieldPath": "source",
           "order": "ASCENDING"
         },
         {
@@ -339,16 +243,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "ownerId",
+          "fieldPath": "source",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "ownerName",
-          "order": "ASCENDING"
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -383,8 +283,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -397,7 +297,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "source",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
@@ -415,43 +315,25 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "source",
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fullName",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "customers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
           "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "source",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "customers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "source",
           "order": "ASCENDING"
         },
         {
@@ -469,12 +351,12 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "source",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
-          "order": "ASCENDING"
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -509,8 +391,80 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "customers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "source",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fullName",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "customers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "source",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fullName",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "customers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "source",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalRevenue",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "customers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "source",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -529,7 +483,7 @@
       ]
     },
     {
-      "collectionGroup": "companies",
+      "collectionGroup": "customers",
       "queryScope": "COLLECTION",
       "fields": [
         {
@@ -537,50 +491,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "name",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -607,8 +519,36 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -631,40 +571,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "name",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -691,8 +603,36 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -715,40 +655,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "name",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
-        },
-        {
           "fieldPath": "status",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
         },
         {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -775,8 +687,36 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tier",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tier",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -799,52 +739,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "name",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
           "fieldPath": "tier",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -879,8 +779,44 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -911,48 +847,12 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "name",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
-        },
-        {
           "fieldPath": "status",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "companies",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
         },
         {
-          "fieldPath": "tier",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "totalReservations",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -987,8 +887,44 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "ownerName",
+          "fieldPath": "totalRevenue",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tier",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "companies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "tier",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1011,7 +947,7 @@
       ]
     },
     {
-      "collectionGroup": "reservations",
+      "collectionGroup": "companies",
       "queryScope": "COLLECTION",
       "fields": [
         {
@@ -1019,22 +955,12 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "reference",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "reservations",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "ownerId",
+          "fieldPath": "tier",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "hotelName",
-          "order": "ASCENDING"
+          "fieldPath": "lastActivityAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1061,8 +987,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
+          "fieldPath": "checkIn",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1089,8 +1015,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "totalAmount",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1099,7 +1025,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
@@ -1113,12 +1039,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "hotelName",
-          "order": "ASCENDING"
+          "fieldPath": "reference",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1145,6 +1071,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "checkIn",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reservations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "totalAmount",
           "order": "ASCENDING"
         }
@@ -1159,8 +1099,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "totalAmount",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1169,7 +1109,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "channel",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
@@ -1183,12 +1123,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "channel",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "hotelName",
-          "order": "ASCENDING"
+          "fieldPath": "reference",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1215,8 +1155,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
+          "fieldPath": "checkIn",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1243,8 +1183,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "totalAmount",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1253,7 +1193,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "paymentTerm",
+          "fieldPath": "channel",
           "order": "ASCENDING"
         },
         {
@@ -1267,12 +1207,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "paymentTerm",
+          "fieldPath": "channel",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "hotelName",
-          "order": "ASCENDING"
+          "fieldPath": "reference",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1299,8 +1239,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
+          "fieldPath": "checkIn",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1327,8 +1267,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "totalAmount",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1337,11 +1277,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "ownerId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
+          "fieldPath": "paymentTerm",
           "order": "ASCENDING"
         },
         {
@@ -1355,16 +1291,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "ownerId",
+          "fieldPath": "paymentTerm",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "hotelName",
-          "order": "ASCENDING"
+          "fieldPath": "reference",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1399,6 +1331,24 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "checkIn",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reservations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "totalAmount",
           "order": "ASCENDING"
         }
@@ -1417,8 +1367,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "totalAmount",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1431,7 +1381,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "channel",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
@@ -1449,12 +1399,12 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "channel",
+          "fieldPath": "status",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "hotelName",
-          "order": "ASCENDING"
+          "fieldPath": "reference",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1489,8 +1439,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
+          "fieldPath": "checkIn",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1525,8 +1475,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "totalAmount",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1539,7 +1489,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "paymentTerm",
+          "fieldPath": "channel",
           "order": "ASCENDING"
         },
         {
@@ -1557,12 +1507,12 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "paymentTerm",
+          "fieldPath": "channel",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "hotelName",
-          "order": "ASCENDING"
+          "fieldPath": "reference",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1597,8 +1547,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
+          "fieldPath": "checkIn",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1633,8 +1583,44 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
+          "fieldPath": "totalAmount",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reservations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paymentTerm",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "reference",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reservations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paymentTerm",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "reference",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1648,7 +1634,7 @@
         },
         {
           "fieldPath": "checkIn",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1662,7 +1648,7 @@
         },
         {
           "fieldPath": "checkIn",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1676,21 +1662,7 @@
         },
         {
           "fieldPath": "checkIn",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "invoices",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "number",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1705,6 +1677,20 @@
         {
           "fieldPath": "issueDate",
           "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "issueDate",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1731,6 +1717,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "dueDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "amountDue",
           "order": "ASCENDING"
         }
@@ -1745,8 +1745,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "totalAmount",
-          "order": "ASCENDING"
+          "fieldPath": "amountDue",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1760,21 +1760,7 @@
         },
         {
           "fieldPath": "issueDate",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "payments",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "method",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "reference",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1801,8 +1787,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "amount",
-          "order": "ASCENDING"
+          "fieldPath": "receivedAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1810,55 +1796,27 @@
       "collectionGroup": "payments",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "reconciled",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "reference",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "payments",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "reconciled",
-          "order": "ASCENDING"
-        },
         {
           "fieldPath": "method",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "payments",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "reconciled",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "receivedAt",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "payments",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "reconciled",
-          "order": "ASCENDING"
         },
         {
           "fieldPath": "amount",
           "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "method",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "amount",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1872,7 +1830,7 @@
         },
         {
           "fieldPath": "receivedAt",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1899,8 +1857,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "amount",
-          "order": "ASCENDING"
+          "fieldPath": "periodMonth",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1927,6 +1885,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "name",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "role",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "lastSeenAt",
           "order": "ASCENDING"
         }
@@ -1941,22 +1913,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "role",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
+          "fieldPath": "lastSeenAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -1983,8 +1941,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "role",
-          "order": "ASCENDING"
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2011,36 +1969,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "auditLogs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "entityType",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "action",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "auditLogs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "entityType",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "actorName",
-          "order": "ASCENDING"
+          "fieldPath": "lastSeenAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2063,12 +1993,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "action",
+          "fieldPath": "entityType",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "actorName",
-          "order": "ASCENDING"
+          "fieldPath": "at",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2083,6 +2013,20 @@
         {
           "fieldPath": "at",
           "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2100,7 +2044,7 @@
         },
         {
           "fieldPath": "at",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2127,6 +2071,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "automationQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "processedAt",
           "order": "ASCENDING"
         }
@@ -2141,8 +2099,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "type",
-          "order": "ASCENDING"
+          "fieldPath": "processedAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2169,6 +2127,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "automationQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "processedAt",
           "order": "ASCENDING"
         }
@@ -2183,8 +2155,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
+          "fieldPath": "processedAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2211,6 +2183,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "automationQueue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "entityType",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "processedAt",
           "order": "ASCENDING"
         }
@@ -2225,22 +2211,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "automationQueue",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "entityType",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "type",
-          "order": "ASCENDING"
+          "fieldPath": "processedAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2267,8 +2239,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "city",
-          "order": "ASCENDING"
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2295,8 +2267,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "starRating",
-          "order": "ASCENDING"
+          "fieldPath": "totalRooms",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2323,8 +2295,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "city",
-          "order": "ASCENDING"
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2351,22 +2323,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "hotels",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "category",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "starRating",
-          "order": "ASCENDING"
+          "fieldPath": "totalRooms",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2393,8 +2351,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "city",
-          "order": "ASCENDING"
+          "fieldPath": "name",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2421,22 +2379,8 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "hotels",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "state",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "starRating",
-          "order": "ASCENDING"
+          "fieldPath": "totalRooms",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2464,7 +2408,7 @@
         },
         {
           "fieldPath": "validFrom",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2492,7 +2436,7 @@
         },
         {
           "fieldPath": "startedAt",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     },
@@ -2506,7 +2450,7 @@
         },
         {
           "fieldPath": "at",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ]
     }

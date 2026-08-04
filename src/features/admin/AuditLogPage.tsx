@@ -52,7 +52,7 @@ export default function AuditLogPage() {
 
   const columns: Column<AuditLog>[] = [
     {
-      key: "action", header: "Action", sortable: true,
+      key: "action", header: "Action",
       cell: (a) => (
         <StatusPill tone={ACTION_TONES[a.action] ?? "neutral"}>
           {humanise(a.action)}
@@ -78,7 +78,7 @@ export default function AuditLogPage() {
       ),
     },
     {
-      key: "actorName", header: "By", sortable: true, hideBelow: "lg",
+      key: "actorName", header: "By", hideBelow: "lg",
       cell: (a) => (
         <span className="flex items-center gap-2 min-w-0">
           <Avatar name={a.actorName} color="#9aa2a9" size="xs" />

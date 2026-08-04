@@ -11,6 +11,7 @@ import {
   INVOICE_TONES, Skeleton, Stat, Dialog, DialogContent, DialogTrigger,
   DialogClose, Field, Input, NativeSelect, toast, DetailList, DetailRow,
   EmptyState,
+describeError,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 import type { Payment, OrgSettings } from "@/data/types";
@@ -366,7 +367,10 @@ function RecordPaymentDialog({
       queryClient.invalidateQueries({ queryKey: ["payments"] });
       toast.success("Payment recorded", `${money(payment.amount)} received.`);
     },
-    onError: () => toast.error("Could not record", "Nothing was saved."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not record", detail.message ?? "Nothing was saved.");
+    },
   });
 
   return (

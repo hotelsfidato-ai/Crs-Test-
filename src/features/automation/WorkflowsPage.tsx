@@ -12,6 +12,7 @@ import { number, percent, relative, humanise } from "@/lib/format";
 import {
   Page, PageHeader, Card, CardBody, Button, Switch, StatusPill,
   Skeleton, Stat, EmptyState, toast, Tooltip,
+describeError,
 } from "@/components/ui";
 import type { AutomationWorkflow } from "@/data/types";
 
@@ -144,7 +145,10 @@ function WorkflowCard({
         updated.name,
       );
     },
-    onError: () => toast.error("Could not update", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not update", detail.message ?? "Nothing was changed.");
+    },
   });
 
 

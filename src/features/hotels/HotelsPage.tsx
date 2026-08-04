@@ -48,7 +48,7 @@ export default function HotelsPage() {
       ),
     },
     {
-      key: "city", header: "Location", sortable: true,
+      key: "city", header: "Location",
       cell: (h) => (
         <div className="min-w-0">
           <p className="text-ink-900">{h.city}</p>
@@ -74,7 +74,7 @@ export default function HotelsPage() {
          Admin, and a list of 32 properties cannot fetch 32 of those
          without spending 32 reads to render a column most roles are
          not allowed to see. It appears on the detail page instead. */
-      key: "city", header: "Location", sortable: true, hideBelow: "lg",
+      key: "city", header: "Location", hideBelow: "lg",
       cell: (h) => (
         <span className="text-grey-600">
           {h.city}, {h.state}
@@ -82,7 +82,7 @@ export default function HotelsPage() {
       ),
     },
     {
-      key: "status", header: "Status", sortable: true,
+      key: "status", header: "Status",
       cell: (h) => (
         <StatusPill tone={HOTEL_TONES[h.status] ?? "neutral"}>{h.status}</StatusPill>
       ),

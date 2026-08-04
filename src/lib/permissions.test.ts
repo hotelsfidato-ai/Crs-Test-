@@ -82,3 +82,59 @@ describe("scopeConstraints", () => {
     }
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════
+   THE MATRIX MUST NOT PROMISE WHAT THE RULES REFUSE
+
+   ⚠️ A grant here is not a permission — firestore.rules is the only
+   real boundary. When the two disagree the navigation shows an entry,
+   the route guard opens it, and the first query fails: a page that
+   exists solely to display a permission error.
+
+   Finance drifted this way on two resources at once. These cases are
+   pinned to the roles firestore.rules actually admits, so reopening
+   one without touching the rules fails here instead of in front of a
+   user. If you are changing one of these, change firestore.rules in
+   the same commit.
+   ══════════════════════════════════════════════════════════════════ */
+
+describe("the matrix agrees with firestore.rules", () => {
+  /* rules: match /commissions — allow read, write: if isOwnerOrAdmin() */
+  it("offers commission rows only to owner and admin", () => {
+    expect(canAccess("owner", "commission")).toBe(true);
+    expect(canAccess("admin", "commission")).toBe(true);
+    for (const role of ["finance", "crs_manager", "manager", "salesperson", "viewer"] as const) {
+      expect(canAccess(role, "commission"), role).toBe(false);
+    }
+  });
+
+  /* rules: match /auditLogs — read: owner, admin, crs_manager, manager */
+  it("offers the audit log only to the roles the rules admit", () => {
+    for (const role of ["owner", "admin", "crs_manager", "manager"] as const) {
+      expect(canAccess(role, "audit_log"), role).toBe(true);
+    }
+    for (const role of ["finance", "salesperson", "viewer"] as const) {
+      expect(canAccess(role, "audit_log"), role).toBe(false);
+    }
+  });
+
+  /* rules: match /hotels/{id}/private — read, write: if isOwnerOrAdmin().
+     The negotiated rate itself, distinct from the commission rows. */
+  it("keeps commission terms to owner and admin", () => {
+    expect(canAccess("owner", "commission_terms")).toBe(true);
+    expect(canAccess("admin", "commission_terms")).toBe(true);
+    for (const role of ["finance", "crs_manager", "manager", "salesperson", "viewer"] as const) {
+      expect(canAccess(role, "commission_terms"), role).toBe(false);
+    }
+  });
+
+  /* rules: match /payments — create, update: owner, admin, finance */
+  it("offers payments only to owner, admin and finance", () => {
+    for (const role of ["owner", "admin", "finance"] as const) {
+      expect(canAccess(role, "payment"), role).toBe(true);
+    }
+    for (const role of ["crs_manager", "manager", "salesperson", "viewer"] as const) {
+      expect(canAccess(role, "payment"), role).toBe(false);
+    }
+  });
+});

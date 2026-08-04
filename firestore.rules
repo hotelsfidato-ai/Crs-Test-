@@ -97,6 +97,24 @@ service cloud.firestore {
       return isAnyRole(['owner', 'admin', 'crs_manager', 'manager']);
     }
 
+    /**
+     * ⚠️ The one carve-out from amendsAccounts(). Creating a reservation
+     * bumps totalReservations/totalRevenue/lastActivityAt on the
+     * customer (and company) it belongs to, inside the same transaction
+     * that writes the reservation — see reservationsRepo.create. That
+     * write comes from the owning salesperson, not from the CRS desk,
+     * so amendsAccounts() alone made every booking fail with "nothing
+     * was saved" the moment that rule went in.
+     *
+     * Scoped to exactly those three fields via affectedKeys().hasOnly —
+     * a salesperson still cannot slip an email or discount change in
+     * alongside a legitimate roll-up.
+     */
+    function isAccountRollupUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['totalReservations', 'totalRevenue', 'lastActivityAt']);
+    }
+
     /* ⚠️ `automation` is the n8n service account. It may read business
        records and drain the queue. It may never touch users, roles or
        commercial terms. */
@@ -261,7 +279,10 @@ service cloud.firestore {
     match /customers/{customerId} {
       allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
       allow create: if active() && worksAccounts() && writingOwnRecord();
-      allow update: if active() && amendsAccounts();
+      allow update: if active() && (
+        amendsAccounts() ||
+        (worksAccounts() && ownsOrUnscoped(resource) && isAccountRollupUpdate())
+      );
 
       /* ⚠️ Never, by anyone. A customer carries stay history, invoices
          and commission. Mark them inactive instead. */
@@ -271,7 +292,10 @@ service cloud.firestore {
     match /companies/{companyId} {
       allow read: if active() && (ownsOrUnscoped(resource) || isAutomation());
       allow create: if active() && worksAccounts() && writingOwnRecord();
-      allow update: if active() && amendsAccounts();
+      allow update: if active() && (
+        amendsAccounts() ||
+        (worksAccounts() && ownsOrUnscoped(resource) && isAccountRollupUpdate())
+      );
       allow delete: if false;
     }
 
@@ -323,7 +347,14 @@ service cloud.firestore {
     }
 
     /* Commission earned per booking. Owner and Admin only — same
-       reasoning as the hotel's commercial terms. */
+       reasoning as the hotel's commercial terms: what Fidato earns is a
+       negotiated commercial figure, not an accounting one.
+
+       ⚠️ Finance is deliberately excluded, and the matrix in
+       lib/permissions.ts now agrees. It used to grant finance
+       `commission`, which did not widen access — it only advertised a
+       page that opened and then failed. Reopen in BOTH places or
+       neither. */
     match /commissions/{commissionId} {
       allow read, write: if isOwnerOrAdmin();
     }
@@ -338,6 +369,11 @@ service cloud.firestore {
        ══════════════════════════════════════════════════════════════ */
 
     match /auditLogs/{logId} {
+      /* ⚠️ Finance is absent here and absent from the matrix too — the
+         two used to disagree, which put an Audit Log entry in finance's
+         navigation that opened and then failed. The rules are the
+         boundary; the matrix only decides what renders. Change both or
+         neither. */
       allow read: if isAnyRole(['owner', 'admin', 'crs_manager', 'manager']);
       allow create: if active()
         && request.resource.data.actorId == myUserId();

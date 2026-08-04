@@ -32,7 +32,7 @@ export default function PaymentsPage() {
 
   const columns: Column<Payment>[] = [
     {
-      key: "reference", header: "Receipt", sortable: true,
+      key: "reference", header: "Receipt",
       cell: (p) => (
         <div className="min-w-0">
           <p className="font-medium text-ink-900 tabular">{p.reference}</p>
@@ -42,7 +42,7 @@ export default function PaymentsPage() {
     },
     { key: "customerName", header: "From", cell: (p) => p.customerName },
     {
-      key: "method", header: "Method", sortable: true, hideBelow: "md",
+      key: "method", header: "Method", hideBelow: "md",
       cell: (p) => (
         <StatusPill tone="neutral" dot={false}>
           {humanise(p.method)}

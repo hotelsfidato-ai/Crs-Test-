@@ -8,6 +8,7 @@ import { hotelsRepo } from "@/data/repositories";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button, Field,
   Input, NativeSelect, Textarea, Skeleton, fieldProps, toast,
+describeError,
 } from "@/components/ui";
 import { Forbidden } from "@/features/shared/Forbidden";
 import type { HotelCategory, HotelStatus } from "@/data/types";
@@ -133,7 +134,10 @@ export default function HotelFormPage() {
       );
       navigate(`/hotels/${hotel.id}`);
     },
-    onError: () => toast.error("Could not save", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not save", detail.message ?? "Nothing was changed.");
+    },
   });
 
   if (!can(role, isEdit ? "edit" : "create", "hotel")) {

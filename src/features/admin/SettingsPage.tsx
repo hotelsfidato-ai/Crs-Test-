@@ -12,6 +12,7 @@ import { APPROVAL_THRESHOLD } from "@/lib/rules";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button,
   Field, Input, NativeSelect, Skeleton, toast, DetailList, DetailRow,
+describeError,
 } from "@/components/ui";
 
 const schema = z.object({
@@ -57,7 +58,10 @@ export default function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       toast.success("Settings saved", "Organisation details have been updated.");
     },
-    onError: () => toast.error("Could not save", "Nothing was changed."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not save", detail.message ?? "Nothing was changed.");
+    },
   });
 
   if (settings.isLoading) {

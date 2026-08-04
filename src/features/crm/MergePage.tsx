@@ -10,6 +10,7 @@ import {
   Page, PageHeader, Card, CardHeader, CardBody, Button, EmptyState,
   StatusPill, Skeleton, Dialog, DialogContent, DialogTrigger, DialogClose,
   toast, Avatar,
+describeError,
 } from "@/components/ui";
 import type { Customer } from "@/data/types";
 
@@ -120,7 +121,10 @@ function DuplicateCard({ group }: { group: DuplicateGroup }) {
         `${absorbed.length} record${absorbed.length === 1 ? "" : "s"} folded into ${result.fullName}.`,
       );
     },
-    onError: () => toast.error("Merge failed", "Nothing was changed. Try again."),
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Merge failed", detail.message ?? "Nothing was changed. Try again.");
+    },
   });
 
   return (
