@@ -24,6 +24,9 @@ import {
 import {
   HOTEL_DEFAULTS, COMPANY_DEFAULTS, CUSTOMER_DEFAULTS,
 } from "./defaults";
+import {
+  buildVoucher, renderVoucherHtml, renderVoucherEmail,
+} from "@/features/reservations/voucher";
 
 export type { Actor };
 
@@ -797,11 +800,42 @@ export const reservationsRepo = {
        booking is already committed and the queued event above is the
        durable record. A failed webhook must never make a saved
        reservation look like it failed. */
+    /* ⚠️ The rendered voucher travels WITH the event, rather than n8n
+       rebuilding it. Two reasons, both learned the expensive way:
+
+         · n8n cannot read Firestore on Spark without credentials this
+           architecture deliberately does not hand out, and
+         · a second implementation of the voucher in n8n would drift
+           from this one the first time a rate or a policy changed, and
+           the guest's copy would stop matching the folio.
+
+       So the app renders once and n8n only delivers. `email.html` is
+       the body to send; `voucher.html` is the A4 sheet to turn into
+       the PDF for Drive; `to` is where it goes. */
+    const voucher = buildVoucher({
+      reservation: created,
+      hotel,
+      customer,
+      company,
+      org: await adminRepo.settings().catch(() => null),
+    });
+    const mail = renderVoucherEmail(voucher);
+
     void pushToN8n("reservation.created", ref.id, {
       reservation: created,
       customer,
       company,
       hotel,
+      /* Everything the delivery side needs, pre-rendered. */
+      to: customer.email ?? "",
+      guestPhone: customer.phone ?? "",
+      email: { subject: mail.subject, html: mail.html, text: mail.text },
+      voucher: {
+        reference: created.reference,
+        html: renderVoucherHtml(voucher),
+        filename: `Voucher-${created.reference}.pdf`,
+        model: voucher,
+      },
     });
 
     return created;

@@ -1,0 +1,151 @@
+{
+  "name": "Fidato — Reservation confirmed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fidato-reservation",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "rawBody": false
+        }
+      },
+      "id": "webhook-in",
+      "name": "Reservation confirmed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-160, 300],
+      "webhookId": "fidato-reservation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, reference: $json.body.data.voucher.reference }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "respond",
+      "name": "Reply immediately",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [60, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Reservation confirmed').item.json.body.data.to }}",
+        "subject": "={{ $('Reservation confirmed').item.json.body.data.email.subject }}",
+        "emailType": "html",
+        "message": "={{ $('Reservation confirmed').item.json.body.data.email.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "gmail-send",
+      "name": "Email the voucher",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [320, 100],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_ME", "name": "Gmail account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "voucherHtml",
+        "binaryPropertyName": "data",
+        "options": {
+          "fileName": "={{ $('Reservation confirmed').item.json.body.data.voucher.reference }}.html",
+          "mimeType": "text/html"
+        }
+      },
+      "id": "to-file",
+      "name": "Voucher to file",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "voucherHtml",
+              "value": "={{ $('Reservation confirmed').item.json.body.data.voucher.html }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pick-html",
+      "name": "Pick voucher HTML",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [140, 300]
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "data",
+        "name": "={{ $('Reservation confirmed').item.json.body.data.voucher.reference }}.html",
+        "driveId": { "__rl": true, "mode": "list", "value": "My Drive" },
+        "folderId": { "__rl": true, "mode": "list", "value": "root" },
+        "options": {}
+      },
+      "id": "drive-upload",
+      "name": "Save to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [540, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "REPLACE_ME", "name": "Google Drive account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "REPLACE_WITH_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('Reservation confirmed').item.json.body.data.guestPhone }}",
+        "textBody": "=Dear {{ $('Reservation confirmed').item.json.body.data.voucher.model.guestName }}, your booking at {{ $('Reservation confirmed').item.json.body.data.voucher.model.hotelName }} is confirmed.\n\nReference: {{ $('Reservation confirmed').item.json.body.data.voucher.model.reference }}\nCheck in: {{ $('Reservation confirmed').item.json.body.data.voucher.model.checkIn }}\nCheck out: {{ $('Reservation confirmed').item.json.body.data.voucher.model.checkOut }}\n\nYour voucher has been emailed to you. — Fidato Hotels",
+        "additionalFields": {}
+      },
+      "id": "whatsapp",
+      "name": "WhatsApp the guest",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [320, 500],
+      "credentials": {
+        "whatsAppApi": { "id": "REPLACE_ME", "name": "WhatsApp account" }
+      }
+    }
+  ],
+  "connections": {
+    "Reservation confirmed": {
+      "main": [[{ "node": "Reply immediately", "type": "main", "index": 0 }]]
+    },
+    "Reply immediately": {
+      "main": [
+        [
+          { "node": "Email the voucher", "type": "main", "index": 0 },
+          { "node": "Pick voucher HTML", "type": "main", "index": 0 },
+          { "node": "WhatsApp the guest", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Pick voucher HTML": {
+      "main": [[{ "node": "Voucher to file", "type": "main", "index": 0 }]]
+    },
+    "Voucher to file": {
+      "main": [[{ "node": "Save to Drive", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}
