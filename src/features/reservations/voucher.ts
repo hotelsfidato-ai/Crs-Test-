@@ -269,12 +269,18 @@ const LINE = "#e2e5e8";
  * absolute https URL. The printable voucher embeds the SVG instead and
  * needs no network at all.
  *
- * ⚠️ Points at Firebase Hosting for this project. Moving to a custom
- * domain means changing it here, or every voucher email already
- * delivered starts showing a broken image. Override per-tenant with
- * OrgSettings.logoUrl when there is one.
+ * ⚠️ Served from fidatohotels.com, deliberately — the same domain the
+ * mail claims to come from. Pointing this at the app's own Firebase
+ * host worked, but an email whose From is @fidatohotels.com while its
+ * images load from an unrelated project domain is a spam signal, and
+ * filters read the mismatch as a hijacked template.
+ *
+ * Overridden per-tenant by OrgSettings.logoUrl. Whatever it points at
+ * must stay reachable: vouchers already delivered fetch it every time
+ * they are opened, so moving the file breaks mail sent months ago.
  */
-export const LOGO_PNG_URL = "https://crstest-9a0c5.web.app/brand/fidato-hotels.png";
+export const LOGO_PNG_URL =
+  "https://fidatohotels.com/wp-content/uploads/2026/08/fidato-hotels.png";
 
 export function renderVoucherHtml(v: VoucherModel): string {
   const row = (label: string, value: string) =>
