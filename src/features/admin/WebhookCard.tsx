@@ -51,6 +51,7 @@ export function WebhookCard() {
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [enabled, setEnabled] = useState(false);
+  const [attachPdf, setAttachPdf] = useState(false);
   const [events, setEvents] = useState<AutomationEventType[]>([]);
   const [test, setTest] = useState<WebhookResult | null>(null);
   const [testing, setTesting] = useState(false);
@@ -60,6 +61,7 @@ export function WebhookCard() {
     setUrl(data.url ?? "");
     setSecret(data.secret ?? "");
     setEnabled(Boolean(data.enabled));
+    setAttachPdf(Boolean(data.attachPdf));
     setEvents(data.events ?? []);
   }, [data]);
 
@@ -99,7 +101,8 @@ export function WebhookCard() {
     url.trim() !== (data?.url ?? "") ||
     secret.trim() !== (data?.secret ?? "") ||
     enabled !== Boolean(data?.enabled) ||
-    events.join(",") !== (data?.events ?? []).join(",");
+    events.join(",") !== (data?.events ?? []).join(",") ||
+    attachPdf !== Boolean(data?.attachPdf);
 
   if (isLoading) return <Skeleton className="h-80 w-full" />;
 
@@ -244,6 +247,26 @@ export function WebhookCard() {
           </span>
         </label>
 
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <Checkbox
+            checked={attachPdf}
+            disabled={!mayEdit}
+            onCheckedChange={(v) => setAttachPdf(Boolean(v))}
+          />
+          <span>
+            <span className="block text-sm text-ink-900">
+              Also attach a ready-made PDF to the push
+            </span>
+            <span className="block text-xs text-grey-500 mt-0.5">
+              Leave this off if n8n converts <code className="px-1 rounded-xs bg-grey-100">
+              voucher.html</code> itself (Gotenberg, Browserless, PDFShift). That keeps one
+              renderer and one template. Tick it only when there is no converter to call —
+              the push then carries the PDF, at the cost of a second renderer whose output
+              will not exactly match the HTML sheet, and about 24 KB per booking.
+            </span>
+          </span>
+        </label>
+
         {/* ── Test result ── */}
         {test && (
           <div
@@ -345,7 +368,7 @@ export function WebhookCard() {
             loading={save.isPending}
             disabled={!dirty || (enabled && !looksLikeUrl)}
             onClick={() =>
-              save.mutate({ url: url.trim(), secret: secret.trim(), enabled, events })
+              save.mutate({ url: url.trim(), secret: secret.trim(), enabled, events, attachPdf })
             }
           >
             Save configuration

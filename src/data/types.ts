@@ -682,6 +682,20 @@ export interface WebhookConfig {
   enabled: boolean;
   /** Which event types are pushed. Empty means all of them. */
   events: AutomationEventType[];
+  /**
+   * Whether to render the voucher PDF here and ship it as base64.
+   *
+   * ⚠️ Off by default, because the payload already carries
+   * `voucher.html` and a converter in n8n (Gotenberg, Browserless,
+   * PDFShift) produces the PDF from it — one renderer, one template,
+   * and no 24 KB of base64 on every booking.
+   *
+   * Turn it ON only if you have no converter. Then the push carries a
+   * ready-made PDF and n8n needs nothing extra — at the cost of a
+   * second renderer whose output will not be pixel-identical to the
+   * HTML sheet.
+   */
+  attachPdf?: boolean;
   lastTestAt?: IsoDateTime;
   lastTestStatus?: "ok" | "failed";
   lastTestDetail?: string;

@@ -895,21 +895,24 @@ export const reservationsRepo = {
     });
     const mail = renderVoucherEmail(voucher);
 
-    /* ⚠️ The PDF is built HERE, in the browser, and shipped as base64.
-       n8n has no HTML-to-PDF step without a paid service or a container
-       to run one, and WhatsApp cannot send an HTML file at all — it
-       needs a real document. Generating it at the source means the
-       attachment, the Drive copy and the WhatsApp document are the same
-       bytes the salesperson just previewed.
+    /* ⚠️ OFF by default — see WebhookConfig.attachPdf.
+       `voucher.html` is the master template, and a converter in n8n
+       (Gotenberg, Browserless, PDFShift) renders the PDF from it. That
+       keeps ONE renderer and one template: change the voucher and the
+       email, the Drive copy and the WhatsApp document all follow.
+       Rendering here as well would be a second renderer whose output
+       drifts from the sheet, plus 24 KB of base64 on every booking.
 
-       Roughly 18 KB, so it costs the payload very little. A failure
-       here must not lose the booking, which is already committed — the
-       push simply goes without the attachment. */
+       Enable it only when there is no converter to call. A failure here
+       must never lose the booking, which is already committed. */
     let pdfBase64 = "";
-    try {
-      pdfBase64 = await voucherPdfBase64(voucher, qrOptions(orgSettings));
-    } catch {
-      /* Left empty. n8n falls back to voucher.html. */
+    const webhookConfig = await getOne<WebhookConfig>("settings", "webhook").catch(() => null);
+    if (webhookConfig?.attachPdf) {
+      try {
+        pdfBase64 = await voucherPdfBase64(voucher, qrOptions(orgSettings));
+      } catch {
+        /* Left empty. n8n falls back to converting voucher.html. */
+      }
     }
 
     /* ⚠️ Still not awaited into the caller's path — the booking is

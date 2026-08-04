@@ -67,31 +67,51 @@ isn't.
 while you have the editor open with *Listen for test event* running. A
 saved booking on a Monday morning will go nowhere.
 
-## The PDF
+## The PDF — n8n renders it
 
-**The PDF arrives already built.** `voucher.pdfBase64` is a real,
-vector-text PDF — about 18 KB, one page, selectable and searchable —
-generated in the browser at booking time. n8n needs no converter, no
-rendering service and no container.
+`voucher.html` is the master template. n8n converts it once and feeds
+the result to Drive, WhatsApp and the Gmail attachment:
 
-That matters most for WhatsApp, which cannot send an HTML file at all;
-it needs a document. The same bytes go to the email attachment, Drive
-and WhatsApp, so all three match what the salesperson previewed.
+```
+Pick voucher HTML → HTML to file → HTML to PDF ─┬─ Gmail (attachment)
+                                                 ├─ Drive
+                                                 └─ WhatsApp
+```
 
-**Turning it into a binary in n8n.** One *Convert to File* node
-(operation: **Convert to binary / base64 to file**) pointed at
-`voucher.pdfBase64`, with the file name from `voucher.filename` and
-mime type `application/pdf`. Everything downstream — Gmail's
-*Attachments*, Drive's *Upload*, WhatsApp's *Document* — takes that
-binary directly.
+One renderer, one template: change the voucher and every copy follows.
 
-**Gmail attachment**: set *Attachments → Binary Property* to the field
-the Convert to File node produced (`data` by default).
+**⚠️ Two different documents, and mixing them up breaks the email.**
 
-**Fallback.** If PDF generation fails the field is an empty string and
-`voucher.html` is still there. Worth an IF node if you want belt and
-braces; the email body itself is already the full voucher either way,
-so an absent attachment is a degraded email, not a broken one.
+| Field | Use it for | Never use it for |
+|---|---|---|
+| `email.html` | the Gmail **body** | the PDF |
+| `voucher.html` | the **PDF** | the Gmail body |
+
+`voucher.html` is an A4 print sheet — a `<style>` block, `@page` rules,
+fixed `210mm` widths. Gmail discards `<style>` outright and Outlook
+renders through Word, so as an email body it arrives as a broken
+column. `email.html` is table-based with inline styles for exactly that
+reason. They carry the same figures from the same VoucherModel.
+
+**The converter.** The workflow posts to Gotenberg at
+`http://gotenberg:3000/forms/chromium/convert/html` — change that URL
+to yours. Self-hosting it is one container:
+
+```bash
+docker run -d --name gotenberg -p 3000:3000 gotenberg/gotenberg:8
+```
+
+`preferCssPageSize=true` and `printBackground=true` are already set, so
+the sheet's own `@page` rules drive the page size and the orange rules
+and panels actually print. Browserless, PDFShift and CloudConvert work
+the same way — swap the URL and the body parameters.
+
+**If you have no converter**, tick *"Also attach a ready-made PDF"* in
+Admin → Integrations. The push then carries `voucher.pdfBase64` and you
+can drop the two conversion nodes, using *Convert to File* in
+`toBinary` mode instead. The trade is a second renderer whose output is
+not pixel-identical to the sheet, plus ~24 KB per booking — which is
+why it is off by default.
 
 ## Known limit — worth understanding before you rely on it
 
