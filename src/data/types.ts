@@ -763,6 +763,18 @@ export interface OrgSettings {
    */
   socialUrl?: string;
   socialCaption?: string;
+
+  /**
+   * Absolute URL of the logo used in the voucher EMAIL.
+   *
+   * ⚠️ Serve it from the same domain you send from. An email whose
+   * From is @fidatohotels.com but whose images come from an unrelated
+   * host is a documented spam signal — filters read it as a hijacked
+   * template. It also breaks the day that other host moves.
+   *
+   * The printed voucher and the PDF embed the logo and ignore this.
+   */
+  logoUrl?: string;
 }
 
 /* ── automationQueue ───────────────────────────────────────────────

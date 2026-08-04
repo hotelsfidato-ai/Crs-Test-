@@ -46,3 +46,6 @@ serviceAccountKey*.json
 
 # npm config is machine-local (see .npmrc.example)
 .npmrc
+
+# MCP server config — contains an endpoint and expands a local token
+.mcp.json

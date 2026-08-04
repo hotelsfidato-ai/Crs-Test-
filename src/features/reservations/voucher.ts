@@ -85,6 +85,8 @@ export interface VoucherModel {
     email: string;
     website: string;
     gstin: string;
+    /** Absolute URL for the email logo. Empty means use the default. */
+    logoUrl?: string;
   };
 }
 
@@ -206,6 +208,8 @@ export function buildVoucher({
       email: org?.supportEmail || "",
       website: "www.fidatohotels.com",
       gstin: org?.gstin || "",
+      /* Empty falls back to LOGO_PNG_URL at render time. */
+      logoUrl: org?.logoUrl?.trim() || "",
     },
   };
 }
@@ -616,8 +620,11 @@ export function renderVoucherHtml(v: VoucherModel): string {
  */
 export function renderVoucherEmail(
   v: VoucherModel,
-  logoUrl: string = LOGO_PNG_URL,
+  logoOverride?: string,
 ): { subject: string; html: string; text: string } {
+  /* Settings first, then the argument, then the built-in default. Serve
+     it from the sending domain — see OrgSettings.logoUrl. */
+  const logoUrl = v.org.logoUrl?.trim() || logoOverride || LOGO_PNG_URL;
   const subject = `Booking confirmed — ${v.hotelName}, ${v.checkIn} (${v.reference})`;
 
   const text = [

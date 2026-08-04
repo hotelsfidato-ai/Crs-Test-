@@ -29,6 +29,7 @@ const schema = z.object({
      QR pointing nowhere is worse than none at all. */
   socialUrl: z.string().url("Enter a full URL, including https://").or(z.literal("")),
   socialCaption: z.string(),
+  logoUrl: z.string().url("Enter a full URL, including https://").or(z.literal("")),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -49,7 +50,7 @@ export default function SettingsPage() {
       brandName: "", legalName: "", registeredAddress: "", gstin: "",
       supportEmail: "", supportPhone: "", currency: "INR",
       timezone: "Asia/Kolkata", fiscalYearStart: "April",
-      socialUrl: "", socialCaption: "",
+      socialUrl: "", socialCaption: "", logoUrl: "",
     },
   });
 
@@ -187,6 +188,20 @@ export default function SettingsPage() {
                   )}
                 </Field>
               </div>
+
+              <Field
+                label="Email logo URL"
+                hint="Serve this from the domain you send email from — images loaded from an unrelated host are a spam signal. Leave blank to use the default."
+                error={errors.logoUrl?.message}
+              >
+                {({ id, invalid }) => (
+                  <Input
+                    id={id} invalid={invalid} disabled={!editable}
+                    placeholder="https://www.fidatohotels.com/logo.png"
+                    {...form.register("logoUrl")}
+                  />
+                )}
+              </Field>
 
               <div className="grid gap-5 sm:grid-cols-3">
                 <Field label="Currency">
