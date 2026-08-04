@@ -67,6 +67,24 @@ isn't.
 while you have the editor open with *Listen for test event* running. A
 saved booking on a Monday morning will go nowhere.
 
+## Which workflow to import
+
+Two files, same result — pick by whether you can run an HTML→PDF
+converter.
+
+| | File | Needs |
+|---|---|---|
+| **No infrastructure** | `fidato-reservation-no-converter.json` | nothing — tick *"Also attach a ready-made PDF"* in Admin → Integrations |
+| **Converter** | `fidato-reservation-workflow.json` | Gotenberg / Browserless / PDFShift reachable from n8n |
+
+Start with the no-converter one. It works today, and switching later is
+importing the other file and unticking a box.
+
+The trade is honest but small: with no converter the PDF is rendered in
+the browser by jsPDF, which is a second renderer alongside the HTML
+sheet — same figures, same data, but not pixel-identical layout. With a
+converter there is exactly one template and one renderer.
+
 ## The PDF — n8n renders it
 
 `voucher.html` is the master template. n8n converts it once and feeds
