@@ -13,7 +13,8 @@ import {
   Checkbox, StatusPill, Skeleton, fieldProps, toast,
 describeError,
 } from "@/components/ui";
-import { postWebhook, sampleReservationPayload, type WebhookResult } from "@/lib/webhook";
+import { postWebhook, type WebhookResult } from "@/lib/webhook";
+import { sampleVoucherPayload } from "@/features/reservations/voucherSample";
 import type { AutomationEventType, WebhookConfig } from "@/data/types";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -46,6 +47,13 @@ export function WebhookCard() {
   const { data, isLoading } = useQuery({
     queryKey: ["webhook-config"],
     queryFn: () => adminRepo.webhook(),
+  });
+
+  /* The sample voucher carries real branding, so it needs the real
+     org settings — otherwise the test shows a document nobody sends. */
+  const org = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => adminRepo.settings(),
   });
 
   const [url, setUrl] = useState("");
@@ -81,9 +89,14 @@ export function WebhookCard() {
     if (!looksLikeUrl) return;
     setTesting(true);
     setTest(null);
+    /* ⚠️ Built through the real render path and with the saved
+       attachPdf setting, so what n8n receives here is shaped exactly
+       like a booking. A test that sends a different shape teaches the
+       workflow author the wrong fields — which has already happened
+       once. */
     const result = await postWebhook(
       { url: url.trim(), secret: secret.trim(), enabled: true, events: [] },
-      sampleReservationPayload(),
+      await sampleVoucherPayload(org.data, attachPdf),
     );
     setTest(result);
     setTesting(false);
@@ -347,10 +360,14 @@ export function WebhookCard() {
             variant="secondary"
             leadingIcon={<Copy className="size-4" />}
             onClick={() => {
-              void navigator.clipboard?.writeText(
-                JSON.stringify(sampleReservationPayload(), null, 2),
-              );
-              toast.success("Payload copied", "Paste it into n8n to shape the workflow.");
+              void (async () => {
+                const payload = await sampleVoucherPayload(org.data, attachPdf);
+                await navigator.clipboard?.writeText(JSON.stringify(payload, null, 2));
+                toast.success(
+                  "Payload copied",
+                  "The same shape a real booking sends — build the workflow against it.",
+                );
+              })();
             }}
           >
             Copy sample payload
