@@ -121,6 +121,26 @@ export function WebhookCard() {
       />
 
       <CardBody className="space-y-5">
+        {/* Standing, not just after a test. "Configured but switched off"
+            looks identical to "working" everywhere else on this screen —
+            the URL is filled in, the last test says it succeeded, and
+            nothing arrives. */}
+        {data?.url && !data.enabled && (
+          <div className="flex items-start gap-3 p-4 rounded-md border bg-brand-orange-50 border-brand-orange-100">
+            <XCircle className="size-4 text-brand-orange shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-base font-medium text-ink-900">
+                Saved, but not sending
+              </p>
+              <p className="text-sm text-grey-600 mt-1 leading-relaxed">
+                A URL is configured and its last test succeeded, but “Push events to
+                this endpoint” is unticked — so no booking has been sent to n8n and
+                none will be. Tick it below and save.
+              </p>
+            </div>
+          </div>
+        )}
+
         <Field
           label="Production webhook URL"
           required
@@ -267,6 +287,20 @@ export function WebhookCard() {
                     Access-Control-Allow-Origin
                   </code>
                   for this site's origin.
+                </p>
+              )}
+
+              {/* ⚠️ The trap this exists to close. A test forces the push on
+                  so a URL can be checked before committing to it — which
+                  means "Delivered" says nothing about whether real bookings
+                  will be sent. Somebody tested, saw green, saved with the
+                  box unticked, and spent an afternoon looking for the
+                  reservations in n8n. */}
+              {test.ok && !enabled && (
+                <p className="text-xs text-brand-red mt-2 leading-relaxed font-medium">
+                  The test was sent regardless of the setting below — real events are
+                  not. “Push events to this endpoint” is unticked, so no booking will
+                  reach n8n until you tick it and save.
                 </p>
               )}
             </div>
