@@ -763,16 +763,30 @@ export const reservationsRepo = {
     const ref = doc(collection(db, "reservations"));
     await runTransaction(db, async (tx) => {
       const customerRef = doc(db, "customers", customer.id);
+      const companyRef = company ? doc(db, "companies", company.id) : null;
+
+      /* ⚠️ EVERY READ FIRST, THEN EVERY WRITE. Firestore aborts a
+         transaction the moment it reads after writing — it has to, or
+         it could not guarantee the snapshot it based the write on.
+
+         The company read used to sit below tx.set, which made this
+         explode with "transactions require all reads to be executed
+         before all writes" — but ONLY for a customer attached to a
+         company, since without one there is no second read and the
+         ordering happens to be legal. That is why it looked
+         intermittent rather than broken.
+
+         Adding a read below this line re-breaks it. Put it here. */
       const snap = await tx.get(customerRef);
+      const cSnap = companyRef ? await tx.get(companyRef) : null;
+
       tx.set(ref, reservation);
       tx.update(customerRef, {
         totalReservations: (snap.data()?.totalReservations ?? 0) + 1,
         totalRevenue: (snap.data()?.totalRevenue ?? 0) + quote.totalAmount,
         lastActivityAt: serverTimestamp(),
       });
-      if (company) {
-        const companyRef = doc(db, "companies", company.id);
-        const cSnap = await tx.get(companyRef);
+      if (companyRef && cSnap) {
         tx.update(companyRef, {
           totalReservations: (cSnap.data()?.totalReservations ?? 0) + 1,
           totalRevenue: (cSnap.data()?.totalRevenue ?? 0) + quote.totalAmount,
