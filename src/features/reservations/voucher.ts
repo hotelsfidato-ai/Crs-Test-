@@ -215,6 +215,33 @@ export function buildVoucher({
    images — it has to survive being emailed, printed, and opened
    offline at a front desk with no network.                          */
 
+/**
+ * The contact block, with absent details omitted rather than left as
+ * empty slots.
+ *
+ * ⚠️ This existed as a fixed template of `address<br>phone · email ·
+ * website`, which read correctly only when every field was filled in.
+ * On a settings document with none of them — the state every new
+ * deployment starts in — a guest received a footer of orphaned
+ * separators: " ·  · fidatohotels.com". Joining the parts that exist
+ * means an incomplete configuration looks sparse instead of broken.
+ */
+function orgFooter(v: VoucherModel): string {
+  const contact = [v.org.phone, v.org.email, v.org.website]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .map((s) => escape(s))
+    .join(" &nbsp;&middot;&nbsp; ");
+
+  return [
+    v.org.address?.trim() ? escape(v.org.address.trim()) : "",
+    contact,
+    v.org.gstin?.trim() ? `GSTIN ${escape(v.org.gstin.trim())}` : "",
+  ]
+    .filter(Boolean)
+    .join("<br>");
+}
+
 const escape = (s: string) =>
   String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -552,10 +579,10 @@ export function renderVoucherHtml(v: VoucherModel): string {
       </td>
       <td style="padding-top:10px;vertical-align:top;width:50%;text-align:right">
         <div style="font-size:11px;color:${GREY};line-height:1.7">
-          ${escape(v.org.phone)}<br>
-          ${escape(v.org.email)}<br>
-          ${escape(v.org.website)}
-          ${v.org.gstin ? `<br>GSTIN ${escape(v.org.gstin)}` : ""}
+          ${[v.org.phone, v.org.email, v.org.website, v.org.gstin ? `GSTIN ${v.org.gstin}` : ""]
+            .filter(Boolean)
+            .map((line) => escape(line))
+            .join("<br>")}
         </div>
       </td>
     </tr>
@@ -878,9 +905,7 @@ export function renderVoucherEmail(
 
   <tr><td style="padding:14px 26px;background:#fafbfb;border-top:1px solid ${LINE}">
     <div style="font-size:11px;color:${GREY};line-height:1.6">
-      ${escape(v.org.address)}<br>
-      ${escape(v.org.phone)} &nbsp;&middot;&nbsp; ${escape(v.org.email)} &nbsp;&middot;&nbsp; ${escape(v.org.website)}
-      ${v.org.gstin ? `<br>GSTIN ${escape(v.org.gstin)}` : ""}
+      ${orgFooter(v)}
     </div>
   </td></tr>
 
