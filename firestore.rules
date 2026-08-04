@@ -212,11 +212,17 @@ service cloud.firestore {
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.status == 'active';
 
-      /* Administration. Same owner-escalation guard in both
-         directions, and nobody may hand a person the service account. */
-      allow update: if isOwnerOrAdmin()
-        && (request.resource.data.role != 'owner' || isRole('owner'))
-        && (resource.data.role != 'owner' || isRole('owner'))
+      /* Administration — the OWNER alone.
+         ⚠️ This was isOwnerOrAdmin(). Editing a user is not a profile
+         tweak: it sets `role`, and every other rule in this file trusts
+         that field. An Admin who can edit users can promote an account
+         they control, which makes the Admin/Owner distinction
+         decorative. Admins still invite (see /invitations) — the
+         invited person claims it with their own password, and an Owner
+         can withdraw it first.
+         The automation guard stays: nobody hands a person the n8n
+         service account. */
+      allow update: if isRole('owner')
         && request.resource.data.role != 'automation';
 
       /* Your own record: name and heartbeat only.

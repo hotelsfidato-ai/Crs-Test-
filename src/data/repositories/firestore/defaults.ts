@@ -42,6 +42,14 @@ export const HOTEL_DEFAULTS: Record<string, unknown> = {
   shortName: "",
   city: "",
   state: "",
+  /* Payment instructions printed on the voucher. Empty rather than
+     absent so the form binds to a string and the voucher can test
+     them without optional chaining at every use. */
+  bankAccountName: "",
+  bankAccountNumber: "",
+  bankName: "",
+  bankBranch: "",
+  bankIfsc: "",
 };
 
 export const ROOM_TYPE_DEFAULTS: Record<string, unknown> = {

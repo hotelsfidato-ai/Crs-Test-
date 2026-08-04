@@ -57,6 +57,11 @@ interface FormState {
   starRating: string;
   totalRooms: string;
   description: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
+  bankName: string;
+  bankBranch: string;
+  bankIfsc: string;
 }
 
 const BLANK: FormState = {
@@ -64,6 +69,8 @@ const BLANK: FormState = {
   contactPerson: "", email: "", phone: "",
   category: "business", status: "onboarding",
   starRating: "3", totalRooms: "", description: "",
+  bankAccountName: "", bankAccountNumber: "", bankName: "",
+  bankBranch: "", bankIfsc: "",
 };
 
 export default function HotelFormPage() {
@@ -93,6 +100,11 @@ export default function HotelFormPage() {
       country: h.country ?? "India",
       address: h.address ?? "",
       contactPerson: h.contactPerson ?? "",
+      bankAccountName: h.bankAccountName ?? "",
+      bankAccountNumber: h.bankAccountNumber ?? "",
+      bankName: h.bankName ?? "",
+      bankBranch: h.bankBranch ?? "",
+      bankIfsc: h.bankIfsc ?? "",
       email: h.email ?? "",
       phone: h.phone ?? "",
       category: h.category ?? "business",
@@ -116,6 +128,11 @@ export default function HotelFormPage() {
         starRating: Number(form.starRating) || 0,
         totalRooms: Number(form.totalRooms) || 0,
         email: form.email.trim().toLowerCase(),
+        /* IFSC is uppercase by definition, and it is printed on a
+           voucher a guest types into a banking app. Normalising here
+           beats trusting whoever filled the form in. */
+        bankIfsc: form.bankIfsc.trim().toUpperCase(),
+        bankAccountNumber: form.bankAccountNumber.replace(/\s/g, ""),
         ...(isEdit ? {} : { onboardedAt: new Date().toISOString().slice(0, 10) }),
       };
       return isEdit
@@ -348,6 +365,83 @@ export default function HotelFormPage() {
                 )}
               </Field>
             </div>
+          </CardBody>
+        </Card>
+
+        {/* ⚠️ Not commission. These are the property's own payment
+            instructions and they are PRINTED ON THE GUEST'S VOUCHER —
+            which is why they live on the hotel record rather than in
+            the Owner-only commercial subcollection. Anyone who can read
+            a booking can read these. */}
+        <Card>
+          <CardHeader
+            title="Bank details"
+            description="Printed on the voucher so a guest can settle by transfer. Leave blank and the voucher simply omits the section."
+          />
+          <CardBody className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Account name"
+                hint="Exactly as the bank holds it — a mismatch fails the transfer"
+              >
+                {(p) => (
+                  <Input
+                    {...fieldProps(p)}
+                    value={form.bankAccountName}
+                    onChange={(e) => set("bankAccountName", e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Account number">
+                {(p) => (
+                  <Input
+                    {...fieldProps(p)}
+                    className="font-mono"
+                    value={form.bankAccountNumber}
+                    onChange={(e) => set("bankAccountNumber", e.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Bank">
+                {(p) => (
+                  <Input
+                    {...fieldProps(p)}
+                    placeholder="Indian Overseas Bank"
+                    value={form.bankName}
+                    onChange={(e) => set("bankName", e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Branch">
+                {(p) => (
+                  <Input
+                    {...fieldProps(p)}
+                    value={form.bankBranch}
+                    onChange={(e) => set("bankBranch", e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="IFSC">
+                {(p) => (
+                  <Input
+                    {...fieldProps(p)}
+                    className="font-mono uppercase"
+                    placeholder="IOBA0001593"
+                    value={form.bankIfsc}
+                    onChange={(e) => set("bankIfsc", e.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+
+            <p className="text-xs text-grey-500 leading-relaxed">
+              The voucher shows this block only when an account name and number are
+              both present — a bare IFSC, or an account with nobody to pay, is worse
+              on a guest's document than no bank section at all.
+            </p>
           </CardBody>
           <CardFooter>
             <Button variant="ghost" onClick={() => navigate(-1)}>Cancel</Button>

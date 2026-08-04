@@ -354,6 +354,38 @@ export async function buildVoucherPdf(
     ctx.y += h + 5;
   }
 
+  /* ── Bank details ───────────────────────────────────────────── */
+  if (v.bank) {
+    const lines: [string, string][] = [
+      ["Account name", v.bank.accountName],
+      ["Account no.", v.bank.accountNumber],
+      ["Bank", v.bank.bankName],
+      ["Branch", v.bank.branch],
+      ["IFSC", v.bank.ifsc],
+    ];
+    const shown = lines.filter(([, val]) => val);
+    const h = 8 + shown.length * 4.4;
+
+    setDraw(doc, LINE);
+    doc.setLineWidth(0.2);
+    doc.rect(M, ctx.y, CONTENT, h, "D");
+
+    label(doc, "Bank details", M + 5, ctx.y + 5);
+    let by = ctx.y + 9.6;
+    for (const [k, val] of shown) {
+      text(doc, k, M + 5, by, { size: 7.6, color: GREY });
+      /* Courier for the figures. An account number or IFSC is
+         transcribed by hand into a banking app, and a monospaced face
+         is the difference between a clean transfer and a failed one. */
+      doc.setFont("courier", "bold");
+      doc.setFontSize(8.4);
+      doc.setTextColor(INK);
+      doc.text(ascii(val), M + 32, by);
+      by += 4.4;
+    }
+    ctx.y += h + 5;
+  }
+
   /* ── QR + policies ──────────────────────────────────────────── */
   const qrTarget = options.qrUrl || `https://${v.org.website.replace(/^https?:\/\//, "")}`;
   const qrTop = ctx.y;

@@ -201,7 +201,22 @@ const MATRIX: Record<Role, ResourceGrants> = {
     automation: ["view", "edit"],
     notification: ["view", "create", "edit"],
     ai: READ,
-    user: ["view", "create", "edit"],
+    /**
+     * ⚠️ Invite, but not amend. An Admin brings people in; only the
+     * Owner changes what an existing account is or switches it off.
+     *
+     * The reasoning is that `edit` on a user is not a profile tweak —
+     * it is the power to change someone's ROLE, and an Admin who can
+     * edit users can promote an account they control. Inviting is
+     * safe by comparison: the invitation records the role, the person
+     * still has to claim it with their own password, and an Owner can
+     * withdraw it before they do.
+     *
+     * ⚠️ There is no delete. Removing a user detaches their audit
+     * trail from a name, so accounts are disabled by status instead —
+     * and that is an Owner action, being an edit.
+     */
+    user: ["view", "create"],
     audit_log: READ_EXPORT,
     setting: READ,
   },

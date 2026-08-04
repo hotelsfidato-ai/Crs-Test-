@@ -128,6 +128,32 @@ describe("the matrix agrees with firestore.rules", () => {
     }
   });
 
+  /* rules: match /users — allow update: if isRole('owner').
+     ⚠️ Admin keeps `create` (an invitation, claimed by its recipient
+     with their own password) but not `edit`, which sets `role`. */
+  it("lets only the owner edit users, while admin may still invite", () => {
+    expect(can("owner", "edit", "user")).toBe(true);
+    expect(can("admin", "create", "user")).toBe(true);
+    expect(can("admin", "edit", "user")).toBe(false);
+    for (const role of ["crs_manager", "manager", "finance", "salesperson", "viewer"] as const) {
+      expect(can(role, "edit", "user"), role).toBe(false);
+    }
+  });
+
+  /* rules: customers/companies allow update: if amendsAccounts() —
+     owner, admin, crs_manager, manager. A salesperson creates but does
+     not amend; see the note on the salesperson grants. */
+  it("lets the desk roles amend accounts but not a salesperson", () => {
+    for (const role of ["owner", "admin", "crs_manager", "manager"] as const) {
+      expect(can(role, "edit", "customer"), role).toBe(true);
+      expect(can(role, "edit", "company"), role).toBe(true);
+      expect(can(role, "edit", "reservation"), role).toBe(true);
+    }
+    expect(can("salesperson", "create", "customer")).toBe(true);
+    expect(can("salesperson", "edit", "customer")).toBe(false);
+    expect(can("salesperson", "edit", "company")).toBe(false);
+  });
+
   /* rules: match /payments — create, update: owner, admin, finance */
   it("offers payments only to owner, admin and finance", () => {
     for (const role of ["owner", "admin", "finance"] as const) {

@@ -74,6 +74,25 @@ export interface Hotel extends Auditable {
   managerId?: string;
   onboardedAt: IsoDate;
 
+  /**
+   * Where the guest settles the bill. Printed on the voucher.
+   *
+   * ⚠️ Deliberately on the hotel document, NOT in hotels/{id}/private
+   * beside commission. Commission is what Fidato earns and is nobody
+   * else's business; these are payment instructions the guest is meant
+   * to read. Putting them behind the Owner-only subcollection would
+   * leave the voucher unable to render them.
+   *
+   * ⚠️ Every field optional. A property with no account on file must
+   * print a voucher without a bank block rather than one with empty
+   * rows under a "Bank details" heading, which reads as a system fault.
+   */
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankName?: string;
+  bankBranch?: string;
+  bankIfsc?: string;
+
   /* ⚠️ commissionPercent deliberately absent. Firestore rules are
      document-level, so a field on a readable document is readable by
      everyone who can read it. Commission lives in the subcollection

@@ -34,6 +34,14 @@ export interface VoucherRoomLine {
   lineTotal: number;
 }
 
+export interface VoucherBank {
+  accountName: string;
+  accountNumber: string;
+  bankName: string;
+  branch: string;
+  ifsc: string;
+}
+
 export interface VoucherModel {
   reference: string;
   status: string;
@@ -78,6 +86,15 @@ export interface VoucherModel {
   bookedByName: string;
   specialRequests: string;
 
+  /**
+   * The property's payment details, or null when none are on file.
+   *
+   * ⚠️ Null rather than an object of empty strings, so every renderer
+   * has one thing to test. A "Bank details" heading over four blank
+   * rows reads as a broken voucher, not an unconfigured property.
+   */
+  bank: VoucherBank | null;
+
   org: {
     brandName: string;
     address: string;
@@ -118,6 +135,33 @@ function dateTime(iso?: string): string {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+}
+
+/**
+ * Payment details, or null when the property has none recorded.
+ *
+ * ⚠️ Requires an account number AND a name. A voucher carrying a bare
+ * IFSC, or an account number with nobody to pay, is worse than one
+ * carrying no bank block at all — a guest may try to transfer against
+ * it.
+ */
+function buildBank(hotel?: Hotel | null): VoucherBank | null {
+  const accountNumber = hotel?.bankAccountNumber?.trim() ?? "";
+  const accountName = hotel?.bankAccountName?.trim() ?? "";
+  if (!accountNumber || !accountName) return null;
+
+  return {
+    accountName,
+    accountNumber,
+    bankName: hotel?.bankName?.trim() ?? "",
+    branch: hotel?.bankBranch?.trim() ?? "",
+    /* ⚠️ Uppercased here as well as in the form. The form only
+       protects what it wrote; a property imported, typed into the
+       console, or saved before that normalisation existed would print
+       a lowercase IFSC on a guest's voucher. Banks accept it, but it
+       reads as a typo on a document about money. */
+    ifsc: (hotel?.bankIfsc ?? "").trim().toUpperCase(),
+  };
 }
 
 export function buildVoucher({
@@ -201,6 +245,8 @@ export function buildVoucher({
     bookedByName: r.ownerName,
     specialRequests: r.specialRequests ?? "",
 
+    bank: buildBank(hotel),
+
     org: {
       brandName: org?.brandName || "Fidato Hotels",
       address: org?.registeredAddress || "",
@@ -281,6 +327,15 @@ const LINE = "#e2e5e8";
  */
 export const LOGO_PNG_URL =
   "https://fidatohotels.com/wp-content/uploads/2026/08/fidato-hotels.png";
+
+/** One label/value line in a bank block. Skips what is not recorded. */
+const bankRow = (label: string, value: string) =>
+  value
+    ? `<tr>
+         <td style="padding:3px 20px 3px 0;color:${GREY};font-size:12px;white-space:nowrap;vertical-align:top">${escape(label)}</td>
+         <td style="padding:3px 0;color:${INK};font-size:12px;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${escape(value)}</td>
+       </tr>`
+    : "";
 
 export function renderVoucherHtml(v: VoucherModel): string {
   const row = (label: string, value: string) =>
@@ -564,6 +619,26 @@ export function renderVoucherHtml(v: VoucherModel): string {
       </table>
     </div>
   </div>
+
+  ${
+    v.bank
+      ? `<!-- Payment details. Placed after the hotel's confirmation and
+              before the policies, which is where a guest settling by
+              transfer looks for it. -->
+         <div style="margin-top:20px;border:1px solid ${LINE};border-radius:6px">
+           <div style="padding:12px 14px">
+             <div class="label" style="margin-bottom:8px">Bank details</div>
+             <table>
+               ${bankRow("Account name", v.bank.accountName)}
+               ${bankRow("Account no.", v.bank.accountNumber)}
+               ${bankRow("Bank", v.bank.bankName)}
+               ${bankRow("Branch", v.bank.branch)}
+               ${bankRow("IFSC", v.bank.ifsc)}
+             </table>
+           </div>
+         </div>`
+      : ""
+  }
 
   <!-- Policies -->
   <div class="label" style="margin:20px 0 6px">Hotel policies</div>
@@ -893,6 +968,25 @@ export function renderVoucherEmail(
              <tr><td style="padding:12px 14px">
                <div style="font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:${ORANGE};font-weight:700;margin-bottom:7px">Confirmed by the hotel</div>
                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${confirmationCells}</tr></table>
+             </td></tr>
+           </table>
+         </td></tr>`
+      : ""
+  }
+
+  ${
+    v.bank
+      ? `<tr><td style="padding:16px 26px 0">
+           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${LINE}">
+             <tr><td style="padding:12px 14px">
+               <div style="font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:${GREY};font-weight:700;margin-bottom:7px">Bank details</div>
+               <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                 ${bankRow("Account name", v.bank.accountName)}
+                 ${bankRow("Account no.", v.bank.accountNumber)}
+                 ${bankRow("Bank", v.bank.bankName)}
+                 ${bankRow("Branch", v.bank.branch)}
+                 ${bankRow("IFSC", v.bank.ifsc)}
+               </table>
              </td></tr>
            </table>
          </td></tr>`

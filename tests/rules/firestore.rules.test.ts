@@ -100,6 +100,49 @@ describe("nobody can promote themselves", () => {
     await assertSucceeds(updateDoc(doc(db, "users", SALES_A.uid), { name: "New Name" }));
   });
 
+  /* ── Administering users is the Owner's alone ──────────────────
+     ⚠️ `edit` on a user sets `role`, and every other rule in this file
+     trusts that field. An Admin who can edit users can promote an
+     account they control, which would make the Admin/Owner split
+     decorative. These pin the boundary.                            */
+
+  it("an admin cannot change anyone's role", async () => {
+    const db = as(env, ADMIN);
+    await assertFails(updateDoc(doc(db, "users", SALES_A.uid), { role: "manager" }));
+  });
+
+  it("an admin cannot disable an account", async () => {
+    const db = as(env, ADMIN);
+    await assertFails(updateDoc(doc(db, "users", SALES_A.uid), { status: "disabled" }));
+  });
+
+  it("a crs manager and a manager cannot either", async () => {
+    for (const person of [CRS, MANAGER]) {
+      await assertFails(
+        updateDoc(doc(as(env, person), "users", SALES_A.uid), { role: "admin" }),
+      );
+    }
+  });
+
+  it("the owner can", async () => {
+    const db = as(env, OWNER);
+    await assertSucceeds(updateDoc(doc(db, "users", SALES_A.uid), { role: "manager" }));
+    await assertSucceeds(updateDoc(doc(db, "users", SALES_A.uid), { status: "disabled" }));
+  });
+
+  /* Deleting a user detaches their audit trail from a name. Disabling
+     by status is the supported route, and it is an update. */
+  it("nobody deletes a user, not even the owner", async () => {
+    for (const person of [OWNER, ADMIN, CRS, MANAGER]) {
+      await assertFails(deleteDoc(doc(as(env, person), "users", SALES_B.uid)));
+    }
+  });
+
+  it("not even the owner may mint the automation account", async () => {
+    const db = as(env, OWNER);
+    await assertFails(updateDoc(doc(db, "users", SALES_B.uid), { role: "automation" }));
+  });
+
   /* ⚠️ The two-move escalation this rule exists to stop: an Admin
      invites an Owner at an address they control, then signs up as it. */
   it("an admin cannot invite an owner", async () => {
