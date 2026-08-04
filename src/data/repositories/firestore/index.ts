@@ -15,7 +15,7 @@ import type {
   NotificationTemplate, AutomationEvent, AutomationEventType, Integration, OrgSettings,
   ListQuery, ListResult, ReservationStatus, ImportEntity,
   InventoryDay, AutomationWorkflow, AutomationRun, AutomationStatus, Invitation,
-  WebhookConfig,
+  WebhookConfig, ReservationAutomation,
 } from "@/data/types";
 import {
   type Actor, fromDoc, toDoc, getOne, listAll, runQuery, countWhere,
@@ -27,6 +27,9 @@ import {
 import {
   buildVoucher, renderVoucherHtml, renderVoucherEmail,
 } from "@/features/reservations/voucher";
+import {
+  voucherPdfBase64, voucherPdfFilename, qrOptions,
+} from "@/features/reservations/voucherPdf";
 
 export type { Actor };
 
@@ -38,23 +41,46 @@ async function pushToN8n(
   event: AutomationEventType,
   entityId: string,
   data: Record<string, unknown>,
-): Promise<void> {
+): Promise<ReservationAutomation> {
+  const at = new Date().toISOString();
   try {
     const config = await getOne<WebhookConfig>("settings", "webhook");
-    if (!shouldSend(config, event)) return;
 
-    await postWebhook(config!, {
+    /* ⚠️ Not a failure. Nothing was attempted because pushing is off or
+       this event is not selected, and calling that "failed" sends
+       somebody hunting for a broken endpoint that is working fine. */
+    if (!shouldSend(config, event)) {
+      return {
+        status: "disabled",
+        at,
+        detail: config?.url
+          ? "Pushing is switched off in Admin → Integrations."
+          : "No n8n webhook is configured.",
+      };
+    }
+
+    const result = await postWebhook(config!, {
       event,
-      sentAt: new Date().toISOString(),
+      sentAt: at,
       source: "fidato-crs",
       eventId: entityId,
       data,
     });
-  } catch {
-    /* Swallowed on purpose. The automationQueue entry survives, so n8n
-       still collects this on its next poll. Surfacing a webhook error
-       to someone who just saved a booking would be reporting a failure
-       that did not happen. */
+
+    return {
+      status: result.ok ? "sent" : "failed",
+      at,
+      detail: result.detail,
+      durationMs: result.durationMs,
+    };
+  } catch (error) {
+    /* The booking is already committed and the queue entry survives, so
+       this is reported, never thrown. */
+    return {
+      status: "failed",
+      at,
+      detail: error instanceof Error ? error.message : "The push could not be attempted.",
+    };
   }
 }
 
@@ -637,6 +663,39 @@ export const reservationsRepo = {
    * both GST bands — a ₹6,000 Deluxe and a ₹9,000 Suite. Computing on
    * the total is a tax error, not a rounding difference.
    */
+  /**
+   * How many recent bookings never reached n8n.
+   *
+   * ⚠️ Reads reservations rather than automationQueue on purpose: the
+   * queue is Owner/Admin-only, so a salesperson — the person whose
+   * guest was not emailed — would always see zero.
+   *
+   * ⚠️ Filters in memory over a bounded window instead of querying
+   * `automation.status`. An equality on a nested field would need its
+   * own composite index per scope, and the whole point of queryPlan is
+   * that indexes are declared rather than discovered in production.
+   * One page of recent bookings is enough to notice a broken endpoint.
+   */
+  automationHealth: async (
+    ctx?: ScopeContext,
+  ): Promise<{ failed: number; disabled: number; sent: number }> => {
+    const WINDOW = 40;
+    const constraints =
+      ctx?.role === "salesperson"
+        ? [where("ownerId", "==", ctx.userId), orderBy("checkIn", "desc"), limit(WINDOW)]
+        : [orderBy("checkIn", "desc"), limit(WINDOW)];
+
+    const recent = await listAll<Reservation>("reservations", ...constraints);
+    const tally = { failed: 0, disabled: 0, sent: 0 };
+    for (const r of recent) {
+      const status = r.automation?.status;
+      if (status === "failed") tally.failed += 1;
+      else if (status === "disabled") tally.disabled += 1;
+      else if (status === "sent") tally.sent += 1;
+    }
+    return tally;
+  },
+
   quote: (rooms: ReservationRoom[], nights: number, company?: Company | null) => {
     const roomCharges = rooms.reduce((s, r) => s + lineTotal(r, nights), 0);
     const discountPercent = company?.negotiatedDiscountPercent ?? 0;
@@ -826,15 +885,39 @@ export const reservationsRepo = {
        So the app renders once and n8n only delivers. `email.html` is
        the body to send; `voucher.html` is the A4 sheet to turn into
        the PDF for Drive; `to` is where it goes. */
+    const orgSettings = await adminRepo.settings().catch(() => null);
     const voucher = buildVoucher({
       reservation: created,
       hotel,
       customer,
       company,
-      org: await adminRepo.settings().catch(() => null),
+      org: orgSettings,
     });
     const mail = renderVoucherEmail(voucher);
 
+    /* ⚠️ The PDF is built HERE, in the browser, and shipped as base64.
+       n8n has no HTML-to-PDF step without a paid service or a container
+       to run one, and WhatsApp cannot send an HTML file at all — it
+       needs a real document. Generating it at the source means the
+       attachment, the Drive copy and the WhatsApp document are the same
+       bytes the salesperson just previewed.
+
+       Roughly 18 KB, so it costs the payload very little. A failure
+       here must not lose the booking, which is already committed — the
+       push simply goes without the attachment. */
+    let pdfBase64 = "";
+    try {
+      pdfBase64 = await voucherPdfBase64(voucher, qrOptions(orgSettings));
+    } catch {
+      /* Left empty. n8n falls back to voucher.html. */
+    }
+
+    /* ⚠️ Still not awaited into the caller's path — the booking is
+       saved and must report success now. The outcome is written back to
+       the reservation when it arrives, so the screen can show whether
+       the guest was actually handed to n8n instead of leaving everyone
+       to guess. A failure to record the outcome is itself ignored: it
+       would be reporting a failure about reporting. */
     void pushToN8n("reservation.created", ref.id, {
       reservation: created,
       customer,
@@ -847,10 +930,23 @@ export const reservationsRepo = {
       voucher: {
         reference: created.reference,
         html: renderVoucherHtml(voucher),
-        filename: `Voucher-${created.reference}.pdf`,
+        filename: voucherPdfFilename(voucher),
+        /* Base64 with no data: prefix — what n8n's Convert to File and
+           the Gmail/Drive/WhatsApp binary inputs expect. */
+        pdfBase64,
+        pdfMimeType: "application/pdf",
         model: voucher,
       },
-    });
+    })
+      .then((outcome) =>
+        updateDoc(doc(db, "reservations", ref.id), {
+          automation: { ...outcome, withPdf: Boolean(pdfBase64) },
+        }),
+      )
+      .catch(() => {
+        /* See above — a failure to record the outcome is not worth
+           reporting to someone who just saved a booking. */
+      });
 
     return created;
   },

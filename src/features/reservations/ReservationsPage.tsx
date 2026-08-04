@@ -10,6 +10,8 @@ import {
   Page, PageHeader, Button, FilterBar, DataTable, Pagination, EmptyState,
   StatusPill, RESERVATION_TONES, toast, type Column,
 } from "@/components/ui";
+import { AutomationBadge } from "./AutomationBadge";
+import { AutomationHealthBanner } from "./AutomationHealthBanner";
 import { useListState } from "@/features/shared/useListState";
 import type { Reservation } from "@/data/types";
 
@@ -88,6 +90,13 @@ export default function ReservationsPage() {
       key: "totalAmount", header: "Value", numeric: true, sortable: true,
       cell: (r) => <span className="font-medium">{money(r.totalAmount)}</span>,
     },
+    {
+      /* ⚠️ Not sortable. `automation.status` is a nested field with no
+         composite index behind it, and offering the header would throw
+         "the query requires an index" — see data/queryPlan. */
+      key: "automation", header: "Automation", hideBelow: "xl",
+      cell: (r) => <AutomationBadge reservation={r} compact />,
+    },
   ];
 
   return (
@@ -128,6 +137,8 @@ export default function ReservationsPage() {
           </>
         }
       />
+
+      <AutomationHealthBanner />
 
       <FilterBar
         search={list.search}

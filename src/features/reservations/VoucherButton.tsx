@@ -6,8 +6,10 @@ import {
 } from "@/data/repositories";
 import {
   Button, Dialog, DialogContent, DialogTrigger, DialogClose, Skeleton, toast,
+  describeError,
 } from "@/components/ui";
 import { buildVoucher, renderVoucherHtml } from "./voucher";
+import { voucherPdfBlob, voucherPdfFilename, qrOptions } from "./voucherPdf";
 import type { Reservation } from "@/data/types";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -15,14 +17,16 @@ import type { Reservation } from "@/data/types";
 
    Preview, print and download, from the reservation.
 
-   ⚠️ No PDF library. The browser's own print-to-PDF produces a better
-   document than a client-side renderer would — real text, selectable
-   and searchable, correct fonts, A4 pagination — for none of the
-   ~400 kB a PDF library costs. The HTML carries @page rules so
-   "Save as PDF" lands on A4 without anyone touching the settings.
+   ⚠️ Download produces a real PDF, drawn with jsPDF — see voucherPdf.
+   It used to hand over the HTML and tell the user to print it, which
+   is not a document you can forward to a guest or attach to a booking
+   thread. The same generator produces the copy n8n attaches to the
+   email, uploads to Drive and sends over WhatsApp, so what is checked
+   here is byte-for-byte what the guest receives.
 
-   ⚠️ The same HTML goes to n8n for the guest's email, so what the
-   salesperson checks here is exactly what the guest receives.
+   ⚠️ Print still uses the HTML sheet rather than the PDF. The browser's
+   own print pipeline handles page setup and margins better than
+   handing it a pre-made PDF does, and the HTML carries @page rules.
    ══════════════════════════════════════════════════════════════════ */
 
 export function VoucherButton({ reservation }: { reservation: Reservation }) {
@@ -66,21 +70,28 @@ export function VoucherButton({ reservation }: { reservation: Reservation }) {
     }
   }
 
-  function download() {
-    if (!html || !model) return;
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `Fidato-voucher-${model.reference}.html`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success(
-      "Voucher downloaded",
-      "Open it and print to PDF if the guest needs a PDF copy.",
-    );
+  const [building, setBuilding] = useState(false);
+
+  async function download() {
+    if (!model) return;
+    setBuilding(true);
+    try {
+      const blob = await voucherPdfBlob(model, qrOptions(sources.data?.org));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = voucherPdfFilename(model);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success("Voucher downloaded", voucherPdfFilename(model));
+    } catch (error) {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not build the PDF", detail.message ?? "Nothing was saved.");
+    } finally {
+      setBuilding(false);
+    }
   }
 
   return (
@@ -103,10 +114,11 @@ export function VoucherButton({ reservation }: { reservation: Reservation }) {
             <Button
               variant="secondary"
               leadingIcon={<Download className="size-4" />}
-              disabled={!html}
-              onClick={download}
+              disabled={!model}
+              loading={building}
+              onClick={() => void download()}
             >
-              Download
+              Download PDF
             </Button>
             <Button
               leadingIcon={<Printer className="size-4" />}

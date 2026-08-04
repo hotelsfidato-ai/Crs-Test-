@@ -25,6 +25,10 @@ const schema = z.object({
   currency: z.string(),
   timezone: z.string(),
   fiscalYearStart: z.string(),
+  /* Optional: the voucher falls back to the website when unset, and a
+     QR pointing nowhere is worse than none at all. */
+  socialUrl: z.string().url("Enter a full URL, including https://").or(z.literal("")),
+  socialCaption: z.string(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -45,6 +49,7 @@ export default function SettingsPage() {
       brandName: "", legalName: "", registeredAddress: "", gstin: "",
       supportEmail: "", supportPhone: "", currency: "INR",
       timezone: "Asia/Kolkata", fiscalYearStart: "April",
+      socialUrl: "", socialCaption: "",
     },
   });
 
@@ -154,6 +159,34 @@ export default function SettingsPage() {
                   />
                 )}
               </Field>
+
+              {/* The QR code printed on every voucher. Kept beside the
+                  support details because it is the same thing: how a
+                  guest gets back to you after they have the document. */}
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field
+                  label="Voucher QR link"
+                  hint="Instagram, or anywhere you want guests to land. Falls back to the website."
+                  error={errors.socialUrl?.message}
+                >
+                  {({ id, invalid }) => (
+                    <Input
+                      id={id} invalid={invalid} disabled={!editable}
+                      placeholder="https://instagram.com/fidatohotels"
+                      {...form.register("socialUrl")}
+                    />
+                  )}
+                </Field>
+                <Field label="QR caption" hint="Printed under the code">
+                  {({ id }) => (
+                    <Input
+                      id={id} disabled={!editable}
+                      placeholder="Follow us"
+                      {...form.register("socialCaption")}
+                    />
+                  )}
+                </Field>
+              </div>
 
               <div className="grid gap-5 sm:grid-cols-3">
                 <Field label="Currency">

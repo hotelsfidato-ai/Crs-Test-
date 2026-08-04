@@ -383,6 +383,20 @@ export interface Reservation extends Auditable {
   hotelRepName?: string;
   confirmedAt?: IsoDateTime;
 
+  /**
+   * Whether n8n was handed this booking, and what it said.
+   *
+   * ⚠️ Recorded on the reservation rather than on the queue event
+   * because a salesperson can read their own bookings but not
+   * automationQueue — so this is the only place the person who made the
+   * booking can actually see whether the guest was emailed.
+   *
+   * ⚠️ "sent" means n8n ACCEPTED the push, not that the guest received
+   * anything. What happens after the webhook returns 200 is n8n's to
+   * report, and the UI says so rather than implying delivery.
+   */
+  automation?: ReservationAutomation;
+
   /* ── Tax provenance ──
      Which band table produced taxAmount. Historical folios are never
      recomputed, so this is how an old figure stays explainable. */
@@ -687,6 +701,31 @@ export interface Integration {
   viaN8n: boolean;
 }
 
+/**
+ * The outcome of handing a booking to n8n.
+ *
+ * · `sent`     — n8n accepted the push.
+ * · `failed`   — it was attempted and rejected, or unreachable.
+ * · `disabled` — pushing is switched off in Admin → Integrations, so
+ *                nothing was attempted. Deliberately distinct from
+ *                `failed`: one is a broken endpoint, the other is a
+ *                setting, and they need different people to fix them.
+ * · `queued`   — written to automationQueue, awaiting a poll. The
+ *                fallback when the browser push could not run.
+ */
+export type ReservationAutomationStatus = "sent" | "failed" | "disabled" | "queued";
+
+export interface ReservationAutomation {
+  status: ReservationAutomationStatus;
+  at: IsoDateTime;
+  /** n8n's reply, or the reason nothing was attempted. Shown verbatim. */
+  detail?: string;
+  /** Round trip in milliseconds, when there was one. */
+  durationMs?: number;
+  /** True when a PDF was attached to the push. */
+  withPdf?: boolean;
+}
+
 export interface OrgSettings {
   legalName: string;
   brandName: string;
@@ -699,6 +738,17 @@ export interface OrgSettings {
   financialYearStart: string;
   approvalThreshold: number;
   defaultCommissionPercent: number;
+
+  /**
+   * Where the QR code on the voucher points, and what it is captioned.
+   *
+   * ⚠️ Optional because every existing settings document predates them.
+   * With neither set the voucher falls back to the website, which is
+   * always a sensible destination — a QR that 404s on a guest's phone
+   * is worse than no QR.
+   */
+  socialUrl?: string;
+  socialCaption?: string;
 }
 
 /* ── automationQueue ───────────────────────────────────────────────

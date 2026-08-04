@@ -26,6 +26,7 @@ describeError,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 import { VoucherButton } from "./VoucherButton";
+import { AutomationBadge } from "./AutomationBadge";
 import { MEAL_PLAN_LABELS, type ReservationStatus } from "@/data/types";
 
 export default function ReservationDetailPage() {
@@ -89,6 +90,10 @@ export default function ReservationDetailPage() {
             <StatusPill tone={RESERVATION_TONES[r.status] ?? "neutral"}>
               {labelFor(r.status)}
             </StatusPill>
+            {/* Whether the guest's confirmation actually left the
+                building. Beside the booking status because that is the
+                question asked in the same breath. */}
+            <AutomationBadge reservation={r} />
             {locked && (
               <Tooltip content="Completed and cancelled reservations are locked against edits">
                 <span className="inline-flex items-center gap-1 text-2xs text-grey-400">
