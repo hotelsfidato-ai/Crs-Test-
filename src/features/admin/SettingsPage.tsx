@@ -11,7 +11,7 @@ import { money } from "@/lib/format";
 import { APPROVAL_THRESHOLD } from "@/lib/rules";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button,
-  Field, Input, NativeSelect, Skeleton, toast, DetailList, DetailRow,
+  Field, Input, NativeSelect, Checkbox, Skeleton, toast, DetailList, DetailRow,
 describeError,
 } from "@/components/ui";
 
@@ -30,6 +30,7 @@ const schema = z.object({
   socialUrl: z.string().url("Enter a full URL, including https://").or(z.literal("")),
   socialCaption: z.string(),
   logoUrl: z.string().url("Enter a full URL, including https://").or(z.literal("")),
+  allowRoleSwitching: z.boolean(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -51,11 +52,21 @@ export default function SettingsPage() {
       supportEmail: "", supportPhone: "", currency: "INR",
       timezone: "Asia/Kolkata", fiscalYearStart: "April",
       socialUrl: "", socialCaption: "", logoUrl: "",
+      allowRoleSwitching: false,
     },
   });
 
   useEffect(() => {
-    if (settings.data) form.reset(settings.data);
+    /* ⚠️ Coalesced, not spread blind. A settings document written
+       before this field existed has no `allowRoleSwitching`, and
+       reset() with undefined turns the checkbox into an uncontrolled
+       input that React then complains about on first click. */
+    if (settings.data) {
+      form.reset({
+        ...settings.data,
+        allowRoleSwitching: Boolean(settings.data.allowRoleSwitching),
+      });
+    }
   }, [settings.data, form]);
 
   const save = useMutation({
@@ -202,6 +213,32 @@ export default function SettingsPage() {
                   />
                 )}
               </Field>
+
+              {/* ⚠️ A review tool, not a permission. It never granted
+                  extra access — the rules read the signed-in account —
+                  but it makes the top bar name a role the person is not,
+                  which is misleading to anyone reading the screen. */}
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <Checkbox
+                  checked={form.watch("allowRoleSwitching")}
+                  disabled={!editable}
+                  onCheckedChange={(v) =>
+                    form.setValue("allowRoleSwitching", Boolean(v), { shouldDirty: true })
+                  }
+                />
+                <span>
+                  <span className="block text-sm text-ink-900">
+                    Allow previewing the product as another role
+                  </span>
+                  <span className="block text-xs text-grey-500 mt-0.5">
+                    Adds a role picker to the top bar for Owner and Admin, for checking
+                    what each role sees. It grants no extra access — every write is still
+                    recorded against the real account and the security rules ignore the
+                    selection entirely. Leave it off in normal use: while it is on, the top
+                    bar can say “Salesperson” when an Owner is signed in.
+                  </span>
+                </span>
+              </label>
 
               <div className="grid gap-5 sm:grid-cols-3">
                 <Field label="Currency">

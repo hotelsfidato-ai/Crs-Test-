@@ -784,6 +784,19 @@ export interface OrgSettings {
   socialCaption?: string;
 
   /**
+   * Whether an Owner or Admin may preview the product as another role.
+   *
+   * ⚠️ Off unless explicitly turned on. Impersonation never granted
+   * extra access — the security rules read the signed-in account and
+   * ignore the selection entirely — but it makes the top bar say
+   * "Salesperson" while an Owner is signed in, and someone reading over
+   * a shoulder cannot tell the difference. It is a review tool, so it
+   * should be present while the permission model is being reviewed and
+   * absent the rest of the time.
+   */
+  allowRoleSwitching?: boolean;
+
+  /**
    * Absolute URL of the logo used in the voucher EMAIL.
    *
    * ⚠️ Serve it from the same domain you send from. An email whose

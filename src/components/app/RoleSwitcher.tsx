@@ -1,6 +1,9 @@
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, Eye, LogOut } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useSession, useCurrentUser, signOutOfApp } from "@/lib/session";
+import { adminRepo } from "@/data/repositories";
 import { ASSIGNABLE_ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS } from "@/lib/permissions";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -10,25 +13,56 @@ import * as DropdownPrimitive from "@radix-ui/react-dropdown-menu";
 
 /* ══════════════════════════════════════════════════════════════════
    ROLE SWITCHER
-   Phase 1 had no login page, so this control stood in for one. With
-   Firebase Auth in place it survives as downward impersonation for
-   Owner and Admin: picking a role changes what the interface shows,
-   so navigation, dashboards,
-   permissions and row-level scoping all change with it. It is the
-   single control that makes the whole permission model reviewable.
+
+   Phase 1 had no login page, so this stood in for one. With Firebase
+   Auth in place it survives as downward impersonation for Owner and
+   Admin: picking a role changes what the interface shows, so
+   navigation, dashboards, permissions and row-level scoping all change
+   with it. It is the single control that makes the permission model
+   reviewable in one sitting.
+
+   ⚠️ OFF UNLESS ENABLED IN SETTINGS. It never granted extra access —
+   the security rules read the signed-in account and ignore the
+   selection — but it makes the top bar read "Salesperson" while an
+   Owner is signed in, and nobody looking at the screen can tell. That
+   is fine while the model is being reviewed and wrong the rest of the
+   time, so Admin → Settings decides.
+
+   ⚠️ Hiding it is presentation only. `setRole` in the session store
+   still refuses anyone who is not an Owner or Admin, and the rules
+   never read it at all. Do not treat this switch as the boundary.
    ══════════════════════════════════════════════════════════════════ */
 
 export function RoleSwitcher() {
   const role = useSession((s) => s.role);
   const setRole = useSession((s) => s.setRole);
   const account = useSession((s) => s.account);
+  const viewAs = useSession((s) => s.viewAs);
   const user = useCurrentUser();
 
-  /* ⚠️ Impersonation is Owner and Admin only, and the store enforces
-     that independently — this is presentation, not the control. Even
-     when it is shown, it changes nothing server-side: the security
-     rules read the signed-in account, never this selection. */
-  const mayImpersonate = account?.role === "owner" || account?.role === "admin";
+  /* Read once and cached — this sits in the top bar of every screen,
+     so it must not be a query that refires on navigation. */
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => adminRepo.settings(),
+    staleTime: 5 * 60_000,
+  });
+
+  /* ⚠️ Two independent conditions, and both are presentation. The
+     store refuses a non-owner/admin regardless, and the rules never
+     read the selection at all. */
+  const switchingEnabled = Boolean(settings.data?.allowRoleSwitching);
+  const mayImpersonate =
+    switchingEnabled && (account?.role === "owner" || account?.role === "admin");
+
+  /* ⚠️ Drop any impersonation the moment the setting goes off.
+     Without this, whoever was previewing as a Salesperson when it was
+     disabled stays one — the control that would undo it has just
+     disappeared, and a reload does not clear it either, because the
+     role is derived from the account and the stale viewAs. */
+  useEffect(() => {
+    if (!switchingEnabled && viewAs && account) setRole(account.role);
+  }, [switchingEnabled, viewAs, account, setRole]);
 
   return (
     <DropdownMenu>
