@@ -1,0 +1,186 @@
+{
+  "name": "Fidato — Reservation confirmed (email + Drive + Meta Cloud WhatsApp)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fidato-reservation",
+        "responseMode": "responseNode",
+        "options": { "allowedOrigins": "*", "rawBody": false }
+      },
+      "id": "1e1bbd6f-79b7-4a42-a405-bdfe76efb41d",
+      "name": "Reservation confirmed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-680, 300],
+      "webhookId": "fidato-reservation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, reference: $json.body.data.voucher.reference }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [{ "name": "Access-Control-Allow-Origin", "value": "*" }]
+          }
+        }
+      },
+      "id": "66f03088-bfbb-4b27-b528-cd0e9df0ec16",
+      "name": "Reply immediately",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "/* data.voucher carries everything needed to deliver.\n * Turn its base64 into a real binary, once, for all three consumers. */\nconst v = $('Reservation confirmed').first().json.body.data.voucher;\n\nif (!v.pdfBase64) {\n  throw new Error(\n    'No PDF in the payload. Tick \"Also attach a ready-made PDF\" in ' +\n    'Fidato -> Admin -> Integrations and save, then create a booking.'\n  );\n}\n\nreturn [{\n  json: { filename: v.filename, reference: v.reference, to: v.to },\n  binary: {\n    data: {\n      data: v.pdfBase64,\n      mimeType: 'application/pdf',\n      fileName: v.filename,\n    },\n  },\n}];"
+      },
+      "id": "428dac28-c990-463b-a2f6-9f0e7d037f0a",
+      "name": "PDF to binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-280, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "Fidato Hotels <crs@fidatohotels.com>",
+        "toEmail": "={{ $('Reservation confirmed').item.json.body.data.voucher.to }}",
+        "subject": "={{ $('Reservation confirmed').item.json.body.data.voucher.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $('Reservation confirmed').item.json.body.data.voucher.emailText }}",
+        "html": "={{ $('Reservation confirmed').item.json.body.data.voucher.emailHtml }}",
+        "options": {
+          "attachments": "data",
+          "replyTo": "crs@fidatohotels.com",
+          "appendAttribution": false
+        }
+      },
+      "id": "9ddf636f-38bb-4ca9-83b9-1620a2329a14",
+      "name": "Email the voucher",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [-40, 60],
+      "credentials": {
+        "smtp": { "id": "REPLACE_ME", "name": "crs@fidatohotels.com" }
+      }
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "data",
+        "name": "={{ $json.filename }}",
+        "driveId": { "__rl": true, "mode": "list", "value": "My Drive" },
+        "folderId": {
+          "__rl": true,
+          "value": "1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv",
+          "mode": "list",
+          "cachedResultName": "Voucher ",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv"
+        },
+        "options": {}
+      },
+      "id": "ccd95980-3508-474d-9ebe-bc0594a84db1",
+      "name": "Save PDF to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-40, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "FyMFPiLDaVuqoPk8", "name": "Google Drive account 2" }
+      },
+      "notes": "The Drive copy stays PRIVATE. Meta gets the file by upload, not by URL, so nothing here needs to be link-readable."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $vars.META_PHONE_NUMBER_ID }}/media",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "messaging_product", "value": "whatsapp" },
+            { "name": "type", "value": "application/pdf" },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "f2a8c4d6-1b93-4e57-8a02-6d5f3c9b7e14",
+      "name": "Upload PDF to Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-40, 540],
+      "credentials": {
+        "whatsAppApi": { "id": "REPLACE_ME", "name": "Fidato Meta Cloud" }
+      },
+      "notes": "⚠️ THIS is why Meta Cloud beats a URL header. The file is uploaded straight to Meta and referenced by id, so the voucher is never publicly reachable — no Drive sharing, no public bucket, nothing for a stranger to fetch. Returns { id }, valid for 30 days.\n\nSet META_PHONE_NUMBER_ID in n8n → Settings → Variables, or paste the number id into the URL."
+    },
+    {
+      "parameters": {
+        "jsCode": "/* ══════════════════════════════════════════════════════════════\n   BUILD THE TEMPLATE COMPONENTS\n\n   The approved template has a document header and 8 body variables:\n     name_1  hotel_id  hotel  ck_in  ck_out  rm_type  no_guest  crs_nom\n\n   ⚠️ NAMED OR POSITIONAL — CHECK BEFORE THE FIRST SEND.\n   Meta supports both, and they are NOT interchangeable: sending\n   `parameter_name` to a positional template fails, and omitting it on\n   a named one fails too. Open WhatsApp Manager → Message Templates and\n   look at the body:\n       {{name_1}}  → named      → USE_NAMED = true\n       {{1}}       → positional → USE_NAMED = false\n   Your screenshot shows {{name_1}}, so this defaults to named.\n\n   ⚠️ Meta rejects an EMPTY parameter, and rejects newlines, tabs or\n   runs of four spaces inside one — with a generic error that names\n   none of them. Everything is coalesced and flattened below.\n   ══════════════════════════════════════════════════════════════ */\n\nconst USE_NAMED = true;\n\nconst d = $('Reservation confirmed').first().json.body.data;\nconst v = d.voucher;\nconst m = v.model;\nconst mediaId = $('Upload PDF to Meta').first().json.id;\n\nif (!mediaId) {\n  throw new Error('Meta did not return a media id. Check the phone number id and token.');\n}\n\nconst clean = (value, fallback = '-') => {\n  const text = String(value ?? '')\n    .replace(/[\\r\\n\\t]+/g, ' ')\n    .replace(/\\s{4,}/g, ' ')\n    .trim();\n  return text === '' ? fallback : text;\n};\n\n/* One booking can hold several room types and the template has one\n   slot, so they are joined rather than silently showing the first. */\nconst roomType = (m.rooms || [])\n  .map((r) => `${r.quantity} x ${r.roomType}`)\n  .join(', ');\n\nconst guests =\n  `${m.totalAdults} adult${m.totalAdults === 1 ? '' : 's'}` +\n  (m.totalChildren ? `, ${m.totalChildren} child${m.totalChildren === 1 ? '' : 'ren'}` : '');\n\n/* ⚠️ org.phone is blank on a fresh deployment and an empty parameter\n   fails the whole send. Put the real number in Admin → Settings; this\n   only stops a silent failure. */\nconst crsNumber = clean(m.org?.phone, '+91 20 1234 5678');\n\n/* Order matches the template exactly. On a positional template this\n   IS the mapping — reorder it and every guest gets a reference where\n   their name should be, with no error raised. */\nconst values = [\n  ['name_1',   clean(m.guestName)],\n  ['hotel_id', clean(v.reference)],\n  ['hotel',    clean(m.hotelName)],\n  ['ck_in',    clean(m.checkIn)],\n  ['ck_out',   clean(m.checkOut)],\n  ['rm_type',  clean(roomType)],\n  ['no_guest', clean(guests)],\n  ['crs_nom',  crsNumber],\n];\n\nconst bodyParameters = values.map(([name, text]) =>\n  USE_NAMED\n    ? { type: 'text', parameter_name: name, text }\n    : { type: 'text', text },\n);\n\n/* ⚠️ Digits only, no leading +. Meta rejects a `to` containing one. */\nconst digits = String(v.guestPhone || '').replace(/\\D/g, '');\nconst to = digits.length === 10 ? `91${digits}` : digits;\nif (to.length < 11) {\n  throw new Error(\n    `Guest phone \"${v.guestPhone}\" is not a usable number. WhatsApp will reject it.`\n  );\n}\n\nreturn [{\n  json: {\n    to,\n    reference: v.reference,\n    payload: {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to,\n      type: 'template',\n      template: {\n        name: 'REPLACE_WITH_TEMPLATE_NAME',\n        language: { code: 'en' },\n        components: [\n          {\n            type: 'header',\n            parameters: [\n              {\n                type: 'document',\n                document: { id: mediaId, filename: v.filename },\n              },\n            ],\n          },\n          { type: 'body', parameters: bodyParameters },\n        ],\n      },\n    },\n  },\n}];"
+      },
+      "id": "a3c9e1f7-84b2-4d56-9e13-6f2a8c4d7b90",
+      "name": "Build template components",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 540]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $vars.META_PHONE_NUMBER_ID }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 20000,
+          "response": { "response": { "neverError": false, "responseFormat": "json" } }
+        }
+      },
+      "id": "b7c41d02-9f1a-4f88-9a2e-0f6d2c3a51e7",
+      "name": "Send WhatsApp template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 540],
+      "credentials": {
+        "whatsAppApi": { "id": "REPLACE_ME", "name": "Fidato Meta Cloud" }
+      },
+      "notes": "⚠️ `name` and `language.code` must match the APPROVED template exactly. A template approved as en_US will fail as 'en' with an error that does not say so.\n\nThe two static buttons need no component — only buttons carrying a variable do."
+    }
+  ],
+  "connections": {
+    "Reservation confirmed": {
+      "main": [[{ "node": "Reply immediately", "type": "main", "index": 0 }]]
+    },
+    "Reply immediately": {
+      "main": [[{ "node": "PDF to binary", "type": "main", "index": 0 }]]
+    },
+    "PDF to binary": {
+      "main": [
+        [
+          { "node": "Email the voucher", "type": "main", "index": 0 },
+          { "node": "Save PDF to Drive", "type": "main", "index": 0 },
+          { "node": "Upload PDF to Meta", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Upload PDF to Meta": {
+      "main": [[{ "node": "Build template components", "type": "main", "index": 0 }]]
+    },
+    "Build template components": {
+      "main": [[{ "node": "Send WhatsApp template", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "488ffd76350a7d87c0df6b398b72bc6199b892052883143985aca748255680d8"
+  }
+}
