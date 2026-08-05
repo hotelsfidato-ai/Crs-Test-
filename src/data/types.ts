@@ -722,35 +722,6 @@ export interface WebhookConfig {
   updatedBy?: string;
 }
 
-/**
- * The Supabase mirror. Firestore stays the system of record; this is a
- * queryable SQL copy.
- *
- * ⚠️ `anonKey` is NOT a secret and must not be treated as one. It ships
- * inside the JS bundle, so it is readable by anyone who opens DevTools.
- * What protects the data is the row-level security policy on the table,
- * which must grant INSERT only — never SELECT. Storing it here, where
- * any signed-in user can read it, therefore changes nothing.
- *
- * The service-role key must NEVER go in this field. That one IS a
- * secret, it bypasses RLS entirely, and putting it in a browser hands
- * every reader full control of the database.
- */
-export interface SupabaseConfig {
-  url: string;
-  anonKey: string;
-  enabled: boolean;
-  /** Which collections are copied. Empty means all of them. */
-  collections: string[];
-  /** Optional prefix when the project already owns those table names. */
-  tablePrefix?: string;
-  lastTestAt?: IsoDateTime;
-  lastTestStatus?: "ok" | "failed";
-  lastTestDetail?: string;
-  updatedAt?: IsoDateTime;
-  updatedBy?: string;
-}
-
 export interface Integration {
   id: string;
   name: string;

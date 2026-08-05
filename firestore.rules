@@ -203,9 +203,20 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      /* Everyone signed in may read the directory — names appear on
-         reservations, audit rows and assignment pickers. */
-      allow read: if signedIn();
+      /* Colleagues may read the directory — names appear on
+         reservations, audit rows and assignment pickers.
+
+         ⚠️ This was `signedIn()`, which was a hole. Anyone on the
+         internet can create a Firebase Auth account against the sign-up
+         screen; without a profile they can write nothing, but
+         `signedIn()` was true, so they could read every user document —
+         a staff directory of names, addresses, departments and roles,
+         handed to an attacker with no invitation.
+
+         `active()` closes it: no profile, no directory. The second
+         clause keeps the sign-up flow working, where a person reads
+         their own record in the moment after claiming an invitation. */
+      allow read: if active() || (signedIn() && userId == myUserId());
 
       /* Claiming an invitation. This is the ONLY way a user document
          is created — there is no admin-side create, because on Spark

@@ -57,6 +57,15 @@ describe("signed in but with no profile", () => {
     const db = asStranger(env);
     await assertFails(setDoc(doc(db, "customers", "x"), { ownerId: "u_stranger" }));
   });
+
+  /* ⚠️ The sign-up screen is open to anyone, so this account costs an
+     attacker nothing to obtain. It must not be a way to read the staff
+     directory — names, addresses, departments and roles. */
+  it("cannot enumerate the staff directory", async () => {
+    const db = asStranger(env);
+    await assertFails(getDocs(collection(db, "users")));
+    await assertFails(getDoc(doc(db, "users", OWNER.uid)));
+  });
 });
 
 describe("a disabled account", () => {

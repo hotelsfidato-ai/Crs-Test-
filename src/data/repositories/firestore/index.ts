@@ -7,7 +7,6 @@ import { db } from "@/lib/firebase";
 import { computeTax, CURRENT_GST_VERSION } from "@/lib/tax";
 import { ASSIGNABLE_ROLES, type ScopeContext } from "@/lib/permissions";
 import { postWebhook, shouldSend } from "@/lib/webhook";
-import { mirrorRow, shouldMirror } from "@/lib/supabase";
 
 const ROLE_KEYS = ASSIGNABLE_ROLES;
 import type {
@@ -16,7 +15,7 @@ import type {
   NotificationTemplate, AutomationEvent, AutomationEventType, Integration, OrgSettings,
   ListQuery, ListResult, ReservationStatus, ImportEntity,
   InventoryDay, AutomationWorkflow, AutomationRun, AutomationStatus, Invitation,
-  WebhookConfig, ReservationAutomation, SupabaseConfig,
+  WebhookConfig, ReservationAutomation,
 } from "@/data/types";
 import {
   type Actor, fromDoc, toDoc, getOne, listAll, runQuery, countWhere,
@@ -82,27 +81,6 @@ async function pushToN8n(
       at,
       detail: error instanceof Error ? error.message : "The push could not be attempted.",
     };
-  }
-}
-
-/* ── The Supabase mirror ────────────────────────────────────────────
-   See src/lib/supabase.ts for why this is best-effort and why the
-   mirror must never be read as the truth.                           */
-
-async function mirrorToSupabase(
-  collection: string,
-  id: string,
-  data: Record<string, unknown>,
-): Promise<void> {
-  try {
-    const config = await getOne<SupabaseConfig>("settings", "supabase");
-    if (!shouldMirror(config, collection)) return;
-    await mirrorRow(config!, collection, id, data);
-  } catch {
-    /* Swallowed deliberately, exactly as the n8n push is. Firestore
-       already holds the record; a mirror that failed must never make a
-       saved booking look like it failed. The cost is that drift is
-       silent, which is stated plainly in the card and the docs. */
   }
 }
 
@@ -199,7 +177,6 @@ export const hotelsRepo = {
       entityLabel: input.name ?? ref.id, actor,
     });
     const createdHotel = (await getOne<Hotel>("hotels", ref.id))!;
-    void mirrorToSupabase("hotels", ref.id, createdHotel as unknown as Record<string, unknown>);
     return createdHotel;
   },
 
@@ -308,7 +285,6 @@ export const companiesRepo = {
       entityLabel: input.name ?? ref.id, actor,
     });
     const createdCompany = (await getOne<Company>("companies", ref.id))!;
-    void mirrorToSupabase("companies", ref.id, createdCompany as unknown as Record<string, unknown>);
     return createdCompany;
   },
 
@@ -415,7 +391,6 @@ export const customersRepo = {
       entityLabel: fullName, actor,
     });
     const created = (await getOne<Customer>("customers", ref.id))!;
-    void mirrorToSupabase("customers", ref.id, created as unknown as Record<string, unknown>);
     return created;
   },
 
@@ -949,26 +924,51 @@ export const reservationsRepo = {
        the guest was actually handed to n8n instead of leaving everyone
        to guess. A failure to record the outcome is itself ignored: it
        would be reporting a failure about reporting. */
-    void mirrorToSupabase("reservations", ref.id, created as unknown as Record<string, unknown>);
 
+    /* ⚠️ TWO BODIES, on purpose, because two different things consume
+       this and conflating them is how a workflow ends up reaching into
+       `voucher.model.hotelName` to store a booking.
+
+         · `voucher`     — everything needed to DELIVER the document.
+                           The Gmail, Drive and WhatsApp nodes read only
+                           this.
+         · `reservation` — the booking itself, flattened with its
+                           customer, company and property, for storage
+                           and reporting. The Supabase node reads only
+                           this.
+
+       Anything a delivery node needs is inside `voucher`; anything a
+       database needs is inside `reservation`. Neither has to know the
+       other's shape. */
     void pushToN8n("reservation.created", ref.id, {
-      reservation: created,
-      customer,
-      company,
-      hotel,
-      /* Everything the delivery side needs, pre-rendered. */
-      to: customer.email ?? "",
-      guestPhone: customer.phone ?? "",
-      email: { subject: mail.subject, html: mail.html, text: mail.text },
       voucher: {
         reference: created.reference,
-        html: renderVoucherHtml(voucher),
         filename: voucherPdfFilename(voucher),
+        /* Where it goes. */
+        to: customer.email ?? "",
+        guestPhone: customer.phone ?? "",
+        /* The covering email — table-based, safe in Gmail and Outlook. */
+        subject: mail.subject,
+        emailHtml: mail.html,
+        emailText: mail.text,
+        /* The A4 sheet, for a converter to turn into a PDF. */
+        html: renderVoucherHtml(voucher),
         /* Base64 with no data: prefix — what n8n's Convert to File and
-           the Gmail/Drive/WhatsApp binary inputs expect. */
+           the Gmail/Drive/WhatsApp binary inputs expect. Empty unless
+           "attach a ready-made PDF" is ticked. */
         pdfBase64,
         pdfMimeType: "application/pdf",
+        /* Every figure already formatted, for message templates. */
         model: voucher,
+      },
+
+      reservation: {
+        ...created,
+        /* Nested rather than alongside, so one insert carries the whole
+           booking and a mirror table needs no joins to be readable. */
+        customer,
+        company,
+        hotel,
       },
     })
       .then((outcome) =>
@@ -1058,7 +1058,6 @@ export const reservationsRepo = {
     });
 
     const afterStatus = (await getOne<Reservation>("reservations", id))!;
-    void mirrorToSupabase("reservations", id, afterStatus as unknown as Record<string, unknown>);
     return afterStatus;
   },
 
@@ -1355,27 +1354,6 @@ export const adminRepo = {
    */
   webhook: async (): Promise<WebhookConfig | null> =>
     getOne<WebhookConfig>("settings", "webhook"),
-
-  supabase: async (): Promise<SupabaseConfig | null> =>
-    getOne<SupabaseConfig>("settings", "supabase"),
-
-  saveSupabase: async (
-    patch: Partial<SupabaseConfig>,
-    actor: Actor,
-  ): Promise<SupabaseConfig> => {
-    await setDoc(
-      doc(db, "settings", "supabase"),
-      { ...toDoc(patch), updatedAt: serverTimestamp(), updatedBy: actor.id },
-      { merge: true },
-    );
-    await recordAudit({
-      entityType: "integration", entityId: "supabase", entityLabel: "Supabase mirror",
-      action: "updated",
-      summary: patch.enabled === false ? "Mirror disabled" : "Mirror configuration saved",
-      actor,
-    });
-    return (await getOne<SupabaseConfig>("settings", "supabase"))!;
-  },
 
   saveWebhook: async (patch: Partial<WebhookConfig>, actor: Actor): Promise<WebhookConfig> => {
     await setDoc(

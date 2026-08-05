@@ -1,0 +1,189 @@
+{
+  "name": "Fidato — Reservation confirmed (email + Drive + Supabase)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fidato-reservation",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "rawBody": false
+        }
+      },
+      "id": "1e1bbd6f-79b7-4a42-a405-bdfe76efb41d",
+      "name": "Reservation confirmed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-460, 240],
+      "webhookId": "fidato-reservation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, reference: $json.body.data.voucher.reference }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      },
+      "id": "66f03088-bfbb-4b27-b528-cd0e9df0ec16",
+      "name": "Reply immediately",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-260, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "/* The payload carries TWO bodies:\n *   data.voucher      — everything needed to DELIVER the document\n *   data.reservation  — the booking itself, for storage\n *\n * This node unpacks the first into a binary PDF for Gmail and Drive.\n * The Supabase node reads the second directly and ignores this.\n */\nconst v = $('Reservation confirmed').first().json.body.data.voucher;\n\nif (!v.pdfBase64) {\n  throw new Error(\n    'No PDF in the payload. Tick \"Also attach a ready-made PDF\" in ' +\n    'Fidato -> Admin -> Integrations and save, then create a booking.'\n  );\n}\n\nreturn [{\n  json: {\n    filename: v.filename,\n    reference: v.reference,\n    to: v.to,\n  },\n  binary: {\n    data: {\n      data: v.pdfBase64,\n      mimeType: 'application/pdf',\n      fileName: v.filename,\n    },\n  },\n}];"
+      },
+      "id": "428dac28-c990-463b-a2f6-9f0e7d037f0a",
+      "name": "PDF to binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, 240]
+    },
+    {
+      "parameters": {
+        "fromEmail": "Fidato Hotels <crs@fidatohotels.com>",
+        "toEmail": "={{ $('Reservation confirmed').item.json.body.data.voucher.to }}",
+        "subject": "={{ $('Reservation confirmed').item.json.body.data.voucher.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $('Reservation confirmed').item.json.body.data.voucher.emailText }}",
+        "html": "={{ $('Reservation confirmed').item.json.body.data.voucher.emailHtml }}",
+        "options": {
+          "attachments": "data",
+          "replyTo": "crs@fidatohotels.com",
+          "appendAttribution": false
+        }
+      },
+      "id": "9ddf636f-38bb-4ca9-83b9-1620a2329a14",
+      "name": "Email the voucher",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [220, 20],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_ME",
+          "name": "crs@fidatohotels.com"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "data",
+        "name": "={{ $json.filename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv",
+          "mode": "list",
+          "cachedResultName": "Voucher ",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv"
+        },
+        "options": {}
+      },
+      "id": "ccd95980-3508-474d-9ebe-bc0594a84db1",
+      "name": "Save PDF to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [220, 240],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FyMFPiLDaVuqoPk8",
+          "name": "Google Drive account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Body 2 — the booking, flattened for a SQL row.\n *\n * ⚠️ The whole record goes into `data` as jsonb rather than being\n * spread across columns. The CRS schema is still moving; a column per\n * field would need a migration every time a type gains one, and the\n * mirror would start silently dropping the fields it did not know\n * about. Promote what you query into a view instead — the setup SQL\n * ships one.\n */\nconst r = $('Reservation confirmed').first().json.body.data.reservation;\n\nreturn [{\n  json: {\n    id: r.id,\n    reference: r.reference,\n    status: r.status,\n    check_in: r.checkIn,\n    check_out: r.checkOut,\n    total_amount: r.totalAmount,\n    customer_name: r.customerName,\n    hotel_name: r.hotelName,\n    owner_name: r.ownerName,\n    data: r,\n    mirrored_at: new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "e1a7c3d5-6b92-4f18-a0c4-9d3e5f7b1a26",
+      "name": "Shape for Supabase",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 460]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "tableId": "reservations",
+        "dataToSend": "autoMapInputData",
+        "options": {}
+      },
+      "id": "c8f2b491-3e57-4a06-b1d8-5c9e2f8a7d34",
+      "name": "Mirror to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [440, 460],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_ME",
+          "name": "Fidato Supabase"
+        }
+      },
+      "notes": "⚠️ Use the SERVICE_ROLE key in this credential, not the anon key. It stays on the n8n server and never reaches a browser, which is what lets RLS deny the anon role entirely — no public write door."
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "REPLACE_WITH_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('Reservation confirmed').item.json.body.data.voucher.guestPhone }}",
+        "messageType": "document",
+        "mediaPath": "useMediaFile",
+        "mediaPropertyName": "data",
+        "additionalFields": {
+          "mediaFilename": "={{ $('Reservation confirmed').item.json.body.data.voucher.filename }}",
+          "mediaCaption": "=Your booking at {{ $('Reservation confirmed').item.json.body.data.reservation.hotelName }} is confirmed. Reference {{ $('Reservation confirmed').item.json.body.data.voucher.reference }}."
+        }
+      },
+      "id": "b7c41d02-9f1a-4f88-9a2e-0f6d2c3a51e7",
+      "name": "WhatsApp the guest",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [220, 680],
+      "disabled": true,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "REPLACE_ME",
+          "name": "WhatsApp account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Reservation confirmed": {
+      "main": [[{ "node": "Reply immediately", "type": "main", "index": 0 }]]
+    },
+    "Reply immediately": {
+      "main": [[{ "node": "PDF to binary", "type": "main", "index": 0 }]]
+    },
+    "PDF to binary": {
+      "main": [
+        [
+          { "node": "Email the voucher", "type": "main", "index": 0 },
+          { "node": "Save PDF to Drive", "type": "main", "index": 0 },
+          { "node": "Shape for Supabase", "type": "main", "index": 0 },
+          { "node": "WhatsApp the guest", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Shape for Supabase": {
+      "main": [[{ "node": "Mirror to Supabase", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "488ffd76350a7d87c0df6b398b72bc6199b892052883143985aca748255680d8"
+  }
+}

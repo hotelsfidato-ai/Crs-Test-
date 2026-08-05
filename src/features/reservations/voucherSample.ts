@@ -133,21 +133,27 @@ export async function sampleVoucherPayload(
          a booking. Everything else matches production exactly. */
       note: "Test from Fidato CRS. No booking was created.",
 
-      reservation: SAMPLE_RESERVATION,
-      customer: SAMPLE_CUSTOMER,
-      company: null,
-      hotel: SAMPLE_HOTEL,
-
-      to: SAMPLE_CUSTOMER.email,
-      guestPhone: SAMPLE_CUSTOMER.phone,
-      email: { subject: mail.subject, html: mail.html, text: mail.text },
+      /* Body 1 — what the delivery nodes read. */
       voucher: {
         reference: voucher.reference,
-        html: renderVoucherHtml(voucher),
         filename: voucherPdfFilename(voucher),
+        to: SAMPLE_CUSTOMER.email,
+        guestPhone: SAMPLE_CUSTOMER.phone,
+        subject: mail.subject,
+        emailHtml: mail.html,
+        emailText: mail.text,
+        html: renderVoucherHtml(voucher),
         pdfBase64,
         pdfMimeType: "application/pdf",
         model: voucher,
+      },
+
+      /* Body 2 — what a database reads. */
+      reservation: {
+        ...SAMPLE_RESERVATION,
+        customer: SAMPLE_CUSTOMER,
+        company: null,
+        hotel: SAMPLE_HOTEL,
       },
     },
   };
