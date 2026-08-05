@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Ban, Lock, Mail, FileText, Sparkles, Building2,
+  Ban, Lock, FileText, Sparkles, Building2,
   Hotel as HotelIcon, User, LogIn, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -27,6 +27,8 @@ describeError,
 import { NotFound } from "@/features/shared/NotFound";
 import { VoucherButton } from "./VoucherButton";
 import { AutomationBadge } from "./AutomationBadge";
+import { DeleteDialog } from "@/features/shared/DeleteDialog";
+import { useNavigate } from "react-router-dom";
 import { MEAL_PLAN_LABELS, type ReservationStatus } from "@/data/types";
 
 export default function ReservationDetailPage() {
@@ -34,6 +36,7 @@ export default function ReservationDetailPage() {
   const role = useSession((s) => s.role);
   const actor = useActor();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const reservation = useQuery({
     queryKey: ["reservation", id],
@@ -64,6 +67,23 @@ export default function ReservationDetailPage() {
     onError: (error) => {
       const detail = describeError(error);
       toast.error(detail.title ?? "Could not update", detail.message ?? "Nothing was changed.");
+    },
+  });
+
+  /* ⚠️ Cancelling is the norm; this is for bookings raised in error.
+     The rules refuse a completed one — an invoice or commission
+     almost certainly references it. */
+  const remove = useMutation({
+    mutationFn: () => reservationsRepo.remove(id, actor),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["reservations"] });
+      queryClient.invalidateQueries({ queryKey: ["kpis"] });
+      toast.success("Reservation deleted", "The record has been removed.");
+      navigate("/reservations");
+    },
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not delete", detail.message ?? "Nothing was changed.");
     },
   });
 
@@ -146,6 +166,31 @@ export default function ReservationDetailPage() {
                 </span>
               </Tooltip>
             )}
+
+            {/* Last, and deliberately not primary. Cancelling keeps the
+                audit story; this removes it. */}
+            {can(role, "delete", "reservation") && r.status !== "completed" && (
+              <DeleteDialog
+                confirmWord={r.reference}
+                title={`Delete ${r.reference}?`}
+                pending={remove.isPending}
+                onConfirm={() => remove.mutate()}
+                consequence={
+                  <>
+                    This removes the booking permanently. <strong>Cancelling is
+                    usually what you want</strong> — it keeps the record and its
+                    reason, and this does not.
+                    {r.automation?.status === "sent" && (
+                      <>
+                        {" "}The guest has already been emailed a voucher for it,
+                        which deleting will not recall.
+                      </>
+                    )}
+                    {" "}The customer and company totals are not adjusted.
+                  </>
+                }
+              />
+            )}
           </>
         }
       />
@@ -202,7 +247,6 @@ export default function ReservationDetailPage() {
               <TabsTrigger value="timeline" count={audit.data?.length}>
                 Timeline
               </TabsTrigger>
-              <TabsTrigger value="documents">Documents</TabsTrigger>
             </TabsList>
 
             {/* ── Folio ── */}
@@ -387,48 +431,6 @@ export default function ReservationDetailPage() {
               </Card>
             </TabsContent>
 
-            {/* ── Documents ── */}
-            <TabsContent value="documents">
-              <Card>
-                <ul className="divide-y divide-grey-100">
-                  <DocumentRow
-                    icon={<FileText className="size-4" />}
-                    title="Booking voucher"
-                    detail="Branded PDF sent to the guest on confirmation"
-                  />
-                  <DocumentRow
-                    icon={<Mail className="size-4" />}
-                    title="Confirmation email"
-                    detail={
-                      r.status === "confirmed" || r.status === "completed"
-                        ? "Sent on confirmation"
-                        : "Sends once the booking is confirmed"
-                    }
-                  />
-                  {r.invoiceId && (
-                    <li className="flex items-center gap-3 px-5 py-3.5">
-                      <span className="flex items-center justify-center size-8 rounded-md bg-grey-100 text-grey-500 shrink-0">
-                        <FileText className="size-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-base text-ink-900">Invoice</p>
-                        <p className="text-sm text-grey-500">Raised on checkout</p>
-                      </div>
-                      <Button asChild variant="secondary" size="sm">
-                        <Link to={`/finance/invoices/${r.invoiceId}`}>Open</Link>
-                      </Button>
-                    </li>
-                  )}
-                </ul>
-                <CardBody className="border-t border-grey-200 bg-grey-50 rounded-b-md">
-                  <p className="text-sm text-grey-500 leading-relaxed">
-                    Document generation and delivery run through the automation
-                    workflows. In Phase 1 the buttons show what would happen; Phase 3
-                    wires them to n8n.
-                  </p>
-                </CardBody>
-              </Card>
-            </TabsContent>
           </Tabs>
         </div>
 
@@ -475,6 +477,20 @@ export default function ReservationDetailPage() {
                 </DetailRow>
                 <DetailRow label="Raised by">{r.ownerName}</DetailRow>
                 <DetailRow label="Created">{dateTime(r.createdAt)}</DetailRow>
+                {/* Moved here when the Documents tab went. It was the
+                    only route from a booking to its invoice, and the
+                    tab around it had stopped telling the truth. */}
+                {r.invoiceId && (
+                  <DetailRow label="Invoice">
+                    <Link
+                      to={`/finance/invoices/${r.invoiceId}`}
+                      className="flex items-center gap-2 text-brand-orange hover:underline"
+                    >
+                      <FileText className="size-3.5 shrink-0" />
+                      Open invoice
+                    </Link>
+                  </DetailRow>
+                )}
                 {r.approvedBy && (
                   <DetailRow label="Approved by">
                     {r.approvedBy}
@@ -593,34 +609,6 @@ function FolioRow({
   );
 }
 
-function DocumentRow({
-  icon, title, detail,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <li className="flex items-center gap-3 px-5 py-3.5">
-      <span className="flex items-center justify-center size-8 rounded-md bg-grey-100 text-grey-500 shrink-0">
-        {icon}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-base text-ink-900">{title}</p>
-        <p className="text-sm text-grey-500">{detail}</p>
-      </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() =>
-          toast.info("Preview only", "Document delivery is wired up in Phase 3 via n8n.")
-        }
-      >
-        Preview
-      </Button>
-    </li>
-  );
-}
 
 function DetailSkeleton() {
   return (

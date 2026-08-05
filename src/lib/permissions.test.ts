@@ -128,30 +128,46 @@ describe("the matrix agrees with firestore.rules", () => {
     }
   });
 
-  /* rules: match /users — allow update: if isRole('owner').
-     ⚠️ Admin keeps `create` (an invitation, claimed by its recipient
-     with their own password) but not `edit`, which sets `role`. */
-  it("lets only the owner edit users, while admin may still invite", () => {
-    expect(can("owner", "edit", "user")).toBe(true);
-    expect(can("admin", "create", "user")).toBe(true);
-    expect(can("admin", "edit", "user")).toBe(false);
+  /* rules: match /users — update and delete: if isOwnerOrAdmin(), with
+     an owner-escalation guard the matrix cannot express. */
+  it("gives user administration to owner and admin, and nobody else", () => {
+    for (const role of ["owner", "admin"] as const) {
+      expect(can(role, "edit", "user"), role).toBe(true);
+      expect(can(role, "delete", "user"), role).toBe(true);
+    }
     for (const role of ["crs_manager", "manager", "finance", "salesperson", "viewer"] as const) {
       expect(can(role, "edit", "user"), role).toBe(false);
+      expect(can(role, "delete", "user"), role).toBe(false);
     }
   });
 
-  /* rules: customers/companies allow update: if amendsAccounts() —
-     owner, admin, crs_manager, manager. A salesperson creates but does
-     not amend; see the note on the salesperson grants. */
+  /* rules: customers, companies and reservations all allow update via
+     amendsAccounts() — owner, admin, crs_manager, manager. */
   it("lets the desk roles amend accounts but not a salesperson", () => {
     for (const role of ["owner", "admin", "crs_manager", "manager"] as const) {
       expect(can(role, "edit", "customer"), role).toBe(true);
       expect(can(role, "edit", "company"), role).toBe(true);
-      expect(can(role, "edit", "reservation"), role).toBe(true);
     }
     expect(can("salesperson", "create", "customer")).toBe(true);
     expect(can("salesperson", "edit", "customer")).toBe(false);
     expect(can("salesperson", "edit", "company")).toBe(false);
+  });
+
+  /**
+   * ⚠️ The salesperson raises bookings and does not amend them. A
+   * confirmed reservation is what an invoice, a commission and a
+   * voucher already in the guest's hands hang off.
+   */
+  it("lets the desk amend and remove bookings, while a salesperson only raises them", () => {
+    expect(can("salesperson", "create", "reservation")).toBe(true);
+    expect(can("salesperson", "edit", "reservation")).toBe(false);
+    expect(can("salesperson", "cancel", "reservation")).toBe(false);
+    expect(can("salesperson", "delete", "reservation")).toBe(false);
+
+    for (const role of ["owner", "admin", "crs_manager"] as const) {
+      expect(can(role, "edit", "reservation"), role).toBe(true);
+      expect(can(role, "delete", "reservation"), role).toBe(true);
+    }
   });
 
   /* rules: match /payments — create, update: owner, admin, finance */

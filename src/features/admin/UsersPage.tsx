@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Users, ShieldCheck } from "lucide-react";
 import { adminRepo } from "@/data/repositories";
-import { useActor } from "@/lib/session";
-import { ASSIGNABLE_ROLES, ROLE_LABELS, type Role } from "@/lib/permissions";
+import { useActor, useSession } from "@/lib/session";
+import { ASSIGNABLE_ROLES, ROLE_LABELS, can, type Role } from "@/lib/permissions";
 import { dateShort, relative, humanise } from "@/lib/format";
 import {
   Page, PageHeader, Button, FilterBar, DataTable, Pagination, EmptyState,
@@ -12,6 +12,7 @@ describeError,
 } from "@/components/ui";
 import { useListState } from "@/features/shared/useListState";
 import { InviteUserDialog } from "./InviteUserDialog";
+import { DeleteDialog } from "@/features/shared/DeleteDialog";
 import type { User, UserStatus } from "@/data/types";
 
 const FILTER_KEYS = ["role", "status"];
@@ -29,6 +30,28 @@ const STATUS_LABEL: Record<UserStatus, string> = {
 };
 
 export default function UsersPage() {
+  const actor = useActor();
+  const role = useSession((s) => s.role);
+  const queryClient = useQueryClient();
+  const mayDelete = can(role, "delete", "user");
+
+  /* ⚠️ Removes the profile, not the Firebase Auth account — the Spark
+     plan has no Admin SDK. Access is revoked immediately either way,
+     but the address stays claimed in Auth and cannot be re-invited
+     without clearing it from the Firebase console. */
+  const removeUser = useMutation({
+    mutationFn: (id: string) => adminRepo.deleteUser(id, actor),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["user-stats"] });
+      toast.success("User deleted", "Their access is revoked immediately.");
+    },
+    onError: (error) => {
+      const detail = describeError(error);
+      toast.error(detail.title ?? "Could not delete", detail.message ?? "Nothing was changed.");
+    },
+  });
+
   const list = useListState({
     filterKeys: FILTER_KEYS,
     defaultSortBy: "name",
@@ -103,6 +126,42 @@ export default function UsersPage() {
       key: "createdAt", header: "Joined", hideBelow: "xl",
       cell: (u) => <span className="tabular text-grey-500">{dateShort(u.createdAt)}</span>,
     },
+    ...(mayDelete
+      ? [{
+          key: "actions", header: "",
+          cell: (u: User) =>
+            /* ⚠️ Never on your own row. Deleting your own profile signs
+               you out of an account you cannot sign back into — every
+               rule reads that document. The rules refuse it too; this
+               just avoids offering it. */
+            u.id === actor.id ? (
+              <span className="text-sm text-grey-400">You</span>
+            ) : (
+              <DeleteDialog
+                confirmWord={u.name}
+                title={`Delete ${u.name}?`}
+                buttonLabel="Delete"
+                pending={removeUser.isPending && removeUser.variables === u.id}
+                onConfirm={() => removeUser.mutate(u.id)}
+                trigger={
+                  <Button variant="ghost" size="sm" className="text-brand-red">
+                    Delete
+                  </Button>
+                }
+                consequence={
+                  <>
+                    Their access is revoked immediately. <strong>Setting the account
+                    to Disabled does the same thing and is reversible</strong> — this
+                    is not. Their bookings and audit rows survive but lose the name.
+                    The Firebase Auth account is not removed, so {u.email} stays
+                    claimed and cannot be re-invited without clearing it from the
+                    Firebase console.
+                  </>
+                }
+              />
+            ),
+        } as Column<User>]
+      : []),
   ];
 
   return (

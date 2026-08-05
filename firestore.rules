@@ -98,6 +98,19 @@ service cloud.firestore {
     }
 
     /**
+     * Who may DESTROY a booking, as opposed to amend one.
+     *
+     * ⚠️ Deliberately narrower than amendsAccounts — a Manager edits
+     * the book but does not delete from it. Amending leaves a record
+     * and an audit row; deleting leaves a gap, and the gap is
+     * unrecoverable. Kept as its own name so widening one does not
+     * silently widen the other.
+     */
+    function removesBookings() {
+      return isAnyRole(['owner', 'admin', 'crs_manager']);
+    }
+
+    /**
      * ⚠️ The one carve-out from amendsAccounts(). Creating a reservation
      * bumps totalReservations/totalRevenue/lastActivityAt on the
      * customer (and company) it belongs to, inside the same transaction
@@ -212,17 +225,16 @@ service cloud.firestore {
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.status == 'active';
 
-      /* Administration — the OWNER alone.
-         ⚠️ This was isOwnerOrAdmin(). Editing a user is not a profile
-         tweak: it sets `role`, and every other rule in this file trusts
-         that field. An Admin who can edit users can promote an account
-         they control, which makes the Admin/Owner distinction
-         decorative. Admins still invite (see /invitations) — the
-         invited person claims it with their own password, and an Owner
-         can withdraw it first.
-         The automation guard stays: nobody hands a person the n8n
-         service account. */
-      allow update: if isRole('owner')
+      /* Administration. Owner and Admin.
+         ⚠️ The owner-escalation guard is what keeps this safe and must
+         not be relaxed: an Admin may edit users, but not promote anyone
+         INTO 'owner' and not touch an existing Owner's record. Without
+         those two clauses an Admin makes themselves an Owner in one
+         write, and every other rule in this file trusts `role`.
+         Nobody hands a person the n8n service account either. */
+      allow update: if isOwnerOrAdmin()
+        && (request.resource.data.role != 'owner' || isRole('owner'))
+        && (resource.data.role != 'owner' || isRole('owner'))
         && request.resource.data.role != 'automation';
 
       /* Your own record: name and heartbeat only.
@@ -234,9 +246,18 @@ service cloud.firestore {
         && unchanged('role')
         && unchanged('status');
 
-      /* ⚠️ Never. A deleted user detaches their audit trail from a
-         name. Disable by setting status instead. */
-      allow delete: if false;
+      /* ⚠️ Deleting a user detaches every audit row and booking they
+         touched from a name — those records keep the id and lose the
+         person, permanently. Disabling by status is almost always what
+         is actually wanted; this is for accounts created in error.
+
+         An Owner's record cannot be removed by an Admin, and nobody
+         may delete themselves — losing your own profile mid-session
+         signs you out of an account you can no longer sign back into,
+         because the profile is what `active()` reads. */
+      allow delete: if isOwnerOrAdmin()
+        && userId != myUserId()
+        && (resource.data.role != 'owner' || isRole('owner'));
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -317,17 +338,31 @@ service cloud.firestore {
          ownerId they write is deliberately somebody else's. */
       allow create: if active() && worksAccounts() && writingOwnRecord();
 
-      allow update: if active()
-        && worksAccounts()
-        && ownsOrUnscoped(resource)
-        /* ⚠️ BR-04. A completed booking is an accounting record, not a
-           draft. Reopening it would change a figure an invoice was
-           already raised against. */
+      /* ⚠️ The desk amends, the salesperson does not.
+         A salesperson raises a booking and it is then the CRS desk's
+         record. A confirmed reservation is what an invoice, a
+         commission and a voucher already in the guest's hands hang
+         off; changing a date or a rate afterwards silently restates
+         all three, and the person best placed to judge whether an edit
+         is a correction or a reassignment is the one who can see the
+         whole book.
+
+         ⚠️ BR-04 still holds for everyone. A completed booking is an
+         accounting record, not a draft — reopening it would change a
+         figure an invoice was already raised against. */
+      allow update: if amendsAccounts()
         && resource.data.status != 'completed';
 
-      /* ⚠️ BR-02. Reservations are cancelled, never deleted. The
-         cancellation and its reason are the audit story. */
-      allow delete: if false;
+      /* ⚠️ BR-02 said reservations are cancelled, never deleted, and
+         that is still the right default — a cancellation with its
+         reason is the audit story, a deletion is a hole. This exists
+         for bookings raised in error, before anything was billed.
+
+         A completed booking is never removable: an invoice or a
+         commission almost certainly references it, and Firestore will
+         not stop those rows pointing at nothing. Cancel instead. */
+      allow delete: if removesBookings()
+        && resource.data.status != 'completed';
     }
 
     /* ══════════════════════════════════════════════════════════════

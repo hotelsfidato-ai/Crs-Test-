@@ -954,6 +954,41 @@ export const reservationsRepo = {
     return created;
   },
 
+  /**
+   * Removes a booking entirely.
+   *
+   * ⚠️ Cancelling is almost always the right action. A cancellation
+   * with its reason is the audit story; a deletion is a hole in the
+   * book. This exists for reservations raised in error, before
+   * anything was billed against them.
+   *
+   * ⚠️ Does NOT reverse the customer and company roll-ups. Undoing
+   * them would need the same transaction that wrote them and a
+   * guarantee the figures had not moved since — and getting that wrong
+   * silently corrupts lifetime-value numbers, which is worse than a
+   * total that is knowably one booking high. Recompute from
+   * reservations if the figures matter.
+   *
+   * The rules refuse a completed booking: an invoice or commission
+   * almost certainly references it.
+   */
+  remove: async (id: string, actor: Actor, reason?: string): Promise<void> => {
+    const existing = await getOne<Reservation>("reservations", id);
+    if (!existing) return;
+
+    await recordAudit({
+      entityType: "reservation", entityId: id, entityLabel: existing.reference,
+      action: "deleted",
+      summary: `Reservation ${existing.reference} deleted`,
+      detail:
+        `${existing.customerName} at ${existing.hotelName}, ` +
+        `check-in ${existing.checkIn}, ${existing.totalAmount}` +
+        (reason ? ` — ${reason}` : ""),
+      actor,
+    });
+    await deleteDoc(doc(db, "reservations", id));
+  },
+
   setStatus: async (
     id: string,
     status: ReservationStatus,
@@ -1205,6 +1240,39 @@ export const adminRepo = {
       action: "updated", summary: "User record updated", actor,
     });
     return updated;
+  },
+
+  /**
+   * Removes the user's profile document.
+   *
+   * ⚠️ This does NOT delete their Firebase Auth account, and on the
+   * Spark plan it cannot — there is no Admin SDK and a client may only
+   * delete the account it is signed in as. What it does do is revoke
+   * access completely: every rule reads `active()`, which reads this
+   * document, and the session listener signs out any account without
+   * one. So the person is locked out immediately and permanently, but
+   * their email stays claimed in Auth and cannot be re-invited without
+   * clearing it from the Firebase console first.
+   *
+   * ⚠️ Their audit rows and bookings survive and keep the actor id,
+   * but lose the name. Disabling by status is almost always the better
+   * action; this is for accounts created in error.
+   */
+  deleteUser: async (id: string, actor: Actor): Promise<void> => {
+    const existing = await getOne<User>("users", id);
+    if (!existing) return;
+
+    /* Recorded BEFORE the delete. Afterwards there is no document to
+       read a name from, and an audit row saying "user  deleted" is
+       barely an audit row. */
+    await recordAudit({
+      entityType: "user", entityId: id, entityLabel: existing.name,
+      action: "deleted",
+      summary: `User ${existing.name} deleted`,
+      detail: `${existing.email} · was ${existing.role}. Auth account not removed.`,
+      actor,
+    });
+    await deleteDoc(doc(db, "users", id));
   },
 
   auditLog: (q?: ListQuery): Promise<ListResult<AuditLog>> =>

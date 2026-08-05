@@ -69,11 +69,11 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   owner: "Unrestricted. Sole authority over roles, commission and settings.",
-  admin: "Runs the platform day to day. Cannot assign roles.",
+  admin: "Runs the platform day to day, including user accounts. Cannot create an Owner.",
   crs_manager:
     "Every customer, company and booking. Can raise a reservation on behalf of a salesperson.",
   manager: "Sales leadership. Sees invoices and the whole book.",
-  salesperson: "Own leads only. Creates customers, companies and reservations.",
+  salesperson: "Own leads only. Raises customers, companies and bookings; the desk amends them.",
   finance: "Invoices, payments, commissions and financial reporting.",
   viewer: "Read-only across the platform. No write access anywhere.",
   hotel_manager: "Dormant. One property, arrivals and inventory, never pricing.",
@@ -123,6 +123,13 @@ export const ACTIONS = [
   "export",
   "merge",
   "import",
+  /**
+   * ⚠️ Destructive and unrecoverable. Firestore has no undelete, and
+   * these records are referenced by invoices, commissions and audit
+   * rows that will be left pointing at nothing. Granted narrowly, and
+   * every collection that allows it says why in firestore.rules.
+   */
+  "delete",
 ] as const;
 
 export type Action = (typeof ACTIONS)[number];
@@ -163,6 +170,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   export: "Export",
   merge: "Merge",
   import: "Import",
+  delete: "Delete",
 };
 
 type ResourceGrants = Partial<Record<Resource, readonly Action[]>>;
@@ -190,7 +198,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
     dashboard: READ,
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
-    reservation: ["view", "create", "edit", "cancel", "export"],
+    reservation: ["view", "create", "edit", "cancel", "export", "delete"],
     hotel: ["view", "create", "edit", "import", "export"],
     room_config: ["view", "create", "edit"],
     commission_terms: ["view", "edit"],
@@ -202,21 +210,21 @@ const MATRIX: Record<Role, ResourceGrants> = {
     notification: ["view", "create", "edit"],
     ai: READ,
     /**
-     * ⚠️ Invite, but not amend. An Admin brings people in; only the
-     * Owner changes what an existing account is or switches it off.
+     * Full user administration, Owner and Admin alike.
      *
-     * The reasoning is that `edit` on a user is not a profile tweak —
-     * it is the power to change someone's ROLE, and an Admin who can
-     * edit users can promote an account they control. Inviting is
-     * safe by comparison: the invitation records the role, the person
-     * still has to claim it with their own password, and an Owner can
-     * withdraw it before they do.
+     * ⚠️ Understand what this grants. `edit` on a user sets `role`, and
+     * every rule in firestore.rules trusts that field — so an Admin can
+     * promote an account they control to Admin. The one door still
+     * bolted is `owner`: the rules refuse any write that sets or clears
+     * that role unless the caller is already an Owner, which is what
+     * stops an Admin from making themselves one.
      *
-     * ⚠️ There is no delete. Removing a user detaches their audit
-     * trail from a name, so accounts are disabled by status instead —
-     * and that is an Owner action, being an edit.
+     * ⚠️ `delete` removes the account document, which detaches every
+     * audit row and booking from a name — they keep the id and lose
+     * the person. Disabling by status is almost always the right
+     * action; delete is for records created in error.
      */
-    user: ["view", "create"],
+    user: ["view", "create", "edit", "delete"],
     audit_log: READ_EXPORT,
     setting: READ,
   },
@@ -234,7 +242,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
     dashboard: READ,
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
-    reservation: ["view", "create", "edit", "cancel", "export"],
+    reservation: ["view", "create", "edit", "cancel", "export", "delete"],
     hotel: READ_EXPORT,
     room_config: ["view", "create", "edit"],
     invoice: ["view", "create", "export"],
@@ -273,12 +281,22 @@ const MATRIX: Record<Role, ResourceGrants> = {
    *
    * Nothing is deletable by anyone — see firestore.rules.
    */
+  /**
+   * ⚠️ Raises bookings; does not amend them.
+   *
+   * A salesperson creates a reservation and it is then the CRS desk's
+   * record. The reason is the same one that governs their customers: a
+   * confirmed booking is what an invoice, a commission and a voucher
+   * already in a guest's hands are attached to, and changing a date or
+   * a rate afterwards silently restates all three. Corrections go
+   * through CRS Manager, Admin or Owner, who see the whole book.
+   */
   salesperson: {
     dashboard: READ,
     // Scoped further by ownership — see scopeRecords().
     customer: ["view", "create", "export"],
     company: ["view", "create", "export"],
-    reservation: ["view", "create", "edit", "cancel", "export"],
+    reservation: ["view", "create", "export"],
     hotel: READ,
     room_config: READ,
     report: READ,

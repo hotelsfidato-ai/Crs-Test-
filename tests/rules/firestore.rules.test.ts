@@ -100,45 +100,54 @@ describe("nobody can promote themselves", () => {
     await assertSucceeds(updateDoc(doc(db, "users", SALES_A.uid), { name: "New Name" }));
   });
 
-  /* ── Administering users is the Owner's alone ──────────────────
-     ⚠️ `edit` on a user sets `role`, and every other rule in this file
-     trusts that field. An Admin who can edit users can promote an
-     account they control, which would make the Admin/Owner split
-     decorative. These pin the boundary.                            */
+  /* ── Administering users: Owner and Admin ──────────────────────
+     ⚠️ `edit` on a user sets `role`, and every rule in this file trusts
+     that field. What keeps an Admin from simply promoting themselves is
+     the owner-escalation guard, which these pin.                    */
 
-  it("an admin cannot change anyone's role", async () => {
+  it("an admin can change a role and disable an account", async () => {
     const db = as(env, ADMIN);
-    await assertFails(updateDoc(doc(db, "users", SALES_A.uid), { role: "manager" }));
-  });
-
-  it("an admin cannot disable an account", async () => {
-    const db = as(env, ADMIN);
-    await assertFails(updateDoc(doc(db, "users", SALES_A.uid), { status: "disabled" }));
-  });
-
-  it("a crs manager and a manager cannot either", async () => {
-    for (const person of [CRS, MANAGER]) {
-      await assertFails(
-        updateDoc(doc(as(env, person), "users", SALES_A.uid), { role: "admin" }),
-      );
-    }
-  });
-
-  it("the owner can", async () => {
-    const db = as(env, OWNER);
     await assertSucceeds(updateDoc(doc(db, "users", SALES_A.uid), { role: "manager" }));
     await assertSucceeds(updateDoc(doc(db, "users", SALES_A.uid), { status: "disabled" }));
   });
 
-  /* Deleting a user detaches their audit trail from a name. Disabling
-     by status is the supported route, and it is an update. */
-  it("nobody deletes a user, not even the owner", async () => {
-    for (const person of [OWNER, ADMIN, CRS, MANAGER]) {
+  /* The escalation the guard exists to stop, in one write. */
+  it("an admin cannot promote anyone to owner", async () => {
+    const db = as(env, ADMIN);
+    await assertFails(updateDoc(doc(db, "users", SALES_A.uid), { role: "owner" }));
+  });
+
+  it("an admin cannot touch an existing owner's record", async () => {
+    const db = as(env, ADMIN);
+    await assertFails(updateDoc(doc(db, "users", OWNER.uid), { status: "disabled" }));
+  });
+
+  it("a crs manager and a manager cannot administer users at all", async () => {
+    for (const person of [CRS, MANAGER]) {
+      await assertFails(
+        updateDoc(doc(as(env, person), "users", SALES_A.uid), { role: "admin" }),
+      );
       await assertFails(deleteDoc(doc(as(env, person), "users", SALES_B.uid)));
     }
   });
 
-  it("not even the owner may mint the automation account", async () => {
+  it("owner and admin can delete a user", async () => {
+    await assertSucceeds(deleteDoc(doc(as(env, ADMIN), "users", SALES_B.uid)));
+    await assertSucceeds(deleteDoc(doc(as(env, OWNER), "users", VIEWER.uid)));
+  });
+
+  /* Losing your own profile signs you out of an account you cannot
+     sign back into — `active()` reads that document. */
+  it("nobody can delete themselves", async () => {
+    await assertFails(deleteDoc(doc(as(env, ADMIN), "users", ADMIN.uid)));
+    await assertFails(deleteDoc(doc(as(env, OWNER), "users", OWNER.uid)));
+  });
+
+  it("an admin cannot delete an owner", async () => {
+    await assertFails(deleteDoc(doc(as(env, ADMIN), "users", OWNER.uid)));
+  });
+
+  it("nobody may mint the automation account", async () => {
     const db = as(env, OWNER);
     await assertFails(updateDoc(doc(db, "users", SALES_B.uid), { role: "automation" }));
   });
@@ -402,19 +411,47 @@ describe("a salesperson sees only their own book", () => {
 
 /* ── Immutability ──────────────────────────────────────────────── */
 
-describe("nothing is ever deleted", () => {
-  it("refuses to delete a reservation, from any role", async () => {
-    for (const person of [OWNER, ADMIN, MANAGER, SALES_A]) {
-      await assertFails(deleteDoc(doc(as(env, person), "reservations", "owned_by_a")));
+describe("what may be removed, and by whom", () => {
+  /* ⚠️ A booking raised in error can be removed by the desk. Cancelling
+     remains the norm — a cancellation with its reason is the audit
+     story and a deletion is a hole — but a mistyped booking that was
+     never billed should not sit in the book forever. */
+  it("lets the CRS desk delete a confirmed reservation", async () => {
+    for (const person of [OWNER, ADMIN, CRS]) {
+      await seed(env);
+      await assertSucceeds(deleteDoc(doc(as(env, person), "reservations", "owned_by_a")));
     }
   });
 
-  it("refuses to delete a customer, a company, an invoice or a user", async () => {
+  /* ⚠️ A Manager edits the book but does not delete from it. Amending
+     leaves an audit row; deleting leaves a gap. */
+  it("refuses a manager, who may still amend", async () => {
+    await assertFails(deleteDoc(doc(as(env, MANAGER), "reservations", "owned_by_a")));
+    await assertSucceeds(
+      updateDoc(doc(as(env, MANAGER), "reservations", "owned_by_a"), { status: "checked_in" }),
+    );
+  });
+
+  /* The salesperson raises bookings; the desk amends and removes them. */
+  it("refuses a salesperson, even on their own booking", async () => {
+    await assertFails(deleteDoc(doc(as(env, SALES_A), "reservations", "owned_by_a")));
+    await assertFails(
+      updateDoc(doc(as(env, SALES_A), "reservations", "owned_by_a"), { status: "checked_in" }),
+    );
+  });
+
+  /* ⚠️ An invoice or a commission almost certainly references a
+     completed booking, and Firestore will not stop those rows pointing
+     at nothing. Cancel instead. */
+  it("refuses to delete a completed reservation, even as owner", async () => {
+    await assertFails(deleteDoc(doc(as(env, OWNER), "reservations", "completed")));
+  });
+
+  it("still refuses to delete a customer, a company or an invoice", async () => {
     const db = as(env, OWNER);
     await assertFails(deleteDoc(doc(db, "customers", "owned_by_a")));
     await assertFails(deleteDoc(doc(db, "companies", "owned_by_a")));
     await assertFails(deleteDoc(doc(db, "invoices", "inv1")));
-    await assertFails(deleteDoc(doc(db, "users", VIEWER.uid)));
   });
 
   /* BR-04. A completed booking is an accounting record; reopening it
@@ -746,11 +783,22 @@ describe("a salesperson's write access to leads", () => {
     }
   });
 
-  /* Their bookings are unaffected — a salesperson still runs their own
-     reservations end to end. */
-  it("does not affect their own reservations", async () => {
-    await assertSucceeds(
+  /* ⚠️ Extends to their bookings too, and this test used to assert the
+     opposite. A salesperson RAISES a reservation and the desk owns it
+     from that moment: a confirmed booking is what an invoice, a
+     commission and a voucher already in the guest's hands hang off, so
+     changing a date or a rate afterwards silently restates all three. */
+  it("extends to their own reservations — they raise, the desk amends", async () => {
+    await assertFails(
       updateDoc(doc(as(env, SALES_A), "reservations", "owned_by_a"), { status: "checked_in" }),
+    );
+  });
+
+  it("but they can still raise one", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, SALES_A), "reservations", "fresh"), {
+        ownerId: SALES_A.uid, status: "confirmed", reference: "FH-NEW",
+      }),
     );
   });
 
