@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import type { Integration } from "@/data/types";
 import { WebhookCard } from "./WebhookCard";
+import { SupabaseCard } from "./SupabaseCard";
 
 const STATUS_TONES = {
   connected: "success",
@@ -53,6 +54,8 @@ export default function IntegrationsPage() {
       {/* The one integration that is real and configurable today. */}
       <div className="mb-8">
         <WebhookCard />
+
+      <SupabaseCard />
       </div>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">

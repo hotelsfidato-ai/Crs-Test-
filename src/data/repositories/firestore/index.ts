@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase";
 import { computeTax, CURRENT_GST_VERSION } from "@/lib/tax";
 import { ASSIGNABLE_ROLES, type ScopeContext } from "@/lib/permissions";
 import { postWebhook, shouldSend } from "@/lib/webhook";
+import { mirrorRow, shouldMirror } from "@/lib/supabase";
 
 const ROLE_KEYS = ASSIGNABLE_ROLES;
 import type {
@@ -15,7 +16,7 @@ import type {
   NotificationTemplate, AutomationEvent, AutomationEventType, Integration, OrgSettings,
   ListQuery, ListResult, ReservationStatus, ImportEntity,
   InventoryDay, AutomationWorkflow, AutomationRun, AutomationStatus, Invitation,
-  WebhookConfig, ReservationAutomation,
+  WebhookConfig, ReservationAutomation, SupabaseConfig,
 } from "@/data/types";
 import {
   type Actor, fromDoc, toDoc, getOne, listAll, runQuery, countWhere,
@@ -81,6 +82,27 @@ async function pushToN8n(
       at,
       detail: error instanceof Error ? error.message : "The push could not be attempted.",
     };
+  }
+}
+
+/* ── The Supabase mirror ────────────────────────────────────────────
+   See src/lib/supabase.ts for why this is best-effort and why the
+   mirror must never be read as the truth.                           */
+
+async function mirrorToSupabase(
+  collection: string,
+  id: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const config = await getOne<SupabaseConfig>("settings", "supabase");
+    if (!shouldMirror(config, collection)) return;
+    await mirrorRow(config!, collection, id, data);
+  } catch {
+    /* Swallowed deliberately, exactly as the n8n push is. Firestore
+       already holds the record; a mirror that failed must never make a
+       saved booking look like it failed. The cost is that drift is
+       silent, which is stated plainly in the card and the docs. */
   }
 }
 
@@ -176,7 +198,9 @@ export const hotelsRepo = {
       type: "hotel.created", entityType: "hotel", entityId: ref.id,
       entityLabel: input.name ?? ref.id, actor,
     });
-    return (await getOne<Hotel>("hotels", ref.id))!;
+    const createdHotel = (await getOne<Hotel>("hotels", ref.id))!;
+    void mirrorToSupabase("hotels", ref.id, createdHotel as unknown as Record<string, unknown>);
+    return createdHotel;
   },
 
   update: async (id: string, patch: Partial<Hotel>, actor: Actor): Promise<Hotel> => {
@@ -283,7 +307,9 @@ export const companiesRepo = {
       type: "company.created", entityType: "company", entityId: ref.id,
       entityLabel: input.name ?? ref.id, actor,
     });
-    return (await getOne<Company>("companies", ref.id))!;
+    const createdCompany = (await getOne<Company>("companies", ref.id))!;
+    void mirrorToSupabase("companies", ref.id, createdCompany as unknown as Record<string, unknown>);
+    return createdCompany;
   },
 
   update: async (id: string, patch: Partial<Company>, actor: Actor): Promise<Company> => {
@@ -388,7 +414,9 @@ export const customersRepo = {
       type: "customer.created", entityType: "customer", entityId: ref.id,
       entityLabel: fullName, actor,
     });
-    return (await getOne<Customer>("customers", ref.id))!;
+    const created = (await getOne<Customer>("customers", ref.id))!;
+    void mirrorToSupabase("customers", ref.id, created as unknown as Record<string, unknown>);
+    return created;
   },
 
   update: async (id: string, patch: Partial<Customer>, actor: Actor): Promise<Customer> => {
@@ -921,6 +949,8 @@ export const reservationsRepo = {
        the guest was actually handed to n8n instead of leaving everyone
        to guess. A failure to record the outcome is itself ignored: it
        would be reporting a failure about reporting. */
+    void mirrorToSupabase("reservations", ref.id, created as unknown as Record<string, unknown>);
+
     void pushToN8n("reservation.created", ref.id, {
       reservation: created,
       customer,
@@ -1027,7 +1057,9 @@ export const reservationsRepo = {
       entityLabel: current.reference, actor,
     });
 
-    return (await getOne<Reservation>("reservations", id))!;
+    const afterStatus = (await getOne<Reservation>("reservations", id))!;
+    void mirrorToSupabase("reservations", id, afterStatus as unknown as Record<string, unknown>);
+    return afterStatus;
   },
 
   /** Records the property's own confirmation, after the fact. */
@@ -1323,6 +1355,27 @@ export const adminRepo = {
    */
   webhook: async (): Promise<WebhookConfig | null> =>
     getOne<WebhookConfig>("settings", "webhook"),
+
+  supabase: async (): Promise<SupabaseConfig | null> =>
+    getOne<SupabaseConfig>("settings", "supabase"),
+
+  saveSupabase: async (
+    patch: Partial<SupabaseConfig>,
+    actor: Actor,
+  ): Promise<SupabaseConfig> => {
+    await setDoc(
+      doc(db, "settings", "supabase"),
+      { ...toDoc(patch), updatedAt: serverTimestamp(), updatedBy: actor.id },
+      { merge: true },
+    );
+    await recordAudit({
+      entityType: "integration", entityId: "supabase", entityLabel: "Supabase mirror",
+      action: "updated",
+      summary: patch.enabled === false ? "Mirror disabled" : "Mirror configuration saved",
+      actor,
+    });
+    return (await getOne<SupabaseConfig>("settings", "supabase"))!;
+  },
 
   saveWebhook: async (patch: Partial<WebhookConfig>, actor: Actor): Promise<WebhookConfig> => {
     await setDoc(
