@@ -1,0 +1,177 @@
+{
+  "name": "Fidato — Reservation confirmed (email + Drive + WhatsApp)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fidato-reservation",
+        "responseMode": "responseNode",
+        "options": { "allowedOrigins": "*", "rawBody": false }
+      },
+      "id": "1e1bbd6f-79b7-4a42-a405-bdfe76efb41d",
+      "name": "Reservation confirmed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-620, 300],
+      "webhookId": "fidato-reservation"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, reference: $json.body.data.voucher.reference }) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [{ "name": "Access-Control-Allow-Origin", "value": "*" }]
+          }
+        }
+      },
+      "id": "66f03088-bfbb-4b27-b528-cd0e9df0ec16",
+      "name": "Reply immediately",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "/* data.voucher carries everything needed to deliver.\n * Turn its base64 into a real binary for Gmail, Drive and WhatsApp. */\nconst v = $('Reservation confirmed').first().json.body.data.voucher;\n\nif (!v.pdfBase64) {\n  throw new Error(\n    'No PDF in the payload. Tick \"Also attach a ready-made PDF\" in ' +\n    'Fidato -> Admin -> Integrations and save, then create a booking.'\n  );\n}\n\nreturn [{\n  json: { filename: v.filename, reference: v.reference, to: v.to },\n  binary: {\n    data: {\n      data: v.pdfBase64,\n      mimeType: 'application/pdf',\n      fileName: v.filename,\n    },\n  },\n}];"
+      },
+      "id": "428dac28-c990-463b-a2f6-9f0e7d037f0a",
+      "name": "PDF to binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "Fidato Hotels <crs@fidatohotels.com>",
+        "toEmail": "={{ $('Reservation confirmed').item.json.body.data.voucher.to }}",
+        "subject": "={{ $('Reservation confirmed').item.json.body.data.voucher.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $('Reservation confirmed').item.json.body.data.voucher.emailText }}",
+        "html": "={{ $('Reservation confirmed').item.json.body.data.voucher.emailHtml }}",
+        "options": {
+          "attachments": "data",
+          "replyTo": "crs@fidatohotels.com",
+          "appendAttribution": false
+        }
+      },
+      "id": "9ddf636f-38bb-4ca9-83b9-1620a2329a14",
+      "name": "Email the voucher",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [20, 100],
+      "credentials": {
+        "smtp": { "id": "REPLACE_ME", "name": "crs@fidatohotels.com" }
+      }
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "data",
+        "name": "={{ $json.filename }}",
+        "driveId": { "__rl": true, "mode": "list", "value": "My Drive" },
+        "folderId": {
+          "__rl": true,
+          "value": "1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv",
+          "mode": "list",
+          "cachedResultName": "Voucher ",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1wkGjaTDM2X1VhhrmaBru0B1RPFTa8Njv"
+        },
+        "options": {}
+      },
+      "id": "ccd95980-3508-474d-9ebe-bc0594a84db1",
+      "name": "Save PDF to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [20, 340],
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "FyMFPiLDaVuqoPk8", "name": "Google Drive account 2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "share",
+        "fileId": { "__rl": true, "value": "={{ $json.id }}", "mode": "id" },
+        "permissionsUi": {
+          "permissionsValues": { "role": "reader", "type": "anyone" }
+        },
+        "options": {}
+      },
+      "id": "d41f8a92-7c3e-4b18-9e55-2a6f1c8d4b73",
+      "name": "Make PDF fetchable",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [240, 340],
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "FyMFPiLDaVuqoPk8", "name": "Google Drive account 2" }
+      },
+      "notes": "⚠️ Meta fetches the document header itself, unauthenticated, so the file has to be link-readable for a moment. It carries the guest's name, phone and what they paid. Keep the folder private and prune old files."
+    },
+    {
+      "parameters": {
+        "jsCode": "/* ══════════════════════════════════════════════════════════════\n   BUILD THE TEMPLATE PARAMETERS\n\n   The approved template has 8 body variables, in this order:\n     1 name_1     guest name\n     2 hotel_id   booking reference\n     3 hotel      property name\n     4 ck_in      check-in\n     5 ck_out     check-out\n     6 rm_type    room type\n     7 no_guest   guests\n     8 crs_nom    contact number\n\n   ⚠️ ORDER IS EVERYTHING. Interakt sends bodyValues positionally and\n   Meta substitutes {{1}}..{{8}} by index — the names in the template\n   are labels for humans, not keys. Reorder this array and every guest\n   gets a booking reference where their name should be, with no error.\n\n   ⚠️ META REJECTS EMPTY PARAMETERS, and it rejects newlines, tabs and\n   runs of 4+ spaces inside one. A blank org phone or a room type with\n   a line break fails the whole send with a generic error that names\n   none of it. Everything below is coalesced and flattened.\n   ══════════════════════════════════════════════════════════════ */\n\nconst d = $('Reservation confirmed').first().json.body.data;\nconst v = d.voucher;\nconst m = v.model;\n\n/* Meta's constraints, applied to every parameter without exception. */\nconst clean = (value, fallback = '-') => {\n  const text = String(value ?? '')\n    .replace(/[\\r\\n\\t]+/g, ' ')   // no line breaks inside a parameter\n    .replace(/\\s{4,}/g, ' ')       // no runs of four or more spaces\n    .trim();\n  return text === '' ? fallback : text;\n};\n\n/* Rooms are an array. One booking can hold several types, and the\n   template has a single slot, so they are joined rather than silently\n   showing only the first. */\nconst roomType = (m.rooms || [])\n  .map((r) => `${r.quantity} x ${r.roomType}`)\n  .join(', ');\n\nconst guests =\n  `${m.totalAdults} adult${m.totalAdults === 1 ? '' : 's'}` +\n  (m.totalChildren ? `, ${m.totalChildren} child${m.totalChildren === 1 ? '' : 'ren'}` : '');\n\n/* ⚠️ Falls back to a literal number. org.phone comes from\n   Admin -> Settings, which is blank on a fresh deployment — and an\n   empty parameter fails the send outright rather than looking untidy.\n   Put the real number in Settings; this only stops a silent failure. */\nconst crsNumber = clean(m.org?.phone, '+91 20 1234 5678');\n\n/* Digits only, then peel the country code off. Interakt wants the two\n   separately, while the CRS stores one human-typed string. */\nconst digits = String(v.guestPhone || '').replace(/\\D/g, '');\nlet countryCode = '+91';\nlet phoneNumber = digits;\nif (digits.length > 10) {\n  countryCode = '+' + digits.slice(0, digits.length - 10);\n  phoneNumber = digits.slice(-10);\n}\nif (phoneNumber.length !== 10) {\n  throw new Error(\n    `Guest phone \"${v.guestPhone}\" is not 10 digits after stripping the ` +\n    'country code. WhatsApp will reject it.'\n  );\n}\n\n/* Drive serves the file from this shape. Meta must be able to GET it\n   with no credentials and receive the PDF itself, not an HTML page. */\nconst fileId = $('Save PDF to Drive').first().json.id;\nconst documentUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;\n\nreturn [{\n  json: {\n    countryCode,\n    phoneNumber,\n    documentUrl,\n    filename: v.filename,\n    reference: v.reference,\n    bodyValues: [\n      clean(m.guestName),      // 1 name_1\n      clean(v.reference),      // 2 hotel_id\n      clean(m.hotelName),      // 3 hotel\n      clean(m.checkIn),        // 4 ck_in\n      clean(m.checkOut),       // 5 ck_out\n      clean(roomType),         // 6 rm_type\n      clean(guests),           // 7 no_guest\n      crsNumber,               // 8 crs_nom\n    ],\n  },\n}];"
+      },
+      "id": "a3c9e1f7-84b2-4d56-9e13-6f2a8c4d7b90",
+      "name": "Build template parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.interakt.ai/v1/public/message/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Basic REPLACE_WITH_INTERAKT_SECRET_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  countryCode: $json.countryCode,\n  phoneNumber: $json.phoneNumber,\n  callbackData: $json.reference,\n  type: 'Template',\n  template: {\n    name: 'REPLACE_WITH_TEMPLATE_NAME',\n    languageCode: 'en',\n    headerValues: [ $json.documentUrl ],\n    fileName: $json.filename,\n    bodyValues: $json.bodyValues\n  }\n}) }}",
+        "options": {
+          "timeout": 20000,
+          "response": { "response": { "neverError": false, "responseFormat": "json" } }
+        }
+      },
+      "id": "b7c41d02-9f1a-4f88-9a2e-0f6d2c3a51e7",
+      "name": "WhatsApp via Interakt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 340],
+      "notes": "⚠️ `name` and `languageCode` must match the APPROVED template exactly — Interakt looks it up by name, and a mismatch fails with a generic error. languageCode is the template's language, often 'en' but 'en_US' for some. Check both in the Interakt template list before blaming the parameters."
+    }
+  ],
+  "connections": {
+    "Reservation confirmed": {
+      "main": [[{ "node": "Reply immediately", "type": "main", "index": 0 }]]
+    },
+    "Reply immediately": {
+      "main": [[{ "node": "PDF to binary", "type": "main", "index": 0 }]]
+    },
+    "PDF to binary": {
+      "main": [
+        [
+          { "node": "Email the voucher", "type": "main", "index": 0 },
+          { "node": "Save PDF to Drive", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Save PDF to Drive": {
+      "main": [[{ "node": "Make PDF fetchable", "type": "main", "index": 0 }]]
+    },
+    "Make PDF fetchable": {
+      "main": [[{ "node": "Build template parameters", "type": "main", "index": 0 }]]
+    },
+    "Build template parameters": {
+      "main": [[{ "node": "WhatsApp via Interakt", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "488ffd76350a7d87c0df6b398b72bc6199b892052883143985aca748255680d8"
+  }
+}
