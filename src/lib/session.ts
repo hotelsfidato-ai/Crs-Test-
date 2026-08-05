@@ -247,13 +247,53 @@ async function claim(
   password: string,
   displayName: string,
 ): Promise<void> {
-  const credential = await createUserWithEmailAndPassword(auth, address, password);
+  /* ⚠️ An Auth account can outlive its profile, and this used to be a
+     dead end.
+     Firebase Spark has no Admin SDK, so removing a user deletes the
+     `users` document and leaves the Auth account behind. That address
+     then fails BOTH ways: signing in reports no access because there is
+     no profile, and signing up reports the account already exists. The
+     person is locked out of an invitation they legitimately hold, with
+     no way forward from inside the product.
+
+     So when the account already exists, prove ownership by signing in
+     with the password they just typed, then claim the invitation
+     against it. Nothing is weakened: an invitation is still required,
+     the profile is still written at users/{uid}, and the rules still
+     refuse any role that does not match the invitation. Somebody
+     without the password gets nowhere. */
+  let credential;
+  let accountIsNew = true;
+
+  try {
+    credential = await createUserWithEmailAndPassword(auth, address, password);
+  } catch (error) {
+    if (!isFirebaseCode(error, "auth/email-already-in-use")) throw error;
+
+    accountIsNew = false;
+    // Throws auth/wrong-password or auth/invalid-credential if it is
+    // not theirs — which the sign-up screen translates.
+    credential = await signInWithEmailAndPassword(auth, address, password);
+
+    /* Already has a profile, so this is not an orphan and not a claim.
+       Sending them round the sign-up loop again would be pointless. */
+    const existing = await getDoc(doc(db, "users", credential.user.uid)).catch(() => null);
+    if (existing?.exists()) throw new AlreadySetUpError();
+  }
+
   const uid = credential.user.uid;
 
   const invitation = await getDoc(doc(db, "invitations", address)).catch(() => null);
 
   if (!invitation?.exists()) {
-    await deleteUser(credential.user).catch(() => signOut(auth));
+    /* ⚠️ Only delete an account this call created. Deleting a
+       pre-existing one would destroy somebody's credentials because
+       an administrator had not got round to inviting them yet. */
+    if (accountIsNew) {
+      await deleteUser(credential.user).catch(() => signOut(auth));
+    } else {
+      await signOut(auth);
+    }
     throw new NoInvitationError();
   }
 
@@ -297,6 +337,25 @@ export class NoInvitationError extends Error {
     super("No invitation exists for that address.");
     this.name = "NoInvitationError";
   }
+}
+
+/**
+ * The account exists AND already has a profile — so it is set up, and
+ * the person is on the wrong screen. Distinct from
+ * `auth/email-already-in-use`, which now only means an Auth account
+ * exists; that one is recoverable and this one is not a fault at all.
+ */
+export class AlreadySetUpError extends Error {
+  constructor() {
+    super("That account is already set up.");
+    this.name = "AlreadySetUpError";
+  }
+}
+
+/** Narrows an unknown catch to a Firebase error with a given code. */
+function isFirebaseCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error
+    && (error as { code?: unknown }).code === code;
 }
 
 export async function signOutOfApp(): Promise<void> {

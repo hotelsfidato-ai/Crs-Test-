@@ -25,10 +25,16 @@ const GENERIC_ERROR = "That email and password combination was not recognised.";
  * right the first time, which is what this screen did before.
  */
 const ISSUE_MESSAGES: Record<AuthIssue, string> = {
+  /* ⚠️ The advice at the end has to be true, and it used to lead to a
+     dead end: "Set up your account" refused any address that already
+     had an Auth account, which is exactly the state anyone reading this
+     message is in. Claiming now signs into an existing account instead
+     of insisting on a new one, so the route below actually works —
+     using their existing password. */
   no_profile:
-    "That account exists but has no access yet. It was most likely created " +
-    "directly in Firebase rather than through the invitation link — ask your " +
-    "administrator to invite this address, then use “Set up your account”.",
+    "That account exists but has no access yet. Ask your administrator to invite " +
+    "this address, then use “Set up your account” with the same email and your " +
+    "existing password — it will attach the invitation to the account you already have.",
   disabled:
     "That account has been disabled. Ask your administrator to re-enable it.",
 };

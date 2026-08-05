@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FirebaseError } from "firebase/app";
-import { claimInvitation, NoInvitationError } from "@/lib/session";
+import { claimInvitation, NoInvitationError, AlreadySetUpError } from "@/lib/session";
 import { Button, Field, Input, fieldProps } from "@/components/ui";
 import { AuthLayout } from "./AuthLayout";
 
@@ -51,7 +51,7 @@ export default function SignupPage() {
   return (
     <AuthLayout
       title="Set up your account"
-      description="Your administrator has invited you. Use the same work email they invited."
+      description="Your administrator has invited you. Use the same work email they invited — if you already had an account here, enter its existing password."
       footer={
         <>
           Already set up?{" "}
@@ -137,21 +137,35 @@ export default function SignupPage() {
 function messageFor(caught: unknown): string {
   if (caught instanceof NoInvitationError) {
     return (
-      "No invitation exists for that address, so the account was not kept. " +
+      "No invitation exists for that address, so nothing was set up. " +
       "Check the spelling, or ask your administrator to invite you."
     );
   }
+  if (caught instanceof AlreadySetUpError) {
+    return "That account is already set up. Sign in instead.";
+  }
   if (caught instanceof FirebaseError) {
     switch (caught.code) {
-      case "auth/email-already-in-use":
-        return "An account already exists for that address. Sign in instead, or reset your password.";
+      /* ⚠️ These now mean "the address is right, the password is not".
+         An existing Auth account is no longer a dead end — the claim
+         signs into it — so the only way to reach here is a mismatch,
+         and telling someone to sign in instead would loop them back to
+         a screen that also refuses them. */
+      case "auth/wrong-password":
+      case "auth/invalid-credential":
+        return (
+          "An account already exists for that address, but that password does not " +
+          "match it. Use the one you set previously, or reset it from the sign-in page."
+        );
+      case "auth/too-many-requests":
+        return "Too many attempts. Wait a few minutes, then try again.";
       case "auth/weak-password":
         return "That password is too easy to guess. Try a longer one.";
       case "auth/invalid-email":
         return "That does not look like a valid email address.";
       default:
-        return "Could not create the account. Try again in a moment.";
+        return "Could not set up the account. Try again in a moment.";
     }
   }
-  return "Could not create the account. Try again in a moment.";
+  return "Could not set up the account. Try again in a moment.";
 }
