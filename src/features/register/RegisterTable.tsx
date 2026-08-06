@@ -25,26 +25,62 @@ import {
    what somebody actually typed with our tidied version of it.
    ══════════════════════════════════════════════════════════════════ */
 
-/** The columns worth showing inline. The rest live in the row editor. */
-const COLUMNS: { field: keyof RegisterBookingRow; align?: "right" }[] = [
+/**
+ * EVERY column, in register order.
+ *
+ * ⚠️ Empty columns are shown too, and that is the point. These are the
+ * fields being filled in by hand through this screen — hiding the ones
+ * that are blank today would hide exactly the work still to be done,
+ * and there would be no way to see progress.
+ *
+ * That is the opposite of the Reports tab, which shows a chart only
+ * where a column HAS data. A chart of nothing is noise; a column of
+ * nothing is a to-do list.
+ *
+ * The table scrolls horizontally rather than dropping columns.
+ */
+const COLUMNS: { field: keyof RegisterBookingRow; align?: "right"; wide?: boolean }[] = [
   { field: "check_in_date" },
-  { field: "guest_name" },
-  { field: "hotel_name" },
-  { field: "company_or_ta" },
+  { field: "check_out_date" },
+  { field: "booking_date" },
+  { field: "guest_name", wide: true },
+  { field: "guest_contact_number" },
+  { field: "hotel_name", wide: true },
+  { field: "company_or_ta", wide: true },
   { field: "booking_done_by" },
+  { field: "booker_name" },
+  { field: "booker_contact_no" },
+  { field: "booker_email", wide: true },
+  { field: "hotel_conf_no" },
+  { field: "fidato_conf_no" },
   { field: "num_rooms", align: "right" },
+  { field: "num_nights", align: "right" },
   { field: "room_nights", align: "right" },
+  { field: "occupancy_type" },
+  { field: "meal_plan" },
+  { field: "room_rate", align: "right" },
   { field: "total_revenue", align: "right" },
+  { field: "amount_received", align: "right" },
+  { field: "commission_amount", align: "right" },
   { field: "booking_status" },
+  { field: "payment_type" },
+  { field: "payment_status", wide: true },
+  { field: "invoice_number" },
+  { field: "invoice_amount", align: "right" },
+  { field: "invoice_status", wide: true },
+  { field: "invoice_sent_status" },
+  { field: "tac_status" },
+  { field: "amendment_notes", wide: true },
+  { field: "sheet_name" },
+  { field: "excel_row_num", align: "right" },
 ];
 
 export function RegisterTable({
-  query, onChange, mayEdit, filled,
+  query, onChange, mayEdit,
 }: {
   query: RegisterQuery;
   onChange: (q: RegisterQuery) => void;
   mayEdit: boolean;
-  filled: Set<string>;
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<RegisterBookingRow | null>(null);
@@ -53,8 +89,6 @@ export function RegisterTable({
     queryKey: ["register-rows", query],
     queryFn: () => fetchRegister(query),
   });
-
-  const columns = COLUMNS.filter((c) => filled.has(c.field as string) || c.field === "check_in_date");
 
   const sortBy = (field: keyof RegisterBookingRow) => {
     const same = query.sortBy === field;
@@ -97,7 +131,7 @@ export function RegisterTable({
             <table className="w-full text-sm">
               <thead className="bg-grey-50 border-b border-grey-200">
                 <tr>
-                  {columns.map((c) => (
+                  {COLUMNS.map((c) => (
                     <th
                       key={c.field}
                       onClick={() => sortBy(c.field)}
@@ -105,6 +139,7 @@ export function RegisterTable({
                         "px-3 py-2.5 font-semibold text-2xs uppercase tracking-wide text-grey-500",
                         "cursor-pointer select-none hover:text-ink-900 whitespace-nowrap",
                         c.align === "right" ? "text-right" : "text-left",
+                        c.wide ? "min-w-[180px]" : "min-w-[110px]",
                       )}
                     >
                       {FIELD_LABELS[c.field as string] ?? c.field}
@@ -125,13 +160,15 @@ export function RegisterTable({
                       row.is_blank_row && "opacity-40",
                     )}
                   >
-                    {columns.map((c) => (
+                    {COLUMNS.map((c) => (
                       <td
                         key={c.field}
                         className={cn(
-                          "px-3 py-2.5 text-ink-900",
+                          "px-3 py-2.5 text-ink-900 whitespace-nowrap",
                           c.align === "right" ? "text-right tabular" : "text-left",
+                          c.wide && "max-w-[240px] truncate",
                         )}
+                        title={c.wide ? String(row[c.field] ?? "") : undefined}
                       >
                         {renderCell(row, c.field)}
                       </td>
@@ -190,7 +227,18 @@ function renderCell(row: RegisterBookingRow, field: keyof RegisterBookingRow) {
   if (value === null || value === undefined || value === "") {
     return <span className="text-grey-300">—</span>;
   }
-  if (field === "total_revenue") return money(Number(value));
+  if (
+    field === "total_revenue" || field === "room_rate" ||
+    field === "invoice_amount" || field === "commission_amount"
+  ) {
+    return money(Number(value));
+  }
+
+  /* ⚠️ NOT formatted as money, deliberately. This column holds bank and
+     UTR reference numbers mixed with real payments — rendering
+     450004150020000 as "₹4,50,00,41,50,020,000" dresses a reference
+     number up as a sum. Shown raw so it looks like what it is. */
+  if (field === "amount_received") return <span className="tabular">{String(value)}</span>;
   if (field === "booking_status") {
     const folded = row.booking_status_normalised;
     return (

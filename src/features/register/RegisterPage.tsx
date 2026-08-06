@@ -170,7 +170,7 @@ export default function RegisterPage() {
         </TabsList>
 
         <TabsContent value="table">
-          <RegisterTable query={query} onChange={setQuery} mayEdit={mayEdit} filled={filled} />
+          <RegisterTable query={query} onChange={setQuery} mayEdit={mayEdit} />
         </TabsContent>
 
         <TabsContent value="calendar">
