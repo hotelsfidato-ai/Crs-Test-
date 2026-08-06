@@ -170,6 +170,26 @@ describe("the matrix agrees with firestore.rules", () => {
     }
   });
 
+  /**
+   * The booking register lives in its own Supabase project with its own
+   * allowlist.
+   *
+   * ⚠️ This grant only decides whether the SCREEN renders. Whether data
+   * comes back is decided by `register_access` over there, which cannot
+   * see this matrix. Someone named in one and not the other gets a
+   * working screen over an empty table — see
+   * docs/supabase/register-security.md.
+   */
+  it("shows the booking register to owner and crs manager only", () => {
+    for (const role of ["owner", "crs_manager"] as const) {
+      expect(can(role, "view", "register"), role).toBe(true);
+      expect(can(role, "edit", "register"), role).toBe(true);
+    }
+    for (const role of ["admin", "manager", "finance", "salesperson", "viewer"] as const) {
+      expect(canAccess(role, "register"), role).toBe(false);
+    }
+  });
+
   /* rules: match /payments — create, update: owner, admin, finance */
   it("offers payments only to owner, admin and finance", () => {
     for (const role of ["owner", "admin", "finance"] as const) {

@@ -63,6 +63,8 @@ const IntegrationsPage = lazy(() => import("@/features/admin/IntegrationsPage"))
 const AuditLogPage = lazy(() => import("@/features/admin/AuditLogPage"));
 const SettingsPage = lazy(() => import("@/features/admin/SettingsPage"));
 
+const RegisterPage = lazy(() => import("@/features/register/RegisterPage"));
+
 const DesignSystemPage = lazy(() => import("@/features/design-system/DesignSystemPage"));
 
 /* ══════════════════════════════════════════════════════════════════
@@ -304,6 +306,10 @@ export function AppRoutes() {
                 <Route
                   path="/admin/integrations"
                   element={<Guard resource="integration"><IntegrationsPage /></Guard>}
+                />
+                <Route
+                  path="/register"
+                  element={<Guard resource="register"><RegisterPage /></Guard>}
                 />
                 <Route
                   path="/admin/audit-log"

@@ -110,6 +110,17 @@ export const RESOURCES = [
   "integration",
   "audit_log",
   "setting",
+  /**
+   * The digitised booking register — a separate Supabase project, not
+   * CRS data. Owner and CRS Manager only.
+   *
+   * ⚠️ This grant decides whether the SCREEN renders. Whether the DATA
+   * comes back is decided by the allowlist in that project, which
+   * cannot see this matrix. Both must name the same people or the
+   * screen opens onto an empty table with no error — see
+   * docs/supabase/register-security.md.
+   */
+  "register",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -159,6 +170,7 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   integration: "Integrations",
   audit_log: "Audit log",
   setting: "Settings",
+  register: "Booking register",
 };
 
 export const ACTION_LABELS: Record<Action, string> = {
@@ -251,6 +263,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
     ai: READ,
     user: READ,
     audit_log: READ,
+    register: ["view", "edit", "export"],
   },
 
   manager: {

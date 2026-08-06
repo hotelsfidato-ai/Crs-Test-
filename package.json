@@ -30,6 +30,7 @@
     "@radix-ui/react-switch": "^1.3.7",
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
+    "@supabase/supabase-js": "^2.112.2",
     "@tanstack/react-query": "^5.101.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -64,5 +65,5 @@
     "vite": "^8.1.1",
     "vitest": "^4.1.10"
   },
-  "description": "Fidato Hotels \u2014 internal hospitality ERP / central reservation system"
+  "description": "Fidato Hotels — internal hospitality ERP / central reservation system"
 }

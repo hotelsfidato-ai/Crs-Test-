@@ -55,6 +55,22 @@ Firebase signs every project's tokens with one shared key set. Without
 the `iss`/`aud` check, a token minted by **any** Firebase project would
 validate. That is the "wrong Firebase project" row in the table above.
 
+## ⚠️ Views bypass RLS unless told not to
+
+A Postgres view runs as its **owner** unless `security_invoker = true`
+is set. `register_bookings` and `register_field_coverage` were created
+without it, so they executed as `postgres` and read straight through
+the row-level security on `bookings`.
+
+Locking the table therefore did nothing for the application, because
+the application queries the view. A direct `select` on `bookings` as
+`anon` returned 0 — the same query through the view returned all 6,626
+rows to a signed-out browser.
+
+Both views now set `security_invoker = true`. **Any future view over
+`bookings` must set it too**, or it reopens the hole silently. Test
+through the view, never only against the table.
+
 ## Deliberately absent
 
 **No INSERT or DELETE policy.** The register is synchronised from the

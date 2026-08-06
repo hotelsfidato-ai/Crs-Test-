@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Building2, CalendarCheck, Hotel, Receipt,
   BarChart3, Workflow, Bell, Sparkles, Settings, ShieldCheck,
   CalendarRange, GitMerge, Upload, FileText, Wallet,
-  Percent, History, Plug, ScrollText, UserCog, Palette,
+  Percent, History, Plug, ScrollText, UserCog, Palette, BookOpen,
   type LucideIcon,
 } from "lucide-react";
 import { canAccess, type Resource, type Role } from "@/lib/permissions";
@@ -98,6 +98,9 @@ const SECTIONS: NavSection[] = [
           { label: "Templates", to: "/notifications/templates", icon: FileText, resource: "notification" },
         ],
       },
+      /* Its own entry, not under Administration — this is an
+         operational record people work in daily, not a setting. */
+      { label: "Booking register", to: "/register", icon: BookOpen, resource: "register" },
       {
         label: "Administration", to: "/admin/users", icon: Settings,
         resource: "user", matchPrefix: false,
