@@ -122,19 +122,31 @@ export default function RegisterPage() {
           <Stat label="Room nights" value={totals.isLoading ? "…" : number(t?.roomNights ?? 0)} />
         </Card>
         <Card className="p-5">
-          {/* Commission is empty on every row today. Showing a zero
-              would read as "we earned nothing" rather than "not
-              recorded yet", so it says which. */}
+          {/* ⚠️ Falls back to Cancelled, NOT to amount_received.
+              Commission is empty on every row, and a ₹0 would read as
+              "we earned nothing" rather than "not recorded yet".
+
+              The obvious substitute — money received — is unusable:
+              that column holds bank and UTR reference numbers mixed in
+              with real payments, and summing it gave 1.37 quadrillion
+              against 7.2 crore of revenue. Cancellations come from a
+              clean column and are worth an owner's attention anyway. */}
           <Stat
-            label={filled.has("commission_amount") ? "Commission" : "Received"}
+            label={filled.has("commission_amount") ? "Commission" : "Cancelled"}
             value={
               totals.isLoading
                 ? "…"
                 : filled.has("commission_amount")
                   ? money(t?.commission ?? 0)
-                  : money(t?.received ?? 0)
+                  : number(t?.cancelled ?? 0)
             }
-            hint={filled.has("commission_amount") ? undefined : "Commission not recorded yet"}
+            hint={
+              filled.has("commission_amount")
+                ? undefined
+                : t && t.bookings > 0
+                  ? `${Math.round((t.cancelled / t.bookings) * 100)}% of these bookings`
+                  : "Commission not recorded yet"
+            }
           />
         </Card>
       </div>

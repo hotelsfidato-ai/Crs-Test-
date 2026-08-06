@@ -158,8 +158,23 @@ export interface Totals {
   bookings: number;
   revenue: number;
   roomNights: number;
-  received: number;
   commission: number;
+  cancelled: number;
+  /**
+   * ⚠️ NOT a money figure, and deliberately not summed.
+   *
+   * `amount_received` holds bank and UTR reference numbers alongside
+   * real payments — 143 values exceed a crore and 302 are more than
+   * five times their own booking's revenue, with the same number
+   * repeated down several rows where the spreadsheet was filled down.
+   * Summing it produced 1.37 QUADRILLION against 7.2 crore of revenue.
+   *
+   * Only the plausible ones are counted here, and only so the interface
+   * can say how much of the column is unusable. Do not present this as
+   * "money received".
+   */
+  receivedPlausible: number;
+  receivedSuspect: number;
 }
 
 export async function fetchTotals(q: RegisterQuery = {}): Promise<Totals> {
@@ -169,23 +184,38 @@ export async function fetchTotals(q: RegisterQuery = {}): Promise<Totals> {
      honest against the filters rather than the page. */
   let builder = registerDb()
     .from("register_bookings")
-    .select("total_revenue,room_nights,amount_received,commission_amount");
+    .select(
+      "total_revenue,room_nights,amount_received,commission_amount,booking_status_normalised",
+    );
   builder = applyFilters(builder, q);
 
   const { data, error } = await builder.limit(10_000);
   if (error) throw new Error(describeRegisterError(error));
 
-  const rows = (data ?? []) as Record<string, number | null>[];
-  return rows.reduce<Totals>(
-    (acc, r) => ({
-      bookings: acc.bookings + 1,
-      revenue: acc.revenue + (r.total_revenue ?? 0),
-      roomNights: acc.roomNights + (r.room_nights ?? 0),
-      received: acc.received + (r.amount_received ?? 0),
-      commission: acc.commission + (r.commission_amount ?? 0),
-    }),
-    { bookings: 0, revenue: 0, roomNights: 0, received: 0, commission: 0 },
-  );
+  const rows = (data ?? []) as unknown as Record<string, unknown>[];
+  const totals: Totals = {
+    bookings: 0, revenue: 0, roomNights: 0, commission: 0,
+    cancelled: 0, receivedPlausible: 0, receivedSuspect: 0,
+  };
+
+  for (const r of rows) {
+    const revenue = Number(r.total_revenue ?? 0);
+    totals.bookings += 1;
+    totals.revenue += revenue;
+    totals.roomNights += Number(r.room_nights ?? 0);
+    totals.commission += Number(r.commission_amount ?? 0);
+    if (r.booking_status_normalised === "Cancelled") totals.cancelled += 1;
+
+    /* A payment cannot sensibly exceed what the booking was worth. The
+       ones that do are reference numbers, so they are counted, not
+       added. 5% of slack covers rounding and small overpayments. */
+    const received = r.amount_received === null ? null : Number(r.amount_received);
+    if (received !== null && received > 0) {
+      if (revenue > 0 && received <= revenue * 1.05) totals.receivedPlausible += received;
+      else totals.receivedSuspect += 1;
+    }
+  }
+  return totals;
 }
 
 export interface GroupedRow {

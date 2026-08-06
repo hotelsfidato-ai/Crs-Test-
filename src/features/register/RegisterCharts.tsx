@@ -3,10 +3,10 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   LineChart, Line,
 } from "recharts";
-import { Info } from "lucide-react";
+import { Info, AlertTriangle } from "lucide-react";
 import { Card, CardHeader, CardBody, Skeleton } from "@/components/ui";
 import { money, number } from "@/lib/format";
-import { fetchGrouped, fetchMonthly } from "./registerRepo";
+import { fetchGrouped, fetchMonthly, fetchTotals } from "./registerRepo";
 import type { RegisterQuery, FieldCoverage } from "./types";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -70,6 +70,14 @@ export function RegisterCharts({
      data is missing — not because somebody forgot to build it. */
   const empty = coverage.filter((c) => c.filled === 0).map((c) => c.field);
 
+  /* How much of `amount_received` is unusable. Surfaced rather than
+     silently dropped: the register is maintained by hand, so the person
+     reading this is the person who can fix it. */
+  const totals = useQuery({
+    queryKey: ["register-totals", query],
+    queryFn: () => fetchTotals(query),
+  });
+
   return (
     <div className="space-y-6 mt-4">
       {filled.has(dateField) && filled.has("total_revenue") && (
@@ -123,6 +131,28 @@ export function RegisterCharts({
           metric="roomNights"
         />
       </div>
+
+      {(totals.data?.receivedSuspect ?? 0) > 0 && (
+        <Card className="border-brand-orange-100 bg-brand-orange-50">
+          <CardBody className="flex items-start gap-3">
+            <AlertTriangle className="size-4 text-brand-orange shrink-0 mt-0.5" />
+            <div>
+              <p className="text-base font-medium text-ink-900">
+                “Amount received” is not reliable yet
+              </p>
+              <p className="text-sm text-grey-700 mt-1 leading-relaxed">
+                {number(totals.data!.receivedSuspect)} entries hold a value larger than
+                the booking itself was worth — bank and UTR reference numbers that landed
+                in a money column when the spreadsheet was imported, often repeated down
+                several rows. Summing the column gives a figure in the quadrillions, so
+                no total is shown for it and there is no chart.
+                {" "}Only {money(totals.data!.receivedPlausible)} across the plausible
+                entries can be trusted. Correct them in the table and this disappears.
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {empty.length > 0 && (
         <Card>
