@@ -229,26 +229,60 @@
     },
     {
       "parameters": {
-        "operation": "create",
-        "tableId": "bookings",
-        "dataToSend": "autoMapInputData",
-        "options": {}
+        "method": "POST",
+        "url": "https://vghughipfjltjmelumdo.supabase.co/rest/v1/bookings",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "on_conflict",
+              "value": "fidato_conf_no"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $vars.REGISTER_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.REGISTER_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=ignore-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": false,
+              "responseFormat": "json"
+            }
+          }
+        }
       },
       "id": "c4b9e2f8-5a71-4d36-8e02-9f1c7a3b6d58",
       "name": "Add to booking register",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         200,
         780
       ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "REPLACE_ME",
-          "name": "Fidato register (service_role)"
-        }
-      },
-      "notes": "⚠️ Use the SERVICE_ROLE key. The register denies anon entirely — there is no insert policy — so the publishable key cannot write here, which is the point. A duplicate reference fails on the unique index rather than creating a second entry for one booking."
+      "notes": "⚠️ Needs the SERVICE_ROLE key, not the publishable one. The register denies anon entirely and has no insert policy, so the publishable key cannot write here — that is deliberate.\n\nSet it in n8n → Settings → Variables as REGISTER_SERVICE_KEY. Both headers need it: PostgREST wants `apikey` and Supabase wants `Authorization: Bearer`.\n\nPrefer: resolution=ignore-duplicates + on_conflict=fidato_conf_no makes a retry a no-op instead of a duplicate or an overwrite."
     }
   ],
   "connections": {
