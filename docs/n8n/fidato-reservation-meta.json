@@ -124,7 +124,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/v21.0/{{ $vars.META_PHONE_NUMBER_ID }}/media",
+        "url": "https://graph.facebook.com/v21.0/META_PHONE_NUMBER_ID/media",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "whatsAppApi",
         "sendBody": true,
@@ -164,7 +164,7 @@
           "name": "Fidato Meta Cloud"
         }
       },
-      "notes": "⚠️ THIS is why Meta Cloud beats a URL header. The file is uploaded straight to Meta and referenced by id, so the voucher is never publicly reachable — no Drive sharing, no public bucket, nothing for a stranger to fetch. Returns { id }, valid for 30 days.\n\nSet META_PHONE_NUMBER_ID in n8n → Settings → Variables, or paste the number id into the URL."
+      "notes": "⚠️ THIS is why Meta Cloud beats a URL header. The file is uploaded straight to Meta and referenced by id, so the voucher is never publicly reachable — no Drive sharing, no public bucket, nothing for a stranger to fetch. Returns { id }, valid for 30 days.\n\nSet META_PHONE_NUMBER_ID in n8n → Settings → Variables, or paste the number id into the URL.\n\n⚠️ Replace META_PHONE_NUMBER_ID in the URL with the Phone Number ID from Meta → WhatsApp → API Setup. It was an n8n variable, but Variables is a licensed feature and resolves to undefined on the community edition — the URL would have become .../undefined/messages and returned 404."
     },
     {
       "parameters": {
@@ -182,7 +182,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/v21.0/{{ $vars.META_PHONE_NUMBER_ID }}/messages",
+        "url": "https://graph.facebook.com/v21.0/META_PHONE_NUMBER_ID/messages",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "whatsAppApi",
         "sendBody": true,
@@ -212,7 +212,7 @@
           "name": "Fidato Meta Cloud"
         }
       },
-      "notes": "⚠️ `name` and `language.code` must match the APPROVED template exactly. A template approved as en_US will fail as 'en' with an error that does not say so.\n\nThe two static buttons need no component — only buttons carrying a variable do."
+      "notes": "⚠️ `name` and `language.code` must match the APPROVED template exactly. A template approved as en_US will fail as 'en' with an error that does not say so.\n\nThe two static buttons need no component — only buttons carrying a variable do.\n\n⚠️ Replace META_PHONE_NUMBER_ID in the URL with the Phone Number ID from Meta → WhatsApp → API Setup. It was an n8n variable, but Variables is a licensed feature and resolves to undefined on the community edition — the URL would have become .../undefined/messages and returned 404."
     },
     {
       "parameters": {
@@ -231,6 +231,8 @@
       "parameters": {
         "method": "POST",
         "url": "https://vghughipfjltjmelumdo.supabase.co/rest/v1/bookings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
@@ -243,14 +245,6 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $vars.REGISTER_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $vars.REGISTER_SERVICE_KEY }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
@@ -282,7 +276,13 @@
         200,
         780
       ],
-      "notes": "⚠️ Needs the SERVICE_ROLE key, not the publishable one. The register denies anon entirely and has no insert policy, so the publishable key cannot write here — that is deliberate.\n\nSet it in n8n → Settings → Variables as REGISTER_SERVICE_KEY. Both headers need it: PostgREST wants `apikey` and Supabase wants `Authorization: Bearer`.\n\nPrefer: resolution=ignore-duplicates + on_conflict=fidato_conf_no makes a retry a no-op instead of a duplicate or an overwrite."
+      "notes": "Credential: n8n → Credentials → new → Supabase API.\n  Host        https://vghughipfjltjmelumdo.supabase.co\n  Service Role Key   Supabase → Project Settings → API Keys → service_role\n\n⚠️ It must be the service_role key. The register denies anon entirely and has no insert policy, so the publishable key cannot write here — deliberately.\n\n⚠️ Do NOT use a generic Header Auth credential. Supabase requires the `apikey` header; tested, Authorization alone returns 401. The Supabase credential sets both. n8n Variables is a licensed feature and resolves to undefined on the community edition, which is why this uses a credential instead.",
+      "credentials": {
+        "supabaseApi": {
+          "id": "REPLACE_ME",
+          "name": "Fidato register (service_role)"
+        }
+      }
     }
   ],
   "connections": {
