@@ -278,7 +278,21 @@ service cloud.firestore {
     match /hotels/{hotelId} {
       allow read: if active();
       allow create, update: if isOwnerOrAdmin() || isAnyRole(['crs_manager', 'manager']);
-      allow delete: if false;
+
+      /* ⚠️ Owner and Admin only, and narrower than who may EDIT one — a
+         CRS Manager corrects a property, they do not remove it from the
+         book.
+
+         ⚠️ Firestore cannot express "only if nothing references this".
+         A hotel is named on every reservation, invoice and voucher ever
+         raised against it, and deleting one leaves those pointing at an
+         id with no document — the rows survive, the property name does
+         not. The application refuses when reservations exist and
+         removes the room types and seasons with it; neither of those
+         guards lives here, so a direct SDK call would still get
+         through. Paused is the reversible option and almost always the
+         right one. */
+      allow delete: if isOwnerOrAdmin();
 
       /* ⚠️ Commercial terms. Owner and Admin only — this is the whole
          reason commission is a subcollection. A denied read here is
@@ -291,6 +305,8 @@ service cloud.firestore {
 
     match /roomTypes/{roomTypeId} {
       allow read: if active();
+      /* `write` covers delete — needed so removing a property can take
+         its room types with it rather than orphaning them. */
       allow write: if isOwnerOrAdmin() || isAnyRole(['crs_manager', 'manager']);
     }
 

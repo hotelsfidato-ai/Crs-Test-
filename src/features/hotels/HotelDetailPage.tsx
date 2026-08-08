@@ -1,9 +1,9 @@
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  MapPin, BedDouble, Phone, Mail, CalendarRange, IndianRupee, Navigation,
+  MapPin, BedDouble, Phone, Mail, CalendarRange, IndianRupee, Navigation, Pencil,
 } from "lucide-react";
-import { useSession } from "@/lib/session";
+import { useSession, useActor } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { hotelsRepo, reservationsRepo } from "@/data/repositories";
 import { money, number, humanise, dateShort, phone as formatPhone } from "@/lib/format";
@@ -12,9 +12,10 @@ import {
   Page, PageHeader, Button, Card, CardHeader, CardBody, DetailList, DetailRow,
   StatusPill, HOTEL_TONES, RESERVATION_TONES, StarRating, Skeleton, Stat,
   Tabs, TabsList, TabsTrigger, TabsContent, DataTable, EmptyState, Tooltip,
-  type Column,
+  toast, type Column,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
+import { DeleteDialog } from "@/features/shared/DeleteDialog";
 import { CommissionDialog } from "./CommissionDialog";
 import { RoomTypeDialog, DeleteRoomTypeButton } from "./RoomTypeDialog";
 import type { RoomType, Reservation } from "@/data/types";
@@ -45,6 +46,22 @@ export default function HotelDetailPage() {
      this component choosing not to render them. The query is only
      issued for roles that may read it — for anyone else Firestore
      would deny it, which is correct but produces console noise. */
+  const actor = useActor();
+  const queryClient = useQueryClient();
+
+  /* ⚠️ Refuses when reservations name this property — the repository
+     raises that as a message rather than deleting and orphaning them. */
+  const remove = useMutation({
+    mutationFn: () => hotelsRepo.remove(id, actor),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["hotels"] });
+      toast.success("Property deleted", "It and its room types have been removed.");
+      navigate("/hotels");
+    },
+    onError: (error) =>
+      toast.error("Could not delete", (error as Error).message),
+  });
+
   const canSeeCommission = can(role, "view", "commission_terms");
   const commercial = useQuery({
     queryKey: ["hotel-commercial", id],
@@ -170,6 +187,34 @@ export default function HotelDetailPage() {
                   </span>
                 </Tooltip>
               ))}
+
+            {can(role, "edit", "hotel") && (
+              <Button asChild variant="secondary" leadingIcon={<Pencil className="size-4" />}>
+                <Link to={`/hotels/${h.id}/edit`}>Edit</Link>
+              </Button>
+            )}
+
+            {/* ⚠️ Last, and never primary. Pausing a property takes it
+                out of the booking wizard and can be undone; this
+                cannot. The dialog says which. */}
+            {can(role, "delete", "hotel") && (
+              <DeleteDialog
+                confirmWord={h.name}
+                title={`Delete ${h.name}?`}
+                pending={remove.isPending}
+                onConfirm={() => remove.mutate()}
+                consequence={
+                  <>
+                    This removes the property, its room types and its seasons
+                    permanently. <strong>Setting the status to Paused does what you
+                    probably want</strong> — it stops the property appearing in new
+                    bookings and is reversible. This is not.
+                    {" "}It is refused outright if any reservation names this property,
+                    since those bookings would be left pointing at nothing.
+                  </>
+                }
+              />
+            )}
           </>
         }
       />

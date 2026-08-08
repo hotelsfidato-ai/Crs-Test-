@@ -191,6 +191,63 @@ export const hotelsRepo = {
     });
     return updated;
   },
+
+  /**
+   * Removes a property, with its room types and seasons.
+   *
+   * ⚠️ REFUSES when any reservation names it. A hotel's name is copied
+   * onto every booking, invoice and voucher raised against it, so the
+   * rows survive a deletion and the property behind them does not —
+   * `hotelId` then points at a document that is not there. Pausing the
+   * property hides it from the booking wizard and is reversible; this
+   * is for a property added in error.
+   *
+   * ⚠️ Cascades deliberately. Room types and seasons live in their own
+   * collections keyed by hotelId, and Firestore has no foreign keys, so
+   * leaving them behind means invisible orphans that a later property
+   * with a recycled id would inherit.
+   */
+  remove: async (id: string, actor: Actor): Promise<void> => {
+    const hotel = await getOne<Hotel>("hotels", id);
+    if (!hotel) return;
+
+    const used = await countWhere("reservations", where("hotelId", "==", id));
+    if (used > 0) {
+      throw new Error(
+        `${hotel.name} is named on ${used} reservation${used === 1 ? "" : "s"}, ` +
+        "so removing it would leave them pointing at nothing. Set the property to " +
+        "Paused instead — it stops appearing in new bookings and can be undone.",
+      );
+    }
+
+    const [roomTypes, seasons] = await Promise.all([
+      listAll<RoomType>("roomTypes", where("hotelId", "==", id)),
+      listAll<Season>("seasons", where("hotelId", "==", id)),
+    ]);
+
+    /* Recorded BEFORE the delete — afterwards there is no document to
+       read a name from, and "property  removed" is not an audit row. */
+    await recordAudit({
+      entityType: "hotel", entityId: id, entityLabel: hotel.name,
+      action: "deleted",
+      summary: `Property ${hotel.name} deleted`,
+      detail:
+        `${hotel.city ?? ""} · ${roomTypes.length} room type(s) and ` +
+        `${seasons.length} season(s) removed with it`,
+      actor,
+    });
+
+    await Promise.all([
+      ...roomTypes.map((r) => deleteDoc(doc(db, "roomTypes", r.id))),
+      ...seasons.map((s2) => deleteDoc(doc(db, "seasons", s2.id))),
+    ]);
+
+    /* ⚠️ Commission lives in a subcollection, which Firestore does NOT
+       delete with its parent. Left behind it is unreachable but still
+       stored — and still readable by anyone who guesses the path. */
+    await deleteDoc(doc(db, `hotels/${id}/private`, "commercial")).catch(() => {});
+    await deleteDoc(doc(db, "hotels", id));
+  },
 };
 
 /* ── Room configuration ────────────────────────────────────────── */

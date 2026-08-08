@@ -463,6 +463,33 @@ describe("what may be removed, and by whom", () => {
     await assertFails(deleteDoc(doc(db, "invoices", "inv1")));
   });
 
+  /* ⚠️ Narrower than who may EDIT a property. A CRS Manager corrects a
+     property's details; removing one from the book is an owner or admin
+     act, because every booking, invoice and voucher raised against it
+     carries a copy of its name and would be left pointing at nothing.
+
+     ⚠️ The rule cannot express "only if no reservation references it" —
+     a rule cannot run a query. That guard lives in hotelsRepo.remove,
+     which means it is a guard against a mistake, not against someone
+     with a console. Deletion is confined to the two roles trusted with
+     the whole tenancy for exactly that reason. */
+  it("lets only an owner or admin delete a property", async () => {
+    for (const person of [CRS, MANAGER, FINANCE, SALES_A, VIEWER]) {
+      await assertFails(deleteDoc(doc(as(env, person), "hotels", "h1")));
+    }
+    await assertSucceeds(deleteDoc(doc(as(env, ADMIN), "hotels", "h1")));
+    await seed(env);
+    await assertSucceeds(deleteDoc(doc(as(env, OWNER), "hotels", "h1")));
+  });
+
+  /* The cascade the repo performs must not be refused halfway: a
+     property removed with its room types left behind is worse than
+     either outcome. */
+  it("lets the same roles clear the room types that hang off it", async () => {
+    await assertFails(deleteDoc(doc(as(env, SALES_A), "roomTypes", "rt1")));
+    await assertSucceeds(deleteDoc(doc(as(env, OWNER), "roomTypes", "rt1")));
+  });
+
   /* BR-04. A completed booking is an accounting record; reopening it
      changes a figure an invoice was already raised against. */
   it("refuses to edit a completed reservation, even as owner", async () => {

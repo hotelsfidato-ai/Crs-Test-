@@ -211,7 +211,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export", "delete"],
-    hotel: ["view", "create", "edit", "import", "export"],
+    hotel: ["view", "create", "edit", "import", "export", "delete"],
     room_config: ["view", "create", "edit"],
     commission_terms: ["view", "edit"],
     invoice: ["view", "create", "edit", "export"],

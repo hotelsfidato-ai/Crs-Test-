@@ -228,10 +228,15 @@ export const COMPANY_IMPORT: ImportDescriptor = {
       hint: "Appears on invoices. Defaults to the company name.",
     },
     {
-      key: "gstin", label: "GSTIN", required: true,
+      /* ⚠️ Optional. Plenty of accounts are not GST-registered, and
+         plenty more were recorded before anyone tracked it — requiring
+         it rejected those rows outright rather than importing a company
+         with a gap. The format check still runs on whatever IS supplied,
+         so a mistyped number is still caught. */
+      key: "gstin", label: "GSTIN", required: false,
       aliases: ["gst", "gst number", "gst no", "tax id", "gstin number"],
       example: "27AABCM1234M1Z5",
-      hint: "15 characters. Appears on every invoice.",
+      hint: "15 characters, if the account has one. Appears on invoices.",
       validate: gstin,
       transform: (v) => v.replace(/\s/g, "").toUpperCase(),
     },

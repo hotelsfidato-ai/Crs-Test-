@@ -122,6 +122,10 @@ export async function seed(environment: RulesTestEnvironment): Promise<void> {
     await setDoc(doc(db, "hotels/h1/private", "commercial"), {
       hotelId: "h1", commissionPercent: 12,
     });
+    // Hangs off h1, and is cascaded when the property is removed.
+    await setDoc(doc(db, "roomTypes", "rt1"), {
+      hotelId: "h1", name: "Deluxe", baseOccupancy: 2,
+    });
 
     // One record each, owned by salesperson A.
     for (const collection of ["customers", "companies"]) {

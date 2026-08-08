@@ -190,6 +190,20 @@ describe("the matrix agrees with firestore.rules", () => {
     }
   });
 
+  /* rules: match /hotels — allow delete: if isOwnerOrAdmin().
+     ⚠️ Narrower than who may EDIT a property: a CRS Manager corrects
+     one, they do not remove it from the book. */
+  it("lets only owner and admin delete a property, though more may edit", () => {
+    for (const role of ["owner", "admin"] as const) {
+      expect(can(role, "delete", "hotel"), role).toBe(true);
+    }
+    for (const role of ["crs_manager", "manager", "finance", "salesperson", "viewer"] as const) {
+      expect(can(role, "delete", "hotel"), role).toBe(false);
+    }
+    // Editing stays wider than deleting.
+    expect(can("crs_manager", "view", "hotel")).toBe(true);
+  });
+
   /* rules: match /payments — create, update: owner, admin, finance */
   it("offers payments only to owner, admin and finance", () => {
     for (const role of ["owner", "admin", "finance"] as const) {
