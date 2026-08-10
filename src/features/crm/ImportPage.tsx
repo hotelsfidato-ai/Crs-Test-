@@ -6,7 +6,8 @@ import {
   ArrowRight, RotateCcw, FileWarning,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { useActor } from "@/lib/session";
+import { useActor, useSession } from "@/lib/session";
+import { can, type Resource } from "@/lib/permissions";
 import { importRepo } from "@/data/repositories";
 import { number } from "@/lib/format";
 import {
@@ -39,6 +40,20 @@ type Stage = "upload" | "map" | "review" | "done";
 
 const ENTITY_ORDER: ImportEntity[] = ["customers", "companies", "hotels"];
 
+/**
+ * The importer's own name for a thing, and the permission matrix's.
+ *
+ * ⚠️ They differ — the matrix is singular ("customer"), the collections
+ * are plural ("customers"). Reconciled here rather than by renaming
+ * either, because both spellings are load-bearing: one keys Firestore
+ * paths, the other keys the grant table.
+ */
+const RESOURCE_FOR: Record<ImportEntity, Resource> = {
+  customers: "customer",
+  companies: "company",
+  hotels: "hotel",
+};
+
 /** ⚠️ Mirrors importRepo.existingKeys. Quoted in the UI, so it must match. */
 const EXISTING_SCAN_LIMIT = 2_000;
 
@@ -48,7 +63,22 @@ export default function ImportPage() {
   const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [entity, setEntity] = useState<ImportEntity>("customers");
+  const role = useSession((s) => s.role);
+
+  /**
+   * ⚠️ Only what this role may actually import. A CRS Manager can
+   * import customers and companies but not properties, and offering
+   * Properties anyway let them upload a file, map every column and
+   * review 300 rows before the commit was refused — all the work,
+   * then the refusal. The route guard admits anyone who can import
+   * something, so the picker is where the per-entity grant lands.
+   */
+  const allowed = useMemo(
+    () => ENTITY_ORDER.filter((e) => can(role, "import", RESOURCE_FOR[e])),
+    [role],
+  );
+
+  const [entity, setEntity] = useState<ImportEntity>(() => allowed[0] ?? "customers");
   const [stage, setStage] = useState<Stage>("upload");
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -163,7 +193,7 @@ export default function ImportPage() {
                   setEntity(next);
                   reset();
                 }}
-                options={ENTITY_ORDER.map((e) => ({
+                options={allowed.map((e) => ({
                   value: e,
                   label: DESCRIPTORS[e].label,
                 }))}

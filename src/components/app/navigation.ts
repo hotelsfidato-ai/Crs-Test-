@@ -5,7 +5,7 @@ import {
   Percent, History, Plug, ScrollText, UserCog, Palette, BookOpen,
   type LucideIcon,
 } from "lucide-react";
-import { canAccess, type Resource, type Role } from "@/lib/permissions";
+import { canAccess, canImportAnything, type Resource, type Role } from "@/lib/permissions";
 
 /* ══════════════════════════════════════════════════════════════════
    NAVIGATION
@@ -18,11 +18,24 @@ export interface NavItem {
   label: string;
   to: string;
   icon: LucideIcon;
+  /** What this entry is about. Names the refusal when access is denied. */
   resource: Resource;
   /** Matches child routes too, e.g. /reservations/:id */
   matchPrefix?: boolean;
   children?: NavItem[];
+  /**
+   * Overrides the default "any grant on `resource`" visibility test.
+   *
+   * ⚠️ For entries that span several resources, where no single one is
+   * the right gate. Import is the case: it loads customers, companies
+   * and properties, and the grants for those are independent.
+   */
+  canSee?: (role: Role) => boolean;
 }
+
+/** Whether the given role should see this entry at all. */
+const visible = (role: Role, item: NavItem): boolean =>
+  item.canSee ? item.canSee(role) : canAccess(role, item.resource);
 
 export interface NavSection {
   label?: string;
@@ -52,7 +65,6 @@ const SECTIONS: NavSection[] = [
         children: [
           { label: "All customers", to: "/crm/customers", icon: Users, resource: "customer" },
           { label: "Duplicates", to: "/crm/merge", icon: GitMerge, resource: "customer" },
-          { label: "Import", to: "/crm/import", icon: Upload, resource: "customer" },
         ],
       },
       { label: "Companies", to: "/crm/companies", icon: Building2, resource: "company", matchPrefix: true },
@@ -62,6 +74,20 @@ const SECTIONS: NavSection[] = [
     label: "Operations",
     items: [
       { label: "Properties", to: "/hotels", icon: Hotel, resource: "hotel", matchPrefix: true },
+    ],
+  },
+  {
+    /* ⚠️ Top level, not a child of Customers. It loads customers,
+       companies AND properties, so filing it under one of the three
+       both hid it from the other two and gated it on the wrong grant —
+       a role could be entitled to import properties and never see the
+       screen because it could not view customers. */
+    label: "Data",
+    items: [
+      {
+        label: "Import", to: "/import", icon: Upload,
+        resource: "customer", canSee: canImportAnything,
+      },
     ],
   },
   {
@@ -124,9 +150,9 @@ export function navigationFor(role: Role): NavSection[] {
     items: section.items
       .map((item) => ({
         ...item,
-        children: item.children?.filter((child) => canAccess(role, child.resource)),
+        children: item.children?.filter((child) => visible(role, child)),
       }))
-      .filter((item) => canAccess(role, item.resource) || (item.children?.length ?? 0) > 0),
+      .filter((item) => visible(role, item) || (item.children?.length ?? 0) > 0),
   })).filter((section) => section.items.length > 0);
 }
 
@@ -135,7 +161,7 @@ export function flatNavigationFor(role: Role): NavItem[] {
   const out: NavItem[] = [];
   for (const section of navigationFor(role)) {
     for (const item of section.items) {
-      if (canAccess(role, item.resource)) out.push(item);
+      if (visible(role, item)) out.push(item);
       for (const child of item.children ?? []) {
         if (!out.some((existing) => existing.to === child.to)) out.push(child);
       }

@@ -108,7 +108,7 @@ export default function CustomersPage() {
             )}
             {can(role, "import", "customer") && (
               <Button asChild variant="secondary" leadingIcon={<Upload className="size-4" />}>
-                <Link to="/crm/import">Import</Link>
+                <Link to="/import">Import</Link>
               </Button>
             )}
             {can(role, "create", "customer") && (

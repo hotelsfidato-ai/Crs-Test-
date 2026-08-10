@@ -380,6 +380,33 @@ export function canAccess(role: Role, resource: Resource): boolean {
   return (MATRIX[role]?.[resource]?.length ?? 0) > 0;
 }
 
+/**
+ * The three things the bulk importer can load, in the order it offers
+ * them.
+ *
+ * ⚠️ Keyed to ImportEntity in data/types. A descriptor exists for each,
+ * and the screen's entity picker is built from whichever of these the
+ * signed-in role may actually import.
+ */
+export const IMPORTABLE = ["customer", "company", "hotel"] as const satisfies readonly Resource[];
+
+/** The entities this role may bulk-import. Empty means the screen is pointless. */
+export function importableBy(role: Role): Resource[] {
+  return IMPORTABLE.filter((resource) => can(role, "import", resource));
+}
+
+/**
+ * Drives the Import entry in the sidebar and the route guard.
+ *
+ * ⚠️ Not `canAccess(role, "customer")`, which is what gated it while
+ * Import was a child of Customers. Importing properties is a separate
+ * grant from importing customers, and the screen does all three — so
+ * viewing customers is neither necessary nor sufficient.
+ */
+export function canImportAnything(role: Role): boolean {
+  return importableBy(role).length > 0;
+}
+
 /** Every action a role holds on a resource — used by the admin matrix screen. */
 export function grantsFor(role: Role, resource: Resource): readonly Action[] {
   return MATRIX[role]?.[resource] ?? [];

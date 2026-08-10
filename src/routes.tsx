@@ -2,7 +2,7 @@ import { Suspense, lazy, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/app/AppShell";
 import { useSession, useAuthListener } from "@/lib/session";
-import { canAccess, type Resource } from "@/lib/permissions";
+import { canAccess, canImportAnything, type Resource, type Role } from "@/lib/permissions";
 import { Forbidden } from "@/features/shared/Forbidden";
 import { NotFound } from "@/features/shared/NotFound";
 import { RouteFallback } from "@/features/shared/RouteFallback";
@@ -75,9 +75,22 @@ const DesignSystemPage = lazy(() => import("@/features/design-system/DesignSyste
    "this doesn't exist".
    ══════════════════════════════════════════════════════════════════ */
 
-function Guard({ resource, children }: { resource: Resource; children: ReactNode }) {
+function Guard({
+  resource, allow, children,
+}: {
+  resource: Resource;
+  /**
+   * Overrides the default "any grant on `resource`" test, for a screen
+   * that spans several — mirrors NavItem.canSee, and must agree with
+   * it. A guard stricter than the sidebar renders a Forbidden page the
+   * navigation invited you to open.
+   */
+  allow?: (role: Role) => boolean;
+  children: ReactNode;
+}) {
   const role = useSession((s) => s.role);
-  if (!canAccess(role, resource)) return <Forbidden resource={resource} />;
+  const permitted = allow ? allow(role) : canAccess(role, resource);
+  if (!permitted) return <Forbidden resource={resource} />;
   return <>{children}</>;
 }
 
@@ -203,10 +216,9 @@ export function AppRoutes() {
                   path="/crm/merge"
                   element={<Guard resource="customer"><MergePage /></Guard>}
                 />
-                <Route
-                  path="/crm/import"
-                  element={<Guard resource="customer"><ImportPage /></Guard>}
-                />
+                {/* Bookmarks and older links from when Import lived
+                    under Customers. */}
+                <Route path="/crm/import" element={<Navigate to="/import" replace />} />
 
                 {/* ── Properties ── */}
                 <Route path="/hotels" element={<Guard resource="hotel"><HotelsPage /></Guard>} />
@@ -299,6 +311,16 @@ export function AppRoutes() {
 
                 {/* ── AI ── */}
                 <Route path="/ai" element={<Guard resource="ai"><AiPage /></Guard>} />
+
+                {/* ── Data ── */}
+                <Route
+                  path="/import"
+                  element={
+                    <Guard resource="customer" allow={canImportAnything}>
+                      <ImportPage />
+                    </Guard>
+                  }
+                />
 
                 {/* ── Administration ── */}
                 <Route path="/admin/users" element={<Guard resource="user"><UsersPage /></Guard>} />
