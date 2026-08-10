@@ -195,6 +195,15 @@ export function validateRows(
       if (message) errors.push(`${field.label}: ${message}`);
     }
 
+    /* ⚠️ Only once the cells are individually sound. Told that a row is
+       half a bank block while the account number is also unreadable,
+       the operator fixes the wrong thing. */
+    if (!errors.length) {
+      const row = descriptor.checkRow?.(mapped);
+      if (row?.errors) errors.push(...row.errors);
+      if (row?.warnings) warnings.push(...row.warnings);
+    }
+
     for (const key of descriptor.duplicateKeys) {
       const value = mapped[key.field] ?? "";
       if (!value) continue;

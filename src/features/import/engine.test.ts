@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { guessMapping, validateRows, summarise, templateCsv } from "./engine";
-import { CUSTOMER_IMPORT, COMPANY_IMPORT } from "./descriptors";
+import { CUSTOMER_IMPORT, COMPANY_IMPORT, HOTEL_IMPORT } from "./descriptors";
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT ENGINE
@@ -121,6 +121,129 @@ describe("validateRows", () => {
       mapping, CUSTOMER_IMPORT);
     expect(rows[0]!.rowNumber).toBe(2);
     expect(rows[1]!.rowNumber).toBe(3);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   A PROPERTY'S BANK DETAILS
+
+   These are printed on the guest's voucher, so a value that survives
+   import in a corrupted-but-plausible form is worse than one that is
+   rejected: the guest transfers against it and the money goes nowhere.
+   ══════════════════════════════════════════════════════════════════ */
+
+describe("property bank details", () => {
+  const mapping = Object.fromEntries(HOTEL_IMPORT.fields.map((f) => [f.key, f.label]));
+
+  const hotel = (over: Record<string, string> = {}) => ({
+    "Property Name": "Ayati Resort", City: "Mahabaleshwar", State: "Maharashtra",
+    "Account Name": "Ayati Hospitality LLP", "Account Number": "50200012345678",
+    Bank: "HDFC Bank", Branch: "Mahabaleshwar", IFSC: "HDFC0001234",
+    ...over,
+  });
+
+  const check = (over: Record<string, string> = {}) =>
+    validateRows([hotel(over)], mapping, HOTEL_IMPORT)[0]!;
+
+  it("accepts a property with a full bank block", () => {
+    const r = check();
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  /* A property settled through Fidato publishes no account. That is a
+     complete row, not an unfinished one. */
+  it("accepts a property with no bank details at all", () => {
+    const r = check({
+      "Account Name": "", "Account Number": "", Bank: "", Branch: "", IFSC: "",
+    });
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  /**
+   * ⚠️ The case this check exists for. Both remaining cells are
+   * individually valid, so every field validator passes and the row
+   * imports clean — then the voucher, which needs a name AND a number,
+   * prints nothing and the property looks configured on the summary.
+   */
+  it("warns when a bank block is half filled, without rejecting the row", () => {
+    const r = check({ "Account Name": "", "Account Number": "" });
+    expect(r.errors).toEqual([]);
+    expect(r.warnings.join(" ")).toContain("no account name or account number");
+    expect(r.warnings.join(" ")).toContain("vouchers will show no bank details");
+  });
+
+  it("warns when only the account name is missing", () => {
+    const r = check({ "Account Name": "" });
+    expect(r.errors).toEqual([]);
+    expect(r.warnings.join(" ")).toContain("no account name");
+    expect(r.warnings.join(" ")).not.toContain("account number");
+  });
+
+  it("rejects a malformed IFSC", () => {
+    expect(check({ IFSC: "HDFC1001234" }).errors.join(" ")).toContain("IFSC");
+    expect(check({ IFSC: "HDFC000123" }).errors.join(" ")).toContain("IFSC");
+    // Lowercase and spaced is a formatting difference, not an error.
+    expect(check({ IFSC: "hdfc 0001234" }).errors).toEqual([]);
+  });
+
+  /* ⚠️ Never Number(). Indian account numbers run past 15 digits and
+     carry leading zeros; both corruptions look plausible on a voucher. */
+  it("keeps a long account number and its leading zeros intact", () => {
+    const long = "00110100012345678";
+    const r = check({ "Account Number": long });
+    expect(r.errors).toEqual([]);
+    expect(HOTEL_IMPORT.toDocument(r.mapped).bankAccountNumber).toBe(long);
+  });
+
+  it("rejects an account number that is not digits", () => {
+    expect(check({ "Account Number": "5020-ABCD-1234" }).errors.join(" "))
+      .toContain("Digits only");
+  });
+
+  /* Read off a voucher and typed into a banking app, so the stored form
+     is the printable one. The property form normalises the same way. */
+  it("normalises what it stores", () => {
+    const r = check({ IFSC: "hdfc 0001234", "Account Number": "5020 0012 345678" });
+    const doc = HOTEL_IMPORT.toDocument(r.mapped);
+    expect(doc.bankIfsc).toBe("HDFC0001234");
+    expect(doc.bankAccountNumber).toBe("50200012345678");
+  });
+
+  /* The headings a property's own accounts email actually uses. */
+  it("auto-maps the spellings a finance team writes", () => {
+    const guessed = guessMapping(
+      ["Property Name", "City", "State", "Beneficiary Name", "A/c No", "Bank Name",
+        "Branch Name", "IFSC Code"],
+      HOTEL_IMPORT,
+    );
+    expect(guessed.bankAccountName).toBe("Beneficiary Name");
+    expect(guessed.bankAccountNumber).toBe("A/c No");
+    expect(guessed.bankName).toBe("Bank Name");
+    expect(guessed.bankBranch).toBe("Branch Name");
+    expect(guessed.bankIfsc).toBe("IFSC Code");
+  });
+
+  /* ⚠️ "Bank", "Account Number" and "Account Name" all contain words the
+     others do, and the template ships every one of them as a heading. */
+  it("never assigns one bank column to two fields", () => {
+    const headers = HOTEL_IMPORT.fields.map((f) => f.label);
+    const used = Object.values(guessMapping(headers, HOTEL_IMPORT));
+    expect(new Set(used).size).toBe(used.length);
+    for (const field of HOTEL_IMPORT.fields) {
+      const m = guessMapping(headers, HOTEL_IMPORT);
+      expect(m[field.key], `${field.label} should map to itself`).toBe(field.label);
+    }
+  });
+
+  /* The template is what most operators fill in, so its own sample rows
+     must survive the validator they will be checked against. */
+  it("validates its own template samples", () => {
+    for (const sample of HOTEL_IMPORT.samples) {
+      const [r] = validateRows([sample], mapping, HOTEL_IMPORT);
+      expect(r!.errors, JSON.stringify(sample)).toEqual([]);
+    }
   });
 });
 

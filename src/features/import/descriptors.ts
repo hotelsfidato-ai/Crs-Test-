@@ -70,6 +70,15 @@ export interface ImportDescriptor {
   /** One line explaining what this import is for. */
   description: string;
   fields: ImportField[];
+  /**
+   * Checks that span more than one column, run after the per-field
+   * checks pass.
+   *
+   * ⚠️ A field validator sees one cell and cannot see a row where two
+   * columns are individually fine and jointly useless — a bank branch
+   * with no account number being the case this exists for.
+   */
+  checkRow?: (mapped: Record<string, string>) => { errors?: string[]; warnings?: string[] };
   /** Fields whose normalised value identifies a duplicate. */
   duplicateKeys: { field: string; normalise: (v: string) => string; label: string }[];
   /** Two example rows for the downloadable template. */
@@ -385,6 +394,24 @@ export const COMPANY_IMPORT: ImportDescriptor = {
 
 const MEAL_PLAN_CODES: MealPlan[] = MEAL_PLANS;
 
+/** 4 letters, a zero, then 6 characters. The zero is reserved. */
+const ifsc = (v: string): string | null => {
+  if (!v) return null;
+  const clean = v.replace(/\s/g, "").toUpperCase();
+  return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(clean) ? null : "Not a valid 11-character IFSC";
+};
+
+/* ⚠️ Digits only, and NOT stored as a number. Indian account numbers
+   run past 15 digits and frequently carry leading zeros; Number() would
+   round the long ones and drop the zeros, and both corruptions produce
+   a plausible-looking account that a guest's transfer fails against. */
+const accountNumber = (v: string): string | null => {
+  if (!v) return null;
+  const clean = v.replace(/[\s-]/g, "");
+  if (!/^\d+$/.test(clean)) return "Digits only";
+  return clean.length >= 6 && clean.length <= 20 ? null : "Must be 6 to 20 digits";
+};
+
 export const HOTEL_IMPORT: ImportDescriptor = {
   entity: "hotels",
   label: "Properties",
@@ -489,7 +516,79 @@ export const HOTEL_IMPORT: ImportDescriptor = {
       aliases: ["about", "summary"],
       example: "A hillside retreat overlooking the Krishna valley.",
     },
+
+    /* ── Bank details ────────────────────────────────────────────
+       Printed on the guest's voucher, so these are the property's
+       collecting account, not Fidato's. All optional: a property
+       settled through Fidato has no account to publish. */
+    {
+      key: "bankAccountName", label: "Account Name", required: false,
+      aliases: [
+        "bank account name", "account holder", "account holder name",
+        "beneficiary", "beneficiary name", "a/c name",
+      ],
+      example: "Ayati Hospitality LLP",
+      hint: "Exactly as the bank holds it — a mismatch fails the transfer.",
+    },
+    {
+      key: "bankAccountNumber", label: "Account Number", required: false,
+      aliases: [
+        "bank account number", "account no", "a/c no", "a/c number",
+        "account", "bank account",
+      ],
+      example: "50200012345678",
+      hint: "Digits only. Leading zeros are kept.",
+      validate: accountNumber,
+      transform: (v) => v.replace(/[\s-]/g, ""),
+    },
+    {
+      key: "bankName", label: "Bank", required: false,
+      aliases: ["bank name", "banker"],
+      example: "HDFC Bank",
+    },
+    {
+      key: "bankBranch", label: "Branch", required: false,
+      aliases: ["bank branch", "branch name"],
+      example: "Mahabaleshwar",
+    },
+    {
+      key: "bankIfsc", label: "IFSC", required: false,
+      aliases: ["ifsc code", "ifs code", "bank ifsc", "rtgs", "neft"],
+      example: "HDFC0001234",
+      hint: "11 characters. Uppercased automatically.",
+      validate: ifsc,
+      transform: (v) => v.replace(/\s/g, "").toUpperCase(),
+    },
   ],
+
+  /**
+   * ⚠️ The voucher prints a bank block only when it has BOTH an account
+   * name and a number — a bare IFSC, or an account with nobody to pay,
+   * is worse than no block at all. So a row carrying a bank name and a
+   * branch but no account number imports perfectly and then silently
+   * prints nothing, and the property looks configured on the import
+   * summary. Warn rather than reject: the property itself is fine, and
+   * the operator is the one who knows whether the account is missing or
+   * simply not held.
+   */
+  checkRow: (row) => {
+    const bank = ["bankAccountName", "bankAccountNumber", "bankName", "bankBranch", "bankIfsc"];
+    const filled = bank.filter((k) => (row[k] ?? "").trim());
+    if (!filled.length) return {};
+
+    const missing = (["bankAccountName", "bankAccountNumber"] as const)
+      .filter((k) => !(row[k] ?? "").trim())
+      .map((k) => (k === "bankAccountName" ? "account name" : "account number"));
+    if (!missing.length) return {};
+
+    return {
+      warnings: [
+        `Bank details are incomplete — no ${missing.join(" or ")}. ` +
+        "The property will import, but its vouchers will show no bank details until this is added.",
+      ],
+    };
+  },
+
   duplicateKeys: [
     {
       field: "name",
@@ -506,6 +605,8 @@ export const HOTEL_IMPORT: ImportDescriptor = {
       Category: "resort", "Star Rating": "4", "Total Rooms": "30", Status: "active",
       "Meal Plans": "EP, MAP, AP",
       Description: "A hillside retreat overlooking the Krishna valley.",
+      "Account Name": "Ayati Hospitality LLP", "Account Number": "50200012345678",
+      Bank: "HDFC Bank", Branch: "Mahabaleshwar", IFSC: "HDFC0001234",
     },
     {
       "Property Name": "Hotel Centre Point", "Short Name": "Centre Point",
@@ -515,6 +616,9 @@ export const HOTEL_IMPORT: ImportDescriptor = {
       Category: "business", "Star Rating": "3", "Total Rooms": "42", Status: "active",
       "Meal Plans": "EP, CP",
       Description: "",
+      /* Deliberately blank: shows that a property with no published
+         account is a complete row, not an unfinished one. */
+      "Account Name": "", "Account Number": "", Bank: "", Branch: "", IFSC: "",
     },
   ],
   toDocument: (row) => ({
@@ -539,6 +643,17 @@ export const HOTEL_IMPORT: ImportDescriptor = {
     roomMix: [], features: [], facilities: [], amenities: [],
     thingsToDo: [], distances: [], contacts: [],
     onboardedAt: new Date().toISOString().slice(0, 10),
+
+    /* ⚠️ Normalised here as well as in the property form. The form only
+       protects what the form wrote, and these two are read off a
+       voucher and typed into a banking app: a stray space in an account
+       number and a lowercase IFSC both read as a fault on a document
+       about money. */
+    bankAccountName: (row.bankAccountName ?? "").trim(),
+    bankAccountNumber: (row.bankAccountNumber ?? "").replace(/[\s-]/g, ""),
+    bankName: (row.bankName ?? "").trim(),
+    bankBranch: (row.bankBranch ?? "").trim(),
+    bankIfsc: (row.bankIfsc ?? "").replace(/\s/g, "").toUpperCase(),
   }),
 };
 
