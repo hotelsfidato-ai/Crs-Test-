@@ -2,9 +2,17 @@
 
 **Read this first. It is loaded automatically at the start of every session.**
 
-If you need more than this file gives you, the next two are
-[`docs/CONTEXT.md`](docs/CONTEXT.md) (project state and history) and
+⚠️ **For the current state, read [`docs/HANDOVER.md`](docs/HANDOVER.md), not this file.** This
+one carries orientation and traps, which age slowly. State ages every session, and this file
+spent weeks claiming Phase 2 was undeployed after it had shipped.
+
+If you need more than this file gives you:
+[`docs/HANDOVER.md`](docs/HANDOVER.md) (where things stand today) ·
+[`docs/CONSTRAINTS.md`](docs/CONSTRAINTS.md) (what must never happen) ·
+[`docs/FLOW.md`](docs/FLOW.md) (what calls what) ·
+[`docs/CONTEXT.md`](docs/CONTEXT.md) (project state and history) ·
 [`docs/manual/README.md`](docs/manual/README.md) (the 148-page service manual).
+[`docs/FIELD-GUIDE.md`](docs/FIELD-GUIDE.md) indexes the lot.
 
 ---
 
@@ -20,8 +28,8 @@ not computed from reservations** (see the trap list below).
 |---|---|
 | Location | `D:\fidato crs` |
 | Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` — **public** |
-| Firebase | `crstest-9a0c5` · Spark plan · https://crstest-9a0c5.web.app still serves the Phase 1 build |
-| Current state | **Phase 2 built and green. Not yet deployed, and the database is still empty.** |
+| Firebase | `crstest-9a0c5` · Spark plan · https://crstest-9a0c5.web.app |
+| Current state | **Phase 2 deployed and in real use.** See [`docs/HANDOVER.md`](docs/HANDOVER.md) for live record counts and what is blocked |
 
 ---
 
@@ -30,25 +38,19 @@ not computed from reservations** (see the trap list below).
 | Phase | Scope | State |
 |---|---|---|
 | **1** | Full frontend, no backend, no login, simulated data | ✅ Done, deployed |
-| **2** | Firebase — Auth, Firestore, rules. Spark only | ✅ **Built. Typecheck, build, 31 unit + 59 rules tests green. Awaiting deploy** |
-| 2.5 | n8n consumes `automationQueue` — vouchers, Drive, email | Designed, not started |
+| **2** | Firebase — Auth, Firestore, rules. Spark only | ✅ **Deployed and in use.** Typecheck, build, 153 unit + 101 rules tests green |
+| 2.5 | n8n consumes `automationQueue` — vouchers, Drive, email, WhatsApp, register | ⚠️ Built. Blocked on DNS and a Supabase key — see `docs/HANDOVER.md` |
 | 3 | Further automation | — |
 | 4 | Final testing | — |
 
-### ⚠️ What "built but not deployed" means
+### ⚠️ Empty screens
 
-Three things are true at once, and confusing them wastes a session:
+The seed layer is gone, so a screen with nothing on it is usually telling the truth — the
+database genuinely holds few records. **Check the counts in
+[`docs/HANDOVER.md`](docs/HANDOVER.md) before treating an empty screen as a bug.**
 
-1. **The code is done.** Auth, rules, the schema change, the import path.
-2. **Nothing is live.** Hosting still serves Phase 1. The Firestore rules
-   in this repo have not been pushed, and Email/Password sign-in has not
-   been enabled in the console.
-3. **There is no data and no first user.** The seed layer is deleted;
-   every screen shows an empty state until the user imports their own
-   records. The first Owner cannot be created from inside the app —
-   see the bootstrap section of [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
-
-**Do not "fix" empty screens.** Empty is correct.
+The first Owner cannot be created from inside the app — see the bootstrap section of
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 **Phase 2 design docs are in [`docs/phase-2/`](docs/phase-2/README.md)**; read
 [`02-architecture-and-spark.md`](docs/phase-2/02-architecture-and-spark.md) before
@@ -62,7 +64,7 @@ they and the code disagree, the code is what shipped.
 React 19 · Vite · TypeScript strict · Tailwind v4 · React Router v7 · TanStack Query v5 ·
 Zustand · Radix UI · react-hook-form + Zod · Recharts · Inter Variable
 
-38 routes · 8 roles (6 active, 2 dormant) · 28 UI primitives · 18 Firestore-shaped collections
+51 routes · 8 roles (6 active, 2 dormant) · 28 UI primitives · 18 Firestore-shaped collections
 
 ---
 
@@ -128,8 +130,8 @@ Each of these was a real defect. Full write-ups in
 npm run dev          # http://localhost:5173
 npm run build
 npm run typecheck    # tsc -b — plain `tsc --noEmit` does nothing here
-npm test             # 31 unit tests: GST bands, import mapping, permissions
-npm run test:rules   # 59 rules tests in the real engine (starts the emulator)
+npx vitest run       # 153 unit tests: GST bands, import mapping, permissions, register folds, navigation
+npm run test:rules   # 101 rules tests in the real engine (starts the emulator)
 ```
 
 ⚠️ `tsconfig.json` is a solution file with `"files": []` and project
@@ -187,12 +189,11 @@ role can never be assigned to a person.
   sign-up, or there is a window where the database is open. Run
   `npm run test:rules` before every rules deploy.
 - Storage is still unprovisioned. Only matters once vouchers or PDFs land.
-- **Nothing has run against the live project.** Every repository method
-  compiles and is covered by rules tests on the emulator; none has
-  executed against real Firestore. No sign-in has ever succeeded, because
-  Email/Password is not enabled in the console yet.
 - The interactive flows — wizard, approve/cancel, merge, import commit —
   are unit-tested at the logic layer, never click-tested end to end.
+- **What is blocked, and on whom, lives in
+  [`docs/HANDOVER.md`](docs/HANDOVER.md)** — it changes too often to
+  track here.
 
 ## ⚠️ Never round-trip a file through PowerShell
 

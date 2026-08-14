@@ -7,6 +7,7 @@
 | If you are… | Read |
 |---|---|
 | An **agent** starting a session | [`../CLAUDE.md`](../CLAUDE.md) — loaded automatically |
+| **Wondering where things stand today** | [`HANDOVER.md`](HANDOVER.md) — the living record, rewritten every session |
 | **Picking up the project** | [`CONTEXT.md`](CONTEXT.md) — state, history, what is verified and what is not |
 | Working **without repo access** | [`KNOWLEDGE.md`](KNOWLEDGE.md) — one self-contained file to paste anywhere |
 | A **new engineer or trainee** | [`Fidato-Platform-Phase-1-Manual.pdf`](Fidato-Platform-Phase-1-Manual.pdf) — 148 pages, with a six-day reading plan |
@@ -44,13 +45,30 @@ means they can also drift apart. A quarterly read-through is cheaper than acting
 
 ---
 
+## Working documents
+
+The six files an active session actually uses. [`FIELD-GUIDE.md`](FIELD-GUIDE.md) maps them to
+the 15 habits they come from, and says which were already here under other names.
+
+| Document | Contents |
+|---|---|
+| [`HANDOVER.md`](HANDOVER.md) | **Where things stand right now.** Rewritten every session |
+| [`CONSTRAINTS.md`](CONSTRAINTS.md) | What must never happen, and what is settled |
+| [`FLOW.md`](FLOW.md) | What calls what, in what order |
+| [`DECISIONS.md`](DECISIONS.md) | Why, not just what — a running log |
+| [`TEST-CHECKLIST.md`](TEST-CHECKLIST.md) | What "done" means. Commands and expected output |
+| [`ROLLBACK.md`](ROLLBACK.md) | How to undo a change. ⚠️ Firestore data does not roll back |
+| [`traces/`](traces/README.md) | One file per bug or feature, start to finish |
+
+---
+
 ## Reference
 
 | Document | Contents |
 |---|---|
 | [`design-system.md`](design-system.md) | Tokens, type scale, the two brand-guide departures |
 | [`data-model.md`](data-model.md) | Firestore-shaped collections, the Phase 2 swap point |
-| [`screen-inventory.md`](screen-inventory.md) | All 38 routes |
+| [`screen-inventory.md`](screen-inventory.md) | The route list |
 | [`role-matrix.md`](role-matrix.md) | 8 roles, permission matrix, business rules |
 | [`RUNBOOK.md`](RUNBOOK.md) | Deploy, rebuild, recover |
 
