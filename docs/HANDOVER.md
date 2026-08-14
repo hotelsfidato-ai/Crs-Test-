@@ -36,8 +36,10 @@ reaching guests (3 of 3 delivered with PDF). One real gap found — see *In flig
 | Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` — **public**, `main` pushed and current |
 | Tests | 153 unit · 101 rules · typecheck and build clean |
 
-⚠️ **`CLAUDE.md` still says Phase 2 is "built but not deployed" and quotes 31/59 tests.** That
-was true when written and is not now. Trust this file for state.
+`CLAUDE.md` was corrected on 2026-08-14 — it had described the project as built-but-not-deployed
+with an empty database for weeks after that stopped being true. It now carries orientation and
+traps only, and points here for state. **Keep it that way:** state in a file nobody rewrites is
+state that goes quietly wrong.
 
 ### Live data, as of 2026-08-14
 
