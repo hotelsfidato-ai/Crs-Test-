@@ -294,7 +294,7 @@ firebase deploy --only firestore:rules --project crstest-9a0c5
 ```bash
 cd tools/pdf
 npm install          # first time, from PowerShell
-npm run build        # → docs/Fidato-Platform-Phase-1-Manual.pdf
+npm run build        # → docs/Fidato-Platform-Manual.pdf
 ```
 
 Check the output reports `diagrams rendered: N/N`. If the numbers differ, a Mermaid diagram

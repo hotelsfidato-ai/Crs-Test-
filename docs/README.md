@@ -10,7 +10,7 @@
 | **Wondering where things stand today** | [`HANDOVER.md`](HANDOVER.md) — the living record, rewritten every session |
 | **Picking up the project** | [`CONTEXT.md`](CONTEXT.md) — state, history, what is verified and what is not |
 | Working **without repo access** | [`KNOWLEDGE.md`](KNOWLEDGE.md) — one self-contained file to paste anywhere |
-| A **new engineer or trainee** | [`Fidato-Platform-Phase-1-Manual.pdf`](Fidato-Platform-Phase-1-Manual.pdf) — 148 pages, with a six-day reading plan |
+| A **new engineer or trainee** | [`Fidato-Platform-Manual.pdf`](Fidato-Platform-Manual.pdf) — 168 pages, roadmap first |
 | **Building Phase 2** | [`phase-2/README.md`](phase-2/README.md) |
 
 ### The three knowledge files, and why there are three
@@ -76,11 +76,12 @@ the 15 habits they come from, and says which were already here under other names
 
 ## The service manual
 
-**[`manual/`](manual/README.md)** — 15 volumes plus 2 appendices, written the way a service
-manual for an engine is written. Also built as a single PDF.
+**[`manual/`](manual/README.md)** — a roadmap volume, 19 volumes and 2 appendices, written the
+way a service manual for an engine is written. Also built as a single 168-page PDF.
 
 | Volume | Contents |
 |---|---|
+| **0** | **Programme roadmap** — where this started, what was built, where it stands |
 | I–II | System overview · Architecture |
 | **III** | **Decision log** — 24 records, each with the options that lost |
 | IV–V | Design system · Component reference |
@@ -89,7 +90,9 @@ manual for an engine is written. Also built as a single PDF.
 | **X** | **Screen teardown** — all 38 routes |
 | **XI** | **Diagnostics** — symptom → cause → fix |
 | **XII** | **Defect log** — the 10 defects. The most instructive volume |
-| XIII–XV | Verification record · Phase 2 handover · Glossary |
+| XIII–XIV | Verification record · Phase 2 handover (the plan) |
+| **XVI–XIX** | **Phase 2 as built · Automation and n8n · The booking register · Launch and operations** |
+| XV | Glossary |
 | A–B | Data dictionary · Component props |
 
 Rebuild the PDF after editing:

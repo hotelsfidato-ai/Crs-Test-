@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PDF = path.resolve(HERE, "../../docs/Fidato-Platform-Phase-1-Manual.pdf");
+const PDF = path.resolve(HERE, "../../docs/Fidato-Platform-Manual.pdf");
 const OUT = path.join(HERE, "preview");
 
 const pages = process.argv.slice(2).map(Number).filter(Boolean);

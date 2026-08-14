@@ -26,7 +26,7 @@ the top bar to move between the eight roles.
 | An **agent** or AI assistant | [`CLAUDE.md`](CLAUDE.md) — loaded automatically |
 | **Picking the project up** | [`docs/CONTEXT.md`](docs/CONTEXT.md) |
 | Working **without repo access** | [`docs/KNOWLEDGE.md`](docs/KNOWLEDGE.md) — paste it anywhere |
-| A **new engineer or trainee** | [`docs/Fidato-Platform-Phase-1-Manual.pdf`](docs/Fidato-Platform-Phase-1-Manual.pdf) — 148 pp |
+| A **new engineer or trainee** | [`docs/Fidato-Platform-Manual.pdf`](docs/Fidato-Platform-Manual.pdf) — 168 pp |
 | **Deploying or recovering** | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) |
 | **Building Phase 2** | [`docs/phase-2/README.md`](docs/phase-2/README.md) |
 
@@ -63,7 +63,7 @@ Start at [`docs/manual/README.md`](docs/manual/README.md), which has reading pat
 different purposes.
 
 **As a single PDF for handing to someone:**
-[`docs/Fidato-Platform-Phase-1-Manual.pdf`](docs/Fidato-Platform-Phase-1-Manual.pdf) — 148
+[`docs/Fidato-Platform-Manual.pdf`](docs/Fidato-Platform-Manual.pdf) — 168
 pages, all diagrams rendered, with a cover, a "Before you start" section written for new joiners
 and a six-day reading plan. Rebuild it after editing the manual with:
 

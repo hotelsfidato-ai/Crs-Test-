@@ -1,7 +1,7 @@
 # Manual → PDF build
 
 Turns `docs/manual/*.md` into a single print-ready PDF at
-`docs/Fidato-Platform-Phase-1-Manual.pdf`.
+`docs/Fidato-Platform-Manual.pdf`.
 
 ```bash
 cd "D:\fidato crs\tools\pdf"

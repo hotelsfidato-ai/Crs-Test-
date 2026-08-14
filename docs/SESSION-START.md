@@ -54,7 +54,7 @@ My task: <describe it>
 
 ## C · Handing over to a person
 
-Give them [`Fidato-Platform-Phase-1-Manual.pdf`](Fidato-Platform-Phase-1-Manual.pdf). It opens
+Give them [`Fidato-Platform-Manual.pdf`](Fidato-Platform-Manual.pdf). It opens
 with a "Before you start" section written for a new joiner and a six-day reading plan that pairs
 each day's reading with something to do in the running app.
 

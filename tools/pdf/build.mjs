@@ -20,11 +20,12 @@ import puppeteer from "puppeteer-core";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MANUAL_DIR = path.resolve(HERE, "../../docs/manual");
 const OUT_DIR = path.resolve(HERE, "../../docs");
-const OUT_PDF = path.join(OUT_DIR, "Fidato-Platform-Phase-1-Manual.pdf");
+const OUT_PDF = path.join(OUT_DIR, "Fidato-Platform-Manual.pdf");
 const OUT_HTML = path.join(HERE, "manual.html");
 
 /* Reading order. The appendices come last regardless of filename sort. */
 const ORDER = [
+  "00-roadmap.md",
   "01-system-overview.md",
   "02-architecture.md",
   "03-decision-log.md",
@@ -39,6 +40,10 @@ const ORDER = [
   "12-defect-log.md",
   "13-verification-record.md",
   "14-phase-2-handover.md",
+  "16-phase-2-as-built.md",
+  "17-automation-and-n8n.md",
+  "18-booking-register.md",
+  "19-launch-and-operations.md",
   "15-glossary.md",
   "A1-data-dictionary.md",
   "A2-component-props.md",
@@ -108,7 +113,18 @@ function rewriteLinks(html, slugOf) {
   );
 }
 
-const ROMAN = ["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII","XIII","XIV","XV"];
+/* ⚠️ The roadmap is deliberately "Volume 0" rather than Volume I. The
+   existing volumes cross-reference each other by Roman numeral in
+   ~9,000 lines of prose; inserting at the front would shift every one
+   of them. Volumes XVI–XIX append, which shifts nothing.
+
+   ⚠️ Glossary stays XV even though it now prints after XIX — a reader
+   sent to "Volume XV" must find the glossary, and reference order is
+   not reading order. */
+const ROMAN = [
+  "I","II","III","IV","V","VI","VII","VIII","IX","X",
+  "XI","XII","XIII","XIV","XVI","XVII","XVIII","XIX","XV",
+];
 
 async function main() {
   const present = new Set(await readdir(MANUAL_DIR));
@@ -130,13 +146,17 @@ async function main() {
     const rawTitle = titleMatch ? titleMatch[1].trim() : file;
 
     const isAppendix = file.startsWith("A");
+    const isRoadmap = file.startsWith("00");
     const label = isAppendix
       ? `Appendix ${file[1] === "1" ? "A" : "B"}`
-      : `Volume ${ROMAN[i] ?? i + 1}`;
+      : isRoadmap
+        ? "Volume 0"
+        /* i - 1 because the roadmap occupies index 0 and takes no numeral. */
+        : `Volume ${ROMAN[i - 1] ?? i}`;
 
     // Strip the label from the title — the header renders it separately.
     const title = rawTitle
-      .replace(/^Volume\s+[IVXLC]+\s+—\s+/, "")
+      .replace(/^Volume\s+(?:0|[IVXLC]+)\s+—\s+/, "")
       .replace(/^Appendix\s+[AB]\s+—\s+/, "");
 
     let html = await marked.parse(md.replace(/^#\s+.+$/m, ""));
@@ -175,7 +195,7 @@ async function main() {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Fidato Hospitality Platform — Phase 1 Service Manual</title>
+<title>Fidato Hospitality Platform — Service Manual</title>
 <style>${await readFile(path.join(HERE, "print.css"), "utf8")}</style>
 </head>
 <body>
@@ -184,15 +204,15 @@ async function main() {
   <div class="cover-mark"></div>
   <p class="cover-brand">Fidato Hotels</p>
   <h1>Hospitality Platform</h1>
-  <p class="cover-sub">Phase 1 Service Manual</p>
+  <p class="cover-sub">Service Manual</p>
   <div class="cover-rule"></div>
   <dl class="cover-meta">
-    <dt>Build</dt><dd>Phase 1 — frontend, no backend, no authentication</dd>
-    <dt>Date of record</dt><dd>29 July 2026</dd>
-    <dt>Contents</dt><dd>15 volumes · 2 appendices</dd>
-    <dt>Audience</dt><dd>Engineers, designers and reviewers joining the project</dd>
+    <dt>Build</dt><dd>Phase 2.5 — deployed, in production use</dd>
+    <dt>Date of record</dt><dd>14 August 2026</dd>
+    <dt>Contents</dt><dd>Roadmap · 19 volumes · 2 appendices</dd>
+    <dt>Audience</dt><dd>Engineers, operators and reviewers joining the project</dd>
   </dl>
-  <p class="cover-note">Internal document. Commercial figures in this manual are simulated.</p>
+  <p class="cover-note">Internal document. Commercial figures quoted from Phase 1 are simulated and labelled where they appear.</p>
 </section>
 
 <section class="front">

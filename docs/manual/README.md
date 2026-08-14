@@ -1,10 +1,19 @@
-# Fidato Hospitality Platform — Phase 1 Service Manual
+# Fidato Hospitality Platform — Service Manual
 
-**Build:** Phase 1 (frontend, no backend, no authentication)
-**Date of record:** 29 July 2026
-**Scope of this manual:** every part of the Phase 1 system — what it is, how it works,
-why it was built this way rather than another way, and how to diagnose it when it
-misbehaves.
+**Build:** Phase 2.5 — deployed and in production use
+**Date of record:** 14 August 2026
+**Scope of this manual:** every part of the system — what it is, how it works, why it was
+built this way rather than another way, how it was taken live, and how to diagnose it when
+it misbehaves.
+
+⚠️ **Volumes I–XV describe Phase 1** and were written when that was the whole system. They
+remain accurate about the frontend, the design system and the reasoning, and they are the
+record of how the product was decided. Where they describe *state* — what is deployed, what
+is tested, what exists — **Volume 0 and Volumes XVI–XIX supersede them**, and
+[`../HANDOVER.md`](../HANDOVER.md) supersedes everything.
+
+**Start with [Volume 0](00-roadmap.md)** if you want the programme: where this began, what
+was built when, and where it stands.
 
 ---
 
@@ -31,12 +40,14 @@ most Markdown viewers. Where a diagram would be less clear than a table, a table
 
 | If you are… | Read, in order |
 |---|---|
-| New to the project | I → II → X (skim) → XIV |
+| New to the project | **0** → I → II → XVI → X (skim) |
+| Taking it live, or operating it | **0** → XIX → XVI → XVII |
 | Reviewing the design | IV → V → III |
-| Picking up Phase 2 | II → VI → VII → VIII → XIV |
+| Working on the backend | XVI → VI → VIII → IX |
+| Working on automation | XVII → XVIII |
 | Debugging something | XI first, then the relevant volume |
-| Auditing the rules | IX → XII |
-| Estimating work | X → XIV |
+| Auditing the rules | IX → XVI → XII |
+| Understanding a decision | III (Phase 1) → [`../DECISIONS.md`](../DECISIONS.md) (since) |
 
 ---
 
@@ -44,6 +55,7 @@ most Markdown viewers. Where a diagram would be less clear than a table, a table
 
 | # | Volume | Contents |
 |---|---|---|
+| **0** | [Programme roadmap](00-roadmap.md) | Where this started, what was built when, where it stands, what is left. The whole programme in one volume |
 | **I** | [System overview](01-system-overview.md) | What the platform is, who uses it, the phase plan, what Phase 1 does and does not include |
 | **II** | [Architecture](02-architecture.md) | Layer model, module graph, request lifecycle, rendering pipeline, build output |
 | **III** | [Decision log](03-decision-log.md) | 24 architectural decision records — each with alternatives considered and why they lost |
@@ -57,7 +69,11 @@ most Markdown viewers. Where a diagram would be less clear than a table, a table
 | **XI** | [Diagnostics](11-diagnostics.md) | Symptom → cause → fix. The repair section |
 | **XII** | [Defect log](12-defect-log.md) | The 9 defects found during the build, with root cause analysis |
 | **XIII** | [Verification record](13-verification-record.md) | What was tested, how, what passed, and what could not be tested |
-| **XIV** | [Phase 2 handover](14-phase-2-handover.md) | The migration to Firebase, file by file, with effort estimates |
+| **XIV** | [Phase 2 handover](14-phase-2-handover.md) | The migration *plan*. ⚠️ Superseded by XVI where the two disagree — Spark has no Cloud Functions |
+| **XVI** | [Phase 2 as built](16-phase-2-as-built.md) | What was actually constructed: auth, rules, the Spark constraints, and where the build departed from the plan |
+| **XVII** | [Automation and n8n](17-automation-and-n8n.md) | The queue, the webhook, the voucher and PDF, email, Drive, WhatsApp, and how failure is made visible |
+| **XVIII** | [The booking register](18-booking-register.md) | The 6,626-row historical record: its own database, its own access model, and what its data is actually like |
+| **XIX** | [Launch and operations](19-launch-and-operations.md) | The launch sequence, day-two operations, what cannot be undone, and the known issues at launch |
 | **XV** | [Glossary & index](15-glossary.md) | Domain terms, technical terms, file index |
 
 ### Appendices — reference tables
