@@ -114,9 +114,18 @@ export default function RegisterPage() {
 
   /**
    * ⚠️ Stated plainly instead of rendering a screen with no filters and
-   * no charts. The two causes are a Supabase-side configuration and an
-   * allowlist this app cannot read, so neither is discoverable from
-   * here — and both look exactly like an empty database.
+   * no charts, which is what the coverage gating does on its own.
+   *
+   * ⚠️ It does NOT claim which of the three causes applies, because
+   * they are genuinely indistinguishable from here. A register that was
+   * deliberately emptied and a caller the register will not admit both
+   * return exactly zero rows with a 200. An earlier version of this
+   * message asserted an access problem, and would have accused the
+   * owner of one the moment they cleared the register on purpose.
+   *
+   * Ordered by likelihood at the time of reading: an empty register is
+   * the ordinary case once the platform is live, and the access causes
+   * are the ones that need somebody to go and do something.
    */
   if (noRowsVisible) {
     return (
@@ -127,17 +136,24 @@ export default function RegisterPage() {
             <AlertTriangle className="size-4 text-brand-orange shrink-0 mt-0.5" />
             <div>
               <p className="text-base font-medium text-ink-900">
-                No rows are visible to you
+                The register has no rows to show
               </p>
               <p className="text-sm text-grey-600 mt-1 leading-relaxed">
-                The register answered, so the connection and the key are fine — it
-                returned no rows. That is an access decision made in the register's own
-                database, which this app cannot see into. Either Supabase has not been
-                told to trust this Firebase project (Authentication → Third-Party Auth,
-                project <code>crstest-9a0c5</code>), or your address is not in the{" "}
-                <code>register_access</code> allowlist. Being a CRS Manager here is not
-                enough; the two lists are separate.
+                The register answered normally, so the connection and the key are fine —
+                it returned nothing. Either it is genuinely empty, or it is not showing
+                its rows to you, and this app cannot tell which from here.
               </p>
+              <ul className="text-sm text-grey-600 mt-2 space-y-1 leading-relaxed list-disc pl-5">
+                <li>The register really is empty — nothing has been entered or imported yet.</li>
+                <li>
+                  Supabase has not been told to trust this Firebase project —
+                  Authentication → Third-Party Auth, project <code>crstest-9a0c5</code>.
+                </li>
+                <li>
+                  Your address is not in the <code>register_access</code> allowlist. Being a
+                  CRS Manager in this app is not enough; the two lists are separate.
+                </li>
+              </ul>
             </div>
           </CardBody>
         </Card>
