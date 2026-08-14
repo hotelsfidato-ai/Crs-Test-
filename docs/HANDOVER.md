@@ -20,6 +20,10 @@ and in git.
 4. Email deliverability is **blocked on DNS** for `fidatohotels.com`.
 5. Six invitations are still pending, one of them Owner-level.
 
+**Verified 2026-08-14:** typecheck clean · 153 unit + 101 rules tests green · build clean ·
+working tree clean and pushed · the deployed bundle matches this build · vouchers are actually
+reaching guests (3 of 3 delivered with PDF). One real gap found — see *In flight*.
+
 ---
 
 ## What is actually live
@@ -46,6 +50,9 @@ was true when written and is not now. Trust this file for state.
 | `customers` | 1 |
 | `companies` | 0 |
 | `settings` | 2 |
+| `roomTypes` | 5 |
+| `automationQueue` | 6 — ⚠️ all `pending`, see *In flight* |
+| `auditLogs` | 9 |
 
 The database was wiped earlier today at the user's request — every record and every user except
 the Owner. What is there now is real use since then, so **empty screens are no longer
@@ -71,6 +78,16 @@ Nothing here can be fixed from inside this repo.
 Nothing is half-finished. The working tree is clean and every change is committed and pushed.
 
 **Flagged but deliberately not done** — out of scope when found:
+
+- ⚠️ **Nothing ever closes an `automationQueue` row.** All 6 rows sit at `pending` with
+  `attempts: 0`, while all 3 reservations record `automation: sent · Delivered`. Delivery is
+  genuinely working — the queue is simply never written back to. Consequence:
+  **Automation → Run history reports a 0% success rate and a pending count that only ever
+  grows**, which contradicts the reservations screen. `AutomationHealthBanner` is unaffected
+  because it counts reservations, not the queue, and correctly shows nothing. The fix is a line
+  in `pushToN8n` — it already knows the outcome and writes it to the reservation, so it can
+  write it to the queue row too — or a write-back node in n8n. Not touched because it changes
+  who owns the queue's lifecycle.
 
 - **"Duplicates" in the sidebar has the same permission bug Import had.** It is gated on
   `canAccess(role, "customer")` but the screen needs the `merge` action, so a salesperson is
