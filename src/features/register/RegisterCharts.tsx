@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -6,7 +7,7 @@ import {
 import { Info, AlertTriangle } from "lucide-react";
 import { Card, CardHeader, CardBody, Skeleton } from "@/components/ui";
 import { money, number } from "@/lib/format";
-import { fetchGrouped, fetchMonthly, fetchTotals } from "./registerRepo";
+import { fetchReport, deriveGrouped, deriveMonthly } from "./registerRepo";
 import type { RegisterQuery, FieldCoverage } from "./types";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -35,51 +36,52 @@ export function RegisterCharts({
 }) {
   const dateField = query.dateField ?? "check_in_date";
 
-  const monthly = useQuery({
-    queryKey: ["register-monthly", query, dateField],
-    queryFn: () => fetchMonthly(query, dateField),
-    enabled: filled.has(dateField) && filled.has("total_revenue"),
+  /* ⚠️ The same query key the totals cards use, so arriving on this tab
+     fetches nothing — and, more to the point, every chart below is
+     folded from ONE set of rows. Six independent scans of the same
+     filtered register is six chances for them to disagree. */
+  const report = useQuery({
+    queryKey: ["register-report", query],
+    queryFn: () => fetchReport(query),
   });
+  const rows = useMemo(() => report.data?.rows ?? [], [report.data]);
+  const loading = report.isLoading;
 
-  const byHotel = useQuery({
-    queryKey: ["register-by", "hotel_name", query],
-    queryFn: () => fetchGrouped("hotel_name", query),
-    enabled: filled.has("hotel_name"),
-  });
-
-  const byBooker = useQuery({
-    queryKey: ["register-by", "booking_done_by", query],
-    queryFn: () => fetchGrouped("booking_done_by", query, 15),
-    enabled: filled.has("booking_done_by"),
-  });
-
-  const byCompany = useQuery({
-    queryKey: ["register-by", "company_or_ta", query],
-    queryFn: () => fetchGrouped("company_or_ta", query),
-    enabled: filled.has("company_or_ta"),
-  });
-
-  const byMealPlan = useQuery({
-    queryKey: ["register-by", "meal_plan", query],
-    queryFn: () => fetchGrouped("meal_plan", query, 14),
-    enabled: filled.has("meal_plan"),
-  });
+  const monthly = useMemo(() => deriveMonthly(rows, dateField), [rows, dateField]);
+  const byHotel = useMemo(() => deriveGrouped(rows, "hotel_name"), [rows]);
+  const byBooker = useMemo(() => deriveGrouped(rows, "booking_done_by", 15), [rows]);
+  const byCompany = useMemo(() => deriveGrouped(rows, "company_or_ta"), [rows]);
+  const byMealPlan = useMemo(() => deriveGrouped(rows, "meal_plan", 14), [rows]);
 
   /* Columns that exist in the schema but hold nothing. Named rather
      than hidden, so it is obvious the report is missing because the
      data is missing — not because somebody forgot to build it. */
   const empty = coverage.filter((c) => c.filled === 0).map((c) => c.field);
 
-  /* How much of `amount_received` is unusable. Surfaced rather than
-     silently dropped: the register is maintained by hand, so the person
-     reading this is the person who can fix it. */
-  const totals = useQuery({
-    queryKey: ["register-totals", query],
-    queryFn: () => fetchTotals(query),
-  });
-
   return (
     <div className="space-y-6 mt-4">
+      {/* ⚠️ Said out loud rather than absorbed. Every figure on this tab
+          is folded in the browser from rows fetched over the network, so
+          a scan that stopped early makes all of them describe part of
+          the register while still looking like totals. */}
+      {report.data?.truncated && (
+        <Card className="border-brand-orange-100 bg-brand-orange-50">
+          <CardBody className="flex items-start gap-3">
+            <AlertTriangle className="size-4 text-brand-orange shrink-0 mt-0.5" />
+            <div>
+              <p className="text-base font-medium text-ink-900">
+                These reports cover part of the register
+              </p>
+              <p className="text-sm text-grey-700 mt-1 leading-relaxed">
+                {number(rows.length)} of {number(report.data.total)} matching rows were
+                read before the safety limit stopped the scan, so every figure and chart
+                below is computed from those. Narrow the filters to bring the count down.
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       {filled.has(dateField) && filled.has("total_revenue") && (
         <Card>
           <CardHeader
@@ -87,11 +89,11 @@ export function RegisterCharts({
             description={`By ${dateField === "check_in_date" ? "check-in" : "booking"} month.`}
           />
           <CardBody>
-            {monthly.isLoading ? (
+            {loading ? (
               <Skeleton className="h-72 w-full" />
             ) : (
               <ResponsiveContainer width="100%" height={288}>
-                <LineChart data={monthly.data ?? []}>
+                <LineChart data={monthly}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e5e8" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 100000)}L`} />
@@ -108,31 +110,31 @@ export function RegisterCharts({
         <GroupedChart
           title="Top properties"
           description="By revenue across the filtered register."
-          state={byHotel}
+          data={byHotel} loading={loading}
           show={filled.has("hotel_name")}
         />
         <GroupedChart
           title="By booker"
           description="Revenue per person who took the booking."
-          state={byBooker}
+          data={byBooker} loading={loading}
           show={filled.has("booking_done_by")}
         />
         <GroupedChart
           title="Top companies and agents"
           description="By revenue."
-          state={byCompany}
+          data={byCompany} loading={loading}
           show={filled.has("company_or_ta")}
         />
         <GroupedChart
           title="Meal plan mix"
           description="Room nights by plan."
-          state={byMealPlan}
+          data={byMealPlan} loading={loading}
           show={filled.has("meal_plan")}
           metric="roomNights"
         />
       </div>
 
-      {(totals.data?.receivedSuspect ?? 0) > 0 && (
+      {(report.data?.totals.receivedSuspect ?? 0) > 0 && (
         <Card className="border-brand-orange-100 bg-brand-orange-50">
           <CardBody className="flex items-start gap-3">
             <AlertTriangle className="size-4 text-brand-orange shrink-0 mt-0.5" />
@@ -141,12 +143,12 @@ export function RegisterCharts({
                 “Amount received” is not reliable yet
               </p>
               <p className="text-sm text-grey-700 mt-1 leading-relaxed">
-                {number(totals.data!.receivedSuspect)} entries hold a value larger than
+                {number(report.data!.totals.receivedSuspect)} entries hold a value larger than
                 the booking itself was worth — bank and UTR reference numbers that landed
                 in a money column when the spreadsheet was imported, often repeated down
                 several rows. Summing the column gives a figure in the quadrillions, so
                 no total is shown for it and there is no chart.
-                {" "}Only {money(totals.data!.receivedPlausible)} across the plausible
+                {" "}Only {money(report.data!.totals.receivedPlausible)} across the plausible
                 entries can be trusted. Correct them in the table and this disappears.
               </p>
             </div>
@@ -177,11 +179,12 @@ export function RegisterCharts({
 }
 
 function GroupedChart({
-  title, description, state, show, metric = "revenue",
+  title, description, data, loading, show, metric = "revenue",
 }: {
   title: string;
   description: string;
-  state: { isLoading: boolean; data?: { label: string; revenue: number; roomNights: number }[] };
+  data: { label: string; revenue: number; roomNights: number }[];
+  loading: boolean;
   show: boolean;
   metric?: "revenue" | "roomNights";
 }) {
@@ -191,11 +194,11 @@ function GroupedChart({
     <Card>
       <CardHeader title={title} description={description} />
       <CardBody>
-        {state.isLoading ? (
+        {loading ? (
           <Skeleton className="h-72 w-full" />
         ) : (
           <ResponsiveContainer width="100%" height={288}>
-            <BarChart data={state.data ?? []} layout="vertical" margin={{ left: 8 }}>
+            <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e5e8" horizontal={false} />
               <XAxis
                 type="number"

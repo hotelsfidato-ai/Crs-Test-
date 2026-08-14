@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { Card, CardBody, Input, NativeSelect, Button, Checkbox } from "@/components/ui";
-import { fetchDistinct } from "./registerRepo";
+import { fetchFilterOptions } from "./registerRepo";
 import type { RegisterQuery } from "./types";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -31,25 +31,19 @@ export function RegisterFilters({
 
   /* Low-cardinality columns only — 82 hotels, 15 bookers, 533
      companies. Cached hard: they change when the register is
-     re-imported, not while somebody is looking at it. */
-  const hotels = useQuery({
-    queryKey: ["register-distinct", "hotel_name"],
-    queryFn: () => fetchDistinct("hotel_name"),
+     re-imported, not while somebody is looking at it.
+
+     ⚠️ One query for all three. They come from a single scan of the
+     register, so splitting them into three react-query entries meant
+     three scans of the same rows. */
+  const options = useQuery({
+    queryKey: ["register-filter-options"],
+    queryFn: fetchFilterOptions,
     staleTime: 10 * 60_000,
-    enabled: filled.has("hotel_name"),
   });
-  const bookers = useQuery({
-    queryKey: ["register-distinct", "booking_done_by"],
-    queryFn: () => fetchDistinct("booking_done_by"),
-    staleTime: 10 * 60_000,
-    enabled: filled.has("booking_done_by"),
-  });
-  const companies = useQuery({
-    queryKey: ["register-distinct", "company_or_ta"],
-    queryFn: () => fetchDistinct("company_or_ta", 600),
-    staleTime: 10 * 60_000,
-    enabled: filled.has("company_or_ta"),
-  });
+  const hotels = options.data?.hotels ?? [];
+  const bookers = options.data?.bookers ?? [];
+  const companies = options.data?.companies ?? [];
 
   const active =
     query.search || query.hotel || query.bookedBy || query.company ||
@@ -71,7 +65,7 @@ export function RegisterFilters({
               onChange={(e) => set({ hotel: e.target.value || undefined })}
             >
               <option value="">All properties</option>
-              {(hotels.data ?? []).map((h) => (
+              {hotels.map((h) => (
                 <option key={h} value={h}>{h}</option>
               ))}
             </NativeSelect>
@@ -83,7 +77,7 @@ export function RegisterFilters({
               onChange={(e) => set({ bookedBy: e.target.value || undefined })}
             >
               <option value="">Anyone</option>
-              {(bookers.data ?? []).map((b) => (
+              {bookers.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
             </NativeSelect>
@@ -95,7 +89,7 @@ export function RegisterFilters({
               onChange={(e) => set({ company: e.target.value || undefined })}
             >
               <option value="">All companies</option>
-              {(companies.data ?? []).map((c) => (
+              {companies.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </NativeSelect>

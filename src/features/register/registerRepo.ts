@@ -104,28 +104,127 @@ export async function fetchCoverage(): Promise<FieldCoverage[]> {
   return (data ?? []) as FieldCoverage[];
 }
 
-/** Distinct values for a filter dropdown, most frequent first. */
-export async function fetchDistinct(field: string, limit = 200): Promise<string[]> {
-  /* ⚠️ Postgres has no DISTINCT in PostgREST, so this pulls the column
-     and reduces client-side. Safe only because the columns it is used
-     on are low cardinality — 82 hotels, 15 bookers, 533 companies.
-     Do not point it at guest_name. */
-  const { data, error } = await registerDb()
-    .from("register_bookings")
-    .select(field)
-    .not(field, "is", null)
-    .limit(7000);
-  if (error) throw new Error(describeRegisterError(error));
+/* ══════════════════════════════════════════════════════════════════
+   READING MORE ROWS THAN THE SERVER WILL SEND AT ONCE
 
+   ⚠️ PostgREST caps every response. Supabase's "Max rows" setting is
+   1,000 out of the box, and it is applied SILENTLY — ask for 10,000
+   and you get 1,000 with a 200 and no warning. Nothing about the
+   response says it was cut.
+
+   Every dropdown and every chart here is built by reducing rows in the
+   browser, because PostgREST has no DISTINCT and no SUM. So a cap does
+   not just shorten a list, it makes every figure wrong: a "total
+   revenue" over the first 1,000 of 6,626 rows is not a total, and a
+   properties dropdown built from them lists whichever properties
+   happened to appear.
+
+   Hence paging. The row count comes from the Content-Range header,
+   which reports the TRUE total even when the body was capped, so the
+   loop knows how many rows it is owed and cannot mistake a capped page
+   for the last one.
+   ══════════════════════════════════════════════════════════════════ */
+
+/** Requested page size. The server may send fewer; the loop adapts. */
+const PAGE = 1000;
+
+/**
+ * A ceiling, so a mis-set filter cannot walk a million-row table and
+ * hang the browser. Comfortably above the register's 6,626.
+ */
+const MAX_ROWS = 60_000;
+
+export interface AllRows {
+  rows: Record<string, unknown>[];
+  /** True when MAX_ROWS stopped the loop — anything derived is partial. */
+  truncated: boolean;
+  /** The register's true row count for these filters, per the server. */
+  total: number;
+}
+
+/**
+ * Every row matching the filters, paged past the server's cap.
+ *
+ * ⚠️ Ordered by `excel_row_num`. Paging without an ORDER BY is not a
+ * smaller version of the right answer — Postgres may order two pages
+ * differently, so rows come back twice or never. The column is unique
+ * and never null, which is what makes it usable as the page key.
+ */
+async function fetchAllRows(select: string, q: RegisterQuery): Promise<AllRows> {
+  const rows: Record<string, unknown>[] = [];
+  let total = 0;
+  let offset = 0;
+
+  for (;;) {
+    let builder = registerDb()
+      .from("register_bookings")
+      .select(select, { count: offset === 0 ? "exact" : undefined })
+      .order("excel_row_num", { ascending: true });
+    builder = applyFilters(builder, q);
+
+    const { data, error, count } = await builder.range(offset, offset + PAGE - 1);
+    if (error) throw new Error(describeRegisterError(error));
+
+    const batch = (data ?? []) as unknown as Record<string, unknown>[];
+    if (offset === 0) total = count ?? batch.length;
+    rows.push(...batch);
+
+    /* An empty page means the end regardless of what the count said —
+       rows can be deleted between requests. */
+    if (!batch.length) break;
+    offset += batch.length;
+    if (rows.length >= total) break;
+    if (rows.length >= MAX_ROWS) return { rows, truncated: true, total };
+  }
+
+  return { rows, truncated: false, total };
+}
+
+/** Distinct values in a column, most frequent first. */
+export function distinctValues(
+  rows: Record<string, unknown>[], field: string, limit: number,
+): string[] {
   const counts = new Map<string, number>();
-  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+  for (const row of rows) {
     const value = String(row[field] ?? "").trim();
     if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
   }
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([value]) => value);
+}
+
+export interface FilterOptions {
+  hotels: string[];
+  bookers: string[];
+  companies: string[];
+}
+
+/**
+ * Everything the three dropdowns offer, in one pass over the register.
+ *
+ * ⚠️ Deliberately UNFILTERED. These are the choices available, not the
+ * choices consistent with the current selection — narrowing them by the
+ * active filter is how a dropdown loses the option you are trying to
+ * switch to.
+ *
+ * ⚠️ One paged scan for all three, not three. Each is a walk over 6,626
+ * rows, and the columns are cheap to carry together; separately this was
+ * three times the requests for the same data.
+ *
+ * Reduced in the browser because PostgREST has no DISTINCT. Built from a
+ * single capped page, as it was, the properties dropdown listed a
+ * fraction of the 82 properties and companies a fraction of the 533 —
+ * and a different fraction each load, there being no ORDER BY either.
+ */
+export async function fetchFilterOptions(): Promise<FilterOptions> {
+  const { rows } = await fetchAllRows("hotel_name,booking_done_by,company_or_ta", {});
+  return {
+    hotels: distinctValues(rows, "hotel_name", 200),
+    bookers: distinctValues(rows, "booking_done_by", 200),
+    companies: distinctValues(rows, "company_or_ta", 600),
+  };
 }
 
 /**
@@ -177,22 +276,7 @@ export interface Totals {
   receivedSuspect: number;
 }
 
-export async function fetchTotals(q: RegisterQuery = {}): Promise<Totals> {
-  /* PostgREST cannot SUM, so this pulls only the numeric columns for
-     the filtered set and folds them. Four numbers per row over 6,626
-     rows is a few hundred KB — acceptable, and it keeps the totals
-     honest against the filters rather than the page. */
-  let builder = registerDb()
-    .from("register_bookings")
-    .select(
-      "total_revenue,room_nights,amount_received,commission_amount,booking_status_normalised",
-    );
-  builder = applyFilters(builder, q);
-
-  const { data, error } = await builder.limit(10_000);
-  if (error) throw new Error(describeRegisterError(error));
-
-  const rows = (data ?? []) as unknown as Record<string, unknown>[];
+export function deriveTotals(rows: Record<string, unknown>[]): Totals {
   const totals: Totals = {
     bookings: 0, revenue: 0, roomNights: 0, commission: 0,
     cancelled: 0, receivedPlausible: 0, receivedSuspect: 0,
@@ -226,22 +310,13 @@ export interface GroupedRow {
 }
 
 /** Groups the filtered register by a column, for the bar charts. */
-export async function fetchGrouped(
+export function deriveGrouped(
+  rows: Record<string, unknown>[],
   field: "hotel_name" | "booking_done_by" | "company_or_ta" | "meal_plan" | "occupancy_type",
-  q: RegisterQuery = {},
   limit = 12,
-): Promise<GroupedRow[]> {
-  let builder = registerDb()
-    .from("register_bookings")
-    .select(`${field},total_revenue,room_nights`)
-    .not(field, "is", null);
-  builder = applyFilters(builder, q);
-
-  const { data, error } = await builder.limit(10_000);
-  if (error) throw new Error(describeRegisterError(error));
-
+): GroupedRow[] {
   const groups = new Map<string, GroupedRow>();
-  for (const row of (data ?? []) as Record<string, unknown>[]) {
+  for (const row of rows) {
     const label = String(row[field] ?? "").trim();
     if (!label) continue;
     const g = groups.get(label) ?? { label, bookings: 0, revenue: 0, roomNights: 0 };
@@ -260,21 +335,12 @@ export interface MonthlyRow {
   roomNights: number;
 }
 
-export async function fetchMonthly(
-  q: RegisterQuery = {},
+export function deriveMonthly(
+  rows: Record<string, unknown>[],
   dateField: "check_in_date" | "booking_date" = "check_in_date",
-): Promise<MonthlyRow[]> {
-  let builder = registerDb()
-    .from("register_bookings")
-    .select(`${dateField},total_revenue,room_nights`)
-    .not(dateField, "is", null);
-  builder = applyFilters(builder, q);
-
-  const { data, error } = await builder.limit(10_000);
-  if (error) throw new Error(describeRegisterError(error));
-
+): MonthlyRow[] {
   const months = new Map<string, MonthlyRow>();
-  for (const row of (data ?? []) as Record<string, unknown>[]) {
+  for (const row of rows) {
     const raw = String(row[dateField] ?? "");
     if (raw.length < 7) continue;
     const month = raw.slice(0, 7);
@@ -285,4 +351,44 @@ export async function fetchMonthly(
     months.set(month, m);
   }
   return [...months.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ONE SCAN, EVERY REPORT
+
+   ⚠️ The Reports tab used to issue six independent full scans — totals,
+   monthly, and one per bar chart — each capped at whatever the server
+   would send. Six scans of the same rows to answer six questions about
+   them, and paging each separately would have made that forty-two
+   requests. It reads the filtered register once and folds it six ways.
+
+   ⚠️ Shared with the totals cards above the tabs, on the same query
+   key, so switching to Reports fetches nothing new.
+   ══════════════════════════════════════════════════════════════════ */
+
+/** The columns every report is built from. */
+const REPORT_COLUMNS = [
+  "total_revenue", "room_nights", "amount_received", "commission_amount",
+  "booking_status_normalised",
+  "hotel_name", "booking_done_by", "company_or_ta", "meal_plan", "occupancy_type",
+  "check_in_date", "booking_date",
+].join(",");
+
+export interface RegisterReport {
+  totals: Totals;
+  rows: Record<string, unknown>[];
+  /**
+   * ⚠️ True when MAX_ROWS stopped the scan, so every figure below is
+   * computed from part of the register. Surfaced, never swallowed: a
+   * total that quietly describes some of the rows is worse than no
+   * total, because it looks like an answer.
+   */
+  truncated: boolean;
+  /** Rows matching the filters, per the server rather than per the fold. */
+  total: number;
+}
+
+export async function fetchReport(q: RegisterQuery = {}): Promise<RegisterReport> {
+  const { rows, truncated, total } = await fetchAllRows(REPORT_COLUMNS, q);
+  return { totals: deriveTotals(rows), rows, truncated, total };
 }

@@ -9,7 +9,7 @@ import { useSession } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { money, number } from "@/lib/format";
 import { registerConfigured } from "./registerClient";
-import { fetchCoverage, fetchTotals } from "./registerRepo";
+import { fetchCoverage, fetchReport } from "./registerRepo";
 import type { RegisterQuery } from "./types";
 import { RegisterFilters } from "./RegisterFilters";
 import { RegisterTable } from "./RegisterTable";
@@ -57,11 +57,33 @@ export default function RegisterPage() {
     staleTime: 5 * 60_000,
   });
 
-  const totals = useQuery({
-    queryKey: ["register-totals", query],
-    queryFn: () => fetchTotals(query),
+  const report = useQuery({
+    queryKey: ["register-report", query],
+    queryFn: () => fetchReport(query),
     enabled: registerConfigured,
   });
+
+  /**
+   * Whether ANY row is visible, as distinct from whether any column is
+   * filled.
+   *
+   * ⚠️ register_field_coverage runs with security_invoker, so it counts
+   * what the CALLER can see. Someone the register has not admitted gets
+   * a perfectly successful response listing all 18 fields with
+   * `filled: 0` — indistinguishable, to the code below, from a register
+   * whose columns are genuinely empty.
+   *
+   * That is the whole of the reported fault. Every filter and every
+   * chart is gated on `filled`, so an access failure silently removed
+   * the Properties, Booker and Companies dropdowns and all four charts,
+   * and then the Reports tab explained that nothing had been entered in
+   * any of the 18 columns yet. Confident, and wrong.
+   *
+   * `total` is the discriminator: 0 means no rows are visible, which is
+   * never a statement about the columns.
+   */
+  const visibleRows = coverage.data?.[0]?.total ?? 0;
+  const noRowsVisible = coverage.isSuccess && (coverage.data?.length ?? 0) > 0 && visibleRows === 0;
 
   /** A column with nothing in it gets no chart and no filter. */
   const filled = useMemo(() => {
@@ -90,7 +112,40 @@ export default function RegisterPage() {
     );
   }
 
-  const t = totals.data;
+  /**
+   * ⚠️ Stated plainly instead of rendering a screen with no filters and
+   * no charts. The two causes are a Supabase-side configuration and an
+   * allowlist this app cannot read, so neither is discoverable from
+   * here — and both look exactly like an empty database.
+   */
+  if (noRowsVisible) {
+    return (
+      <Page>
+        <PageHeader title="Booking register" />
+        <Card>
+          <CardBody className="flex items-start gap-3">
+            <AlertTriangle className="size-4 text-brand-orange shrink-0 mt-0.5" />
+            <div>
+              <p className="text-base font-medium text-ink-900">
+                No rows are visible to you
+              </p>
+              <p className="text-sm text-grey-600 mt-1 leading-relaxed">
+                The register answered, so the connection and the key are fine — it
+                returned no rows. That is an access decision made in the register's own
+                database, which this app cannot see into. Either Supabase has not been
+                told to trust this Firebase project (Authentication → Third-Party Auth,
+                project <code>crstest-9a0c5</code>), or your address is not in the{" "}
+                <code>register_access</code> allowlist. Being a CRS Manager here is not
+                enough; the two lists are separate.
+              </p>
+            </div>
+          </CardBody>
+        </Card>
+      </Page>
+    );
+  }
+
+  const t = report.data?.totals;
 
   return (
     <Page>
@@ -111,15 +166,15 @@ export default function RegisterPage() {
         <Card className="p-5">
           <Stat
             label="Bookings"
-            value={totals.isLoading ? "…" : number(t?.bookings ?? 0)}
+            value={report.isLoading ? "…" : number(t?.bookings ?? 0)}
             hint="Matching the filters"
           />
         </Card>
         <Card className="p-5">
-          <Stat label="Revenue" value={totals.isLoading ? "…" : money(t?.revenue ?? 0)} />
+          <Stat label="Revenue" value={report.isLoading ? "…" : money(t?.revenue ?? 0)} />
         </Card>
         <Card className="p-5">
-          <Stat label="Room nights" value={totals.isLoading ? "…" : number(t?.roomNights ?? 0)} />
+          <Stat label="Room nights" value={report.isLoading ? "…" : number(t?.roomNights ?? 0)} />
         </Card>
         <Card className="p-5">
           {/* ⚠️ Falls back to Cancelled, NOT to amount_received.
@@ -134,7 +189,7 @@ export default function RegisterPage() {
           <Stat
             label={filled.has("commission_amount") ? "Commission" : "Cancelled"}
             value={
-              totals.isLoading
+              report.isLoading
                 ? "…"
                 : filled.has("commission_amount")
                   ? money(t?.commission ?? 0)
@@ -181,7 +236,11 @@ export default function RegisterPage() {
           {coverage.isLoading ? (
             <Skeleton className="h-96 w-full" />
           ) : (
-            <RegisterCharts query={query} filled={filled} coverage={coverage.data ?? []} />
+            <RegisterCharts
+              query={query}
+              filled={filled}
+              coverage={coverage.data ?? []}
+            />
           )}
         </TabsContent>
       </Tabs>
