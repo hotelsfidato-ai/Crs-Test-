@@ -13,10 +13,12 @@ and in git.
 
 ## The five-line version
 
-1. **v1.0.0 released 2026-09-11** (tag `v1.0.0`): Daily sales report, import tagged to a
-   salesperson, company contacts with Salesperson and Details filters. Rules, 181 indexes and
-   hosting all deployed; the one live company was backfilled with `detailTags` and `nameKey`.
-2. Live at https://crstest-9a0c5.web.app
+1. **v1.1.0 live 2026-09-11** (tag `v1.1.0`): room types import, fixing rows on the review
+   screen, same property name in two cities. v1.0.0 the same day brought the Daily sales report
+   and import tagged to a salesperson.
+2. **The 28 properties and 104 room types are LIVE** (1,301 rooms), loaded from the checked
+   spreadsheets in `D:\fidato data\`. Room counts are still missing for 5 properties and
+   Grand Majestic has no room types; see *In flight*.
 3. **Phase 2 of [`PLAN.md`](PLAN.md) (real paging, true totals, database search, bounded
    pickers) must land before the real company and customer lists are imported.**
 4. **The booking register is NOT yet cleared**, and everything blocked below is a Supabase or
@@ -30,17 +32,17 @@ and in git.
 
 | | |
 |---|---|
-| Hosting | https://crstest-9a0c5.web.app · v1.0.0 |
+| Hosting | https://crstest-9a0c5.web.app · v1.1.0 |
 | Firestore rules | Deployed with v1.0.0 (adds `dsrVisits`, `dsrDays`) |
 | Firestore indexes | 181 of the 200 Spark allows, generated from `src/data/queryPlan.ts` |
 | Firebase project | `crstest-9a0c5` · Spark plan |
-| Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` · **public**, `main` and tag `v1.0.0` pushed |
-| Tests | 198 unit · 122 rules · typecheck and build clean |
+| Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` · **public**, `main` and tags `v1.0.0`, `v1.1.0` pushed |
+| Tests | 216 unit · 122 rules · typecheck and build clean |
 
 `CLAUDE.md` carries orientation and traps only, and points here for state. **Keep it that way:**
 state in a file nobody rewrites is state that goes quietly wrong.
 
-### Live data, as of 2026-09-10
+### Live data, as of 2026-09-11
 
 | Collection | Documents |
 |---|---|
@@ -49,8 +51,10 @@ state in a file nobody rewrites is state that goes quietly wrong.
 | `companies` | 1 |
 | `settings` | 2 — `org` (brand, GSTIN, address) and `webhook` (n8n url, secret, enabled) |
 | `automationQueue` | 8 — ⚠️ all will sit at `pending`; nothing closes them |
-| `auditLogs` | 8 |
-| `hotels`, `reservations`, `invoices` | **0** — no properties yet, so no booking can be raised |
+| `auditLogs` | 10 (two record the property and room type load) |
+| `hotels` | **28**, loaded 2026-09-11 from `fidato-hotels-template (2) (1).xlsx` with the four review-screen corrections (Silvanus IFSC cleared, Khandela 4 stars, Kala Sagar and Sadanand account numbers without "A/c No.") |
+| `roomTypes` | **104** (1,301 rooms): 93 from the fact sheets (`Fidato room types - verified.xlsx`), 11 from the rate sheet with no counts (`Fidato room types - rate sheet only.xlsx`) |
+| `reservations`, `invoices` | **0**, bookings can now be raised against the 27 properties with room types |
 
 Cleared: reservations, customers, companies, hotels, roomTypes, seasons, inventory, invoices,
 payments, commissions, automationQueue, automationRuns, auditLogs, notifications, counters,
@@ -101,6 +105,24 @@ security items below, Finance invoicing, commissions) are not started. The manua
 
 **Known with v1.0.0:** a salesperson only searches their own book, so two salespeople can each
 create the same company from a DSR visit. The desk sees both; merging companies is not built.
+
+**Room data still owed by the hotels** (the audit is `D:\fidato data\Fidato room audit - 28
+properties.xlsx`):
+- Counts for Stone Leaf, Winway, Grand Lucent, De-Lush and Patria (room types are live with 0,
+  which the booking wizard reads as "Room count not set" and does not cap).
+- Grand Majestic (Shimla): no room types in any file, so it cannot be booked.
+- Six fact-sheet totals disagree with the property file: Taj Pearl 24/40, Silvanus 60/74,
+  Durgapur 83/108, Fiori 57/58, Ayati 30/33, BLVD 64/62.
+- Three rate-sheet categories are on no fact sheet and so not in the system: Silvanus "Forest
+  Room with Private Pool", Peerless Kolkata "Club Room", Centre Point "Studio (4 pax)".
+Fix them in the spreadsheet and upload it from Import → Room types: an existing room type is
+updated, never duplicated.
+
+**Loaded outside the app:** the 2026-09-11 property and room type load went straight to
+Firestore through the Firebase CLI's login, not through the Import screen, because the in-app
+browser cannot sign in to production. The documents were built by the app's own import code
+(`HOTEL_IMPORT`, `ROOM_TYPE_IMPORT`, `HOTEL_DEFAULTS`), written create-only, and read back and
+compared field by field.
 
 **The launch wipe is half-finished** — Firestore is done, the register is not. See *Blocked*.
 
