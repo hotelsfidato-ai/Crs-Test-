@@ -16,7 +16,7 @@ and in git.
 1. **v1.1.0 live 2026-09-11** (tag `v1.1.0`): room types import, fixing rows on the review
    screen, same property name in two cities. v1.0.0 the same day brought the Daily sales report
    and import tagged to a salesperson.
-2. **The 28 properties and 104 room types are LIVE** (1,301 rooms), loaded from the checked
+2. **The 28 properties and 105 room types are LIVE** (1,340 rooms), loaded from the checked
    spreadsheets in `D:\fidato data\`. Room counts are still missing for 5 properties and
    Grand Majestic has no room types; see *In flight*.
 3. **Phase 2 of [`PLAN.md`](PLAN.md) (real paging, true totals, database search, bounded
@@ -116,8 +116,8 @@ properties.xlsx`):
   24/40, Fiori 57/58, Ayati 30/33 and BLVD 64/62. Silvanus (website, 74) and Durgapur (directory,
   108) were corrected on 2026-09-11; Durgapur's old "Executive Premium Room" is set to 0 and should
   be removed from its Rooms tab.
-- Three rate-sheet categories are on no fact sheet and so not in the system: Silvanus "Forest
-  Room with Private Pool", Peerless Kolkata "Club Room", Centre Point "Studio (4 pax)".
+- Two rate-sheet categories are on no fact sheet and so not in the system: Peerless Kolkata
+  "Club Room" and Centre Point "Studio (4 pax)".
 Fix them in the spreadsheet and upload it from Import → Room types: an existing room type is
 updated, never duplicated.
 
