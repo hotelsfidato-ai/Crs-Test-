@@ -74,7 +74,7 @@ export function CommissionDialog({
 
       <DialogContent
         title="Commercial terms"
-        description={`${hotelName} — visible to Owner and Admin only.`}
+        description={`${hotelName}. Visible to Owner and Admin only.`}
         footer={
           <>
             <DialogClose asChild>

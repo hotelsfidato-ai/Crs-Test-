@@ -92,7 +92,7 @@ export class ErrorBoundary extends Component<Props, State> {
               This screen stopped working
             </h1>
             <p className="text-base text-grey-600 mt-1.5 leading-relaxed">
-              Nothing was saved or lost — the failure is in displaying this page, not in
+              Nothing was saved or lost. The failure is in displaying this page, not in
               your data. The details below are what a developer needs.
             </p>
           </div>

@@ -42,7 +42,7 @@ export function AutomationBadge({
   const a = reservation.automation;
   if (!a) {
     return compact ? (
-      <span className="text-sm text-grey-400">—</span>
+      <span className="text-sm text-grey-400">-</span>
     ) : null;
   }
 

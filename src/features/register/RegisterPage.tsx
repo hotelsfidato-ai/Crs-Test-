@@ -139,14 +139,14 @@ export default function RegisterPage() {
                 The register has no rows to show
               </p>
               <p className="text-sm text-grey-600 mt-1 leading-relaxed">
-                The register answered normally, so the connection and the key are fine —
+                The register answered normally, so the connection and the key are fine;
                 it returned nothing. Either it is genuinely empty, or it is not showing
                 its rows to you, and this app cannot tell which from here.
               </p>
               <ul className="text-sm text-grey-600 mt-2 space-y-1 leading-relaxed list-disc pl-5">
-                <li>The register really is empty — nothing has been entered or imported yet.</li>
+                <li>The register really is empty: nothing has been entered or imported yet.</li>
                 <li>
-                  Supabase has not been told to trust this Firebase project —
+                  Supabase has not been told to trust this Firebase project:
                   Authentication → Third-Party Auth, project <code>crstest-9a0c5</code>.
                 </li>
                 <li>
@@ -167,7 +167,7 @@ export default function RegisterPage() {
     <Page>
       <PageHeader
         title="Booking register"
-        description="The digitised booking register. Separate from CRS reservations — this is the historical record."
+        description="The digitised booking register. Separate from CRS reservations, this is the historical record."
         badge={
           <StatusPill tone={mayEdit ? "success" : "neutral"} dot={false}>
             {mayEdit ? "Editable" : "Read only"}

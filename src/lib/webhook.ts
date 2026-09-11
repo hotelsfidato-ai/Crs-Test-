@@ -130,7 +130,7 @@ export function sampleReservationPayload(): WebhookPayload {
         phone: "+91 90000 00000",
       },
       hotel: { name: "Sample Property", city: "Pune" },
-      voucher: { subject: "Booking confirmed — Sample Property" },
+      voucher: { subject: "Booking confirmed: Sample Property" },
     },
   };
 }

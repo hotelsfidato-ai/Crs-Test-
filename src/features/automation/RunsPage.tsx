@@ -99,7 +99,7 @@ export default function RunsPage() {
         e.lastError ? (
           <span className="text-sm text-brand-red">{e.lastError}</span>
         ) : (
-          <span className="text-sm text-grey-400">—</span>
+          <span className="text-sm text-grey-400">-</span>
         ),
     },
   ];

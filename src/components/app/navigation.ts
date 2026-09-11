@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Building2, CalendarCheck, Hotel, Receipt,
   BarChart3, Workflow, Bell, Sparkles, Settings, ShieldCheck,
   CalendarRange, GitMerge, Upload, FileText, Wallet,
-  Percent, History, Plug, ScrollText, UserCog, Palette, BookOpen,
+  Percent, History, Plug, ScrollText, UserCog, Palette, BookOpen, ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 import { canAccess, canImportAnything, type Resource, type Role } from "@/lib/permissions";
@@ -68,6 +68,10 @@ const SECTIONS: NavSection[] = [
         ],
       },
       { label: "Companies", to: "/crm/companies", icon: Building2, resource: "company", matchPrefix: true },
+      /* The daily sales report — each salesperson's log of visits. Sits with
+         the sales work it records, not under reporting: salespeople fill it
+         in every day. */
+      { label: "Daily sales report", to: "/dsr", icon: ClipboardList, resource: "dsr" },
     ],
   },
   {

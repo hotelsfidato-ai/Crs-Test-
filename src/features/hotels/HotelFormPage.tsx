@@ -382,7 +382,7 @@ export default function HotelFormPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
                 label="Account name"
-                hint="Exactly as the bank holds it — a mismatch fails the transfer"
+                hint="Exactly as the bank holds it. A mismatch fails the transfer"
               >
                 {(p) => (
                   <Input
@@ -439,7 +439,7 @@ export default function HotelFormPage() {
 
             <p className="text-xs text-grey-500 leading-relaxed">
               The voucher shows this block only when an account name and number are
-              both present — a bare IFSC, or an account with nobody to pay, is worse
+              both present. A bare IFSC, or an account with nobody to pay, is worse
               on a guest's document than no bank section at all.
             </p>
           </CardBody>

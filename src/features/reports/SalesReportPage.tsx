@@ -66,7 +66,7 @@ export default function SalesReportPage() {
             {r.cancellations}
           </StatusPill>
         ) : (
-          <span className="text-grey-400">—</span>
+          <span className="text-grey-400">-</span>
         ),
     },
     {
@@ -104,14 +104,14 @@ export default function SalesReportPage() {
         <Card className="p-5">
           <Stat
             label="Top performer"
-            value={best ? (best.name.split(" ")[0] ?? best.name) : "—"}
+            value={best ? (best.name.split(" ")[0] ?? best.name) : "-"}
             hint={best ? moneyCompact(best.revenue) : undefined}
           />
         </Card>
         <Card className="p-5">
           <Stat
             label="Avg per head"
-            value={rows.length ? moneyCompact(totalRevenue / rows.length) : "—"}
+            value={rows.length ? moneyCompact(totalRevenue / rows.length) : "-"}
           />
         </Card>
       </div>

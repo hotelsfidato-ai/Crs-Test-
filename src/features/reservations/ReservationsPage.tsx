@@ -105,7 +105,7 @@ export default function ReservationsPage() {
         title="Reservations"
         description={
           role === "salesperson"
-            ? `Bookings on your accounts — scoped to ${ROLE_LABELS[role]}`
+            ? `Bookings on your accounts, scoped to ${ROLE_LABELS[role]}`
             : role === "hotel_manager"
               ? "Bookings at your property"
               : "Every booking across the 32-property portfolio"

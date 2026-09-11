@@ -94,7 +94,7 @@ export default function CommissionsPage() {
         <Card className="p-5">
           <Stat
             label="Top earner"
-            value={rows[0] ? rows[0].city : "—"}
+            value={rows[0] ? rows[0].city : "-"}
             hint={rows[0] ? moneyCompact(rows[0].commission) : undefined}
           />
         </Card>

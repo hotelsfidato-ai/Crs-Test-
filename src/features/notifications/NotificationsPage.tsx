@@ -129,7 +129,7 @@ export default function NotificationsPage() {
             description={
               filter === "unread"
                 ? "You are up to date."
-                : "Notifications arrive when something needs your attention — an approval, an overdue invoice, a cancellation."
+                : "Notifications arrive when something needs your attention: an approval, an overdue invoice, a cancellation."
             }
             action={
               filter === "unread" && (

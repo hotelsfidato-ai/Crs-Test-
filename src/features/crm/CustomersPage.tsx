@@ -42,7 +42,7 @@ export default function CustomersPage() {
             <p className="font-medium text-ink-900 truncate flex items-center gap-1.5">
               {c.fullName}
               {c.vip && (
-                <Tooltip content="VIP — notify the property before arrival">
+                <Tooltip content="VIP: notify the property before arrival">
                   <Star className="size-3 fill-brand-yellow text-brand-yellow shrink-0" />
                 </Tooltip>
               )}
@@ -78,7 +78,7 @@ export default function CustomersPage() {
     },
     {
       key: "totalRevenue", header: "Revenue", numeric: true, sortable: true,
-      cell: (c) => (c.totalRevenue ? money(c.totalRevenue) : <span className="text-grey-400">—</span>),
+      cell: (c) => (c.totalRevenue ? money(c.totalRevenue) : <span className="text-grey-400">-</span>),
     },
     {
       key: "ownerName", header: "Lead owner", hideBelow: "lg",
@@ -96,7 +96,7 @@ export default function CustomersPage() {
         title="Customers"
         description={
           role === "salesperson"
-            ? `Guests and contacts on your accounts — scoped to ${ROLE_LABELS[role]}`
+            ? `Guests and contacts on your accounts, scoped to ${ROLE_LABELS[role]}`
             : "Every guest and booking contact across the platform"
         }
         actions={

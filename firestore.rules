@@ -393,6 +393,82 @@ service cloud.firestore {
     }
 
     /* ══════════════════════════════════════════════════════════════
+       DSR — THE DAILY SALES REPORT
+       One visit per dsrVisits document; one dsrDays document per
+       salesperson per day for the sheet's other content.
+
+       ⚠️ SAME DAY ONLY. A salesperson (or a manager, for their own)
+       adds and corrects entries until their day ends; after that the
+       entry is the record and only the desk — Owner, Admin, CRS Manager
+       — may change it. The owner chose this on 2026-09-10. lib/dsr.ts
+       mirrors it to decide which buttons render; change both.
+       ══════════════════════════════════════════════════════════════ */
+
+    function dsrDesk() {
+      return isAnyRole(['owner', 'admin', 'crs_manager']);
+    }
+
+    function dsrField() {
+      return isAnyRole(['salesperson', 'manager']);
+    }
+
+    /* Today as yyyymmdd, in INDIA time — UTC + 5:30.
+       ⚠️ Rules can do arithmetic on the clock but cannot format a date
+       string, which is why DSR documents store `day` as an integer and
+       nothing else: a second, string copy could disagree with this and
+       an entry would display one day and lock on another. */
+    function istToday() {
+      let t = request.time + duration.value(330, 'm');
+      return t.year() * 10000 + t.month() * 100 + t.day();
+    }
+
+    /* The caller's own entry, for today. */
+    function ownToday(data) {
+      return dsrField() && data.ownerId == myUserId() && data.day == istToday();
+    }
+
+    /* ⚠️ Owner and day may never move on an edit. Without this a
+       salesperson could reach a locked entry by rewriting its day to
+       today, or push their visit onto a colleague's report. */
+    function keepsOwnerAndDay() {
+      return request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.day == resource.data.day;
+    }
+
+    function validDsrVisit() {
+      let d = request.resource.data;
+      return d.day is int && d.ownerId is string
+        && d.companyName is string && d.companyName.size() > 0
+        && d.visitType in ['introduction', 'courtesy', 'follow_up', 'meeting', 'contract', 'not_met'];
+    }
+
+    match /dsrVisits/{visitId} {
+      /* The team's managers and the desk read everyone's; a salesperson
+         reads their own. Finance and viewers read none — this is sales
+         management, not accounting. */
+      allow read: if isAnyRole(['owner', 'admin', 'crs_manager', 'manager'])
+        || (isRole('salesperson') && resource.data.ownerId == myUserId());
+
+      allow create: if validDsrVisit() && (dsrDesk() || ownToday(request.resource.data));
+      allow update: if validDsrVisit() && keepsOwnerAndDay()
+        && (dsrDesk() || ownToday(resource.data));
+      allow delete: if dsrDesk() || ownToday(resource.data);
+    }
+
+    match /dsrDays/{dayId} {
+      allow read: if isAnyRole(['owner', 'admin', 'crs_manager', 'manager'])
+        || (isRole('salesperson') && resource.data.ownerId == myUserId());
+
+      /* The id is `${ownerId}_${day}`; tying it to the fields stops a
+         note being filed under someone else's id. */
+      allow create, update: if request.resource.data.day is int
+        && dayId == request.resource.data.ownerId + '_' + string(request.resource.data.day)
+        && (resource == null || keepsOwnerAndDay())
+        && (dsrDesk() || ownToday(request.resource.data));
+      allow delete: if dsrDesk() || ownToday(resource.data);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
        FINANCE
        ⚠️ Not visible to salespeople at all. Requirement: the invoice
        module is Owner, Admin and Manager only, plus Finance.

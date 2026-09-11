@@ -1,4 +1,6 @@
 import { MEAL_PLANS, type ImportEntity, type MealPlan } from "@/data/types";
+import { companyDetailTags } from "@/lib/companyDetails";
+import { companyNameKey } from "@/lib/companyName";
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT DESCRIPTORS
@@ -21,6 +23,15 @@ export interface ImportField {
   hint?: string;
   /** Returns an error message, or null when the value is acceptable. */
   validate?: (value: string) => string | null;
+  /**
+   * A failed check WARNS instead of rejecting the row, and the value is
+   * kept as typed.
+   *
+   * ⚠️ For columns that matter less than the row they sit in. On a lead
+   * list the company is the point; a phone number missing a digit is a
+   * thing to fix later, not a reason to lose the company.
+   */
+  lenient?: boolean;
   /** Converts the raw cell into the stored value. */
   transform?: (value: string) => unknown;
 }
@@ -69,6 +80,16 @@ export interface ImportDescriptor {
   label: string;
   /** One line explaining what this import is for. */
   description: string;
+  /**
+   * Whether an imported record belongs to a person's book — and so
+   * whether the importer offers to tag the file to a salesperson.
+   *
+   * ⚠️ Customers and companies, not properties. `ownerId` is what scopes
+   * a salesperson's list, and nothing is scoped by who owns a property:
+   * every role reads every hotel. Offering "belongs to Haider" on a
+   * property import would be a control that changes nothing.
+   */
+  ownable: boolean;
   fields: ImportField[];
   /**
    * Checks that span more than one column, run after the per-field
@@ -81,10 +102,27 @@ export interface ImportDescriptor {
   checkRow?: (mapped: Record<string, string>) => { errors?: string[]; warnings?: string[] };
   /** Fields whose normalised value identifies a duplicate. */
   duplicateKeys: { field: string; normalise: (v: string) => string; label: string }[];
+  /**
+   * Rows that describe the same record, combined into one instead of
+   * rejected as duplicates.
+   *
+   * ⚠️ For lists kept one row per PERSON rather than per record. A lead
+   * sheet with two contacts at the same company repeats the company
+   * name, and the old rule — "same name as row 4" is an error — threw
+   * the second contact away along with it.
+   */
+  groupBy?: {
+    field: string;
+    normalise: (v: string) => string;
+    /** Fields that ought to agree within a group; a disagreement warns. */
+    shouldAgree?: string[];
+  };
   /** Two example rows for the downloadable template. */
   samples: Record<string, string>[];
   /** Builds the stored document from a mapped row. */
   toDocument: (row: Record<string, string>) => Record<string, unknown>;
+  /** Builds ONE document from every row in a group. Required with groupBy. */
+  toDocumentGroup?: (rows: Record<string, string>[]) => Record<string, unknown>;
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -94,6 +132,7 @@ export interface ImportDescriptor {
 export const CUSTOMER_IMPORT: ImportDescriptor = {
   entity: "customers",
   label: "Customers",
+  ownable: true,
   description:
     "Guests and booking contacts. Email and phone must be unique across the platform.",
   fields: [
@@ -218,17 +257,189 @@ export const CUSTOMER_IMPORT: ImportDescriptor = {
    COMPANIES
    ══════════════════════════════════════════════════════════════════ */
 
+/**
+ * The words people actually type in a STATUS column, folded onto the
+ * three the system knows.
+ *
+ * ⚠️ A lead list's status is a sales stage — "interested", "follow up",
+ * "not interested" — and the system's is an account state. Rejecting a
+ * company because its status said "Follow up" loses the company to save
+ * a word, so unknown words import as prospect and the original is kept
+ * in the notes. Add the owner's real vocabulary here once it is known.
+ */
+const COMPANY_STATUS_WORDS: Record<string, "active" | "prospect" | "dormant"> = {
+  active: "active", customer: "active", client: "active", existing: "active",
+  converted: "active", won: "active", booked: "active", onboarded: "active",
+  live: "active", regular: "active", confirmed: "active", ongoing: "active",
+
+  prospect: "prospect", lead: "prospect", new: "prospect", interested: "prospect",
+  followup: "prospect", inprogress: "prospect", pending: "prospect",
+  contacted: "prospect", meeting: "prospect", meetingdone: "prospect",
+  hot: "prospect", warm: "prospect", cold: "prospect", negotiation: "prospect",
+  proposalsent: "prospect", quoted: "prospect", quotationsent: "prospect",
+  callback: "prospect", open: "prospect",
+
+  dormant: "dormant", inactive: "dormant", notinterested: "dormant", lost: "dormant",
+  closed: "dormant", dead: "dormant", rejected: "dormant", noresponse: "dormant",
+  notresponding: "dormant", donotcall: "dormant", dnc: "dormant",
+};
+
+const statusKey = (v: string) => v.toLowerCase().replace(/[^a-z]/g, "");
+
+/** The system status for whatever was typed. Blank or unknown → prospect. */
+export function companyStatusFor(raw: string): "active" | "prospect" | "dormant" {
+  return COMPANY_STATUS_WORDS[statusKey(raw)] ?? "prospect";
+}
+
+/**
+ * Builds one company from every row that names it.
+ *
+ * ⚠️ The single source of truth — `toDocument` is this with one row, so a
+ * lone row and a group of five cannot be built differently.
+ */
+function companyFromRows(rows: Record<string, string>[]): Record<string, unknown> {
+  const first = (key: string) =>
+    rows.map((r) => (r[key] ?? "").trim()).find((v) => v.length > 0) ?? "";
+
+  /* A row naming a person becomes a contact. A row with a number or an
+     email but NO name has nobody to attach them to, so they fall back to
+     the company's own line — rather than a nameless contact nobody can
+     address. */
+  const contacts: { name: string; designation: string; phone: string; email: string }[] = [];
+  const seen = new Set<string>();
+  let spillPhone = "";
+  let spillEmail = "";
+
+  for (const r of rows) {
+    const name = (r.contactPerson ?? "").trim();
+    const phone = (r.contactPhone ?? "").trim();
+    const email = (r.contactEmail ?? "").trim().toLowerCase();
+    if (!name) {
+      spillPhone ||= phone;
+      spillEmail ||= email;
+      continue;
+    }
+    // The same person listed twice is one contact.
+    const key = `${name.toLowerCase()}|${phone.replace(/\D/g, "")}|${email}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    contacts.push({ name, designation: (r.designation ?? "").trim(), phone, email });
+  }
+
+  /* ⚠️ The original STATUS words are kept whenever they were not already
+     one of the system's own. "Interested" and "Follow up" both become
+     prospect, and the difference is exactly what the salesperson needs. */
+  const statusWords = [
+    ...new Set(rows.map((r) => (r.status ?? "").trim()).filter(Boolean)),
+  ].filter((w) => !["active", "prospect", "dormant"].includes(statusKey(w)));
+  const notes = [
+    ...new Set(rows.map((r) => (r.notes ?? "").trim()).filter(Boolean)),
+    ...(statusWords.length ? [`Status in the imported sheet: ${statusWords.join(", ")}`] : []),
+  ].join("\n");
+
+  const name = first("name");
+  const companyEmail = (first("companyEmail") || spillEmail).toLowerCase();
+  const companyPhone = first("companyPhone") || spillPhone;
+  const city = first("city");
+  return {
+    name,
+    legalName: first("legalName") || name,
+    gstin: first("gstin").replace(/\s/g, "").toUpperCase(),
+    email: companyEmail,
+    phone: companyPhone,
+    contacts,
+    /* The Details filter's tags, computed from exactly what is written. */
+    detailTags: companyDetailTags({ city, phone: companyPhone, email: companyEmail, contacts }),
+    nameKey: companyNameKey(name),
+    address: first("address"),
+    city,
+    state: first("state"),
+    industry: first("industry"),
+    tier: slug(first("tier")) || "sme",
+    status: companyStatusFor(first("status")),
+    creditLimit: Number(first("creditLimit").replace(/[^\d.]/g, "")) || 0,
+    paymentTermDays: Number(first("paymentTermDays").replace(/\D/g, "")) || 30,
+    negotiatedDiscountPercent:
+      Number(first("negotiatedDiscountPercent").replace(/[^\d.]/g, "")) || 0,
+    website: first("website"),
+    notes,
+  };
+}
+
 export const COMPANY_IMPORT: ImportDescriptor = {
   entity: "companies",
   label: "Companies",
+  ownable: true,
   description:
-    "Corporate accounts and travel agents. Negotiated discount and payment terms apply " +
-    "automatically to their bookings.",
+    "Corporate accounts, travel agents and leads. Only the company name is required. Contact " +
+    "person, number, email, city and status are all optional. The same company on several rows " +
+    "becomes one company with several contact persons.",
   fields: [
+    /* ⚠️ Order is load-bearing twice. The first three are the columns the
+       review table shows, and the auto-mapper's loose pass walks fields in
+       this order — specific ones must come before generic ones. */
     {
       key: "name", label: "Company Name", required: true,
-      aliases: ["company", "account", "trading name", "organisation", "organization"],
+      aliases: [
+        "company", "account", "account name", "client", "client name", "organisation",
+        "organization", "firm", "business name", "trading name", "corporate",
+        "corporate name", "party name", "name of company", "company / ta", "company or ta",
+      ],
       example: "Meridian Logistics",
+      hint: "The only required column.",
+    },
+    {
+      key: "contactPerson", label: "Contact Person", required: false,
+      aliases: [
+        "contact name", "person", "spoc", "poc", "point of contact", "concerned person",
+        "key contact", "contact", "name of contact person", "contact person name",
+      ],
+      example: "Rohan Kulkarni",
+      hint: "The person you deal with there. Several rows for one company give it several contacts.",
+    },
+    {
+      key: "contactPhone", label: "Contact Number", required: false, lenient: true,
+      aliases: [
+        "contact no", "contact number", "mobile", "mobile no", "mobile number", "phone",
+        "phone no", "phone number", "cell", "cell no", "whatsapp", "whatsapp no",
+        "telephone", "tel", "contact phone",
+      ],
+      example: "+91 98765 43210",
+      hint: "The contact person's number. A malformed one imports with a warning.",
+      validate: phone,
+    },
+    {
+      key: "contactEmail", label: "Email ID", required: false, lenient: true,
+      aliases: [
+        "email", "email address", "e-mail", "e mail", "mail", "mail id", "contact email",
+        "email of contact",
+      ],
+      example: "rohan@meridian.com",
+      hint: "The contact person's email. A malformed one imports with a warning.",
+      validate: email,
+      transform: (v) => v.trim().toLowerCase(),
+    },
+    {
+      key: "designation", label: "Designation", required: false,
+      aliases: ["title", "position", "role", "job title", "post", "designation of contact"],
+      example: "Travel Desk Head",
+    },
+    {
+      key: "city", label: "City", required: false,
+      aliases: ["town", "location", "place", "city name", "base"],
+      example: "Pune",
+    },
+    {
+      key: "status", label: "Status", required: false, lenient: true,
+      aliases: ["account status", "lead status", "stage", "company status"],
+      example: "prospect",
+      hint:
+        "active, prospect or dormant. Words like interested, follow up or not interested are " +
+        "understood; anything else imports as prospect, with the original word kept in the notes.",
+      validate: (v) =>
+        !v || COMPANY_STATUS_WORDS[statusKey(v)]
+          ? null
+          : `"${v}" is not a status the system knows. Imported as prospect, the word kept in notes`,
     },
     {
       key: "legalName", label: "Legal Name", required: false,
@@ -250,32 +461,23 @@ export const COMPANY_IMPORT: ImportDescriptor = {
       transform: (v) => v.replace(/\s/g, "").toUpperCase(),
     },
     {
-      key: "email", label: "Email", required: false,
-      aliases: ["e-mail", "billing email", "company email"],
+      key: "companyPhone", label: "Company Phone", required: false, lenient: true,
+      aliases: ["office phone", "landline", "board line", "board number", "office number", "reception"],
+      example: "+91 20 4890 1200",
+      hint: "The company's own line, as distinct from the contact person's.",
+      validate: phone,
+    },
+    {
+      key: "companyEmail", label: "Company Email", required: false, lenient: true,
+      aliases: ["billing email", "accounts email", "office email", "official email"],
       example: "accounts@meridian.com",
       validate: email,
       transform: (v) => v.trim().toLowerCase(),
     },
     {
-      key: "phone", label: "Phone", required: false,
-      aliases: ["contact", "phone number", "landline"],
-      example: "+91 20 4890 1200",
-      validate: phone,
-    },
-    {
-      key: "contactPerson", label: "Contact Person", required: false,
-      aliases: ["contact name", "primary contact", "spoc"],
-      example: "Rohan Kulkarni",
-    },
-    {
       key: "address", label: "Billing Address", required: false,
       aliases: ["address", "billing", "street"],
       example: "5th Floor, Amar Tech Park, Balewadi",
-    },
-    {
-      key: "city", label: "City", required: true,
-      aliases: ["town"],
-      example: "Pune",
     },
     {
       key: "state", label: "State", required: false,
@@ -294,14 +496,6 @@ export const COMPANY_IMPORT: ImportDescriptor = {
       hint: "key_account, corporate, sme or travel_agent. Defaults to sme.",
       validate: oneOf(["key_account", "corporate", "sme", "travel_agent"]),
       transform: (v) => slug(v) || "sme",
-    },
-    {
-      key: "status", label: "Status", required: false,
-      aliases: ["account status"],
-      example: "active",
-      hint: "active, prospect or dormant. Defaults to prospect.",
-      validate: oneOf(["active", "prospect", "dormant"]),
-      transform: (v) => slug(v) || "prospect",
     },
     {
       key: "creditLimit", label: "Credit Limit", required: false,
@@ -338,7 +532,7 @@ export const COMPANY_IMPORT: ImportDescriptor = {
     },
     {
       key: "notes", label: "Notes", required: false,
-      aliases: ["comment", "remarks"],
+      aliases: ["comment", "comments", "remarks", "remark"],
       example: "Renews contract every April",
     },
   ],
@@ -346,46 +540,34 @@ export const COMPANY_IMPORT: ImportDescriptor = {
     { field: "gstin", normalise: (v) => v.replace(/\s/g, "").toUpperCase(), label: "GSTIN" },
     { field: "name", normalise: (v) => v.trim().toLowerCase(), label: "company name" },
   ],
+  groupBy: {
+    field: "name",
+    normalise: (v) => v.trim().toLowerCase().replace(/\s+/g, " "),
+    shouldAgree: ["city"],
+  },
   samples: [
     {
-      "Company Name": "Meridian Logistics", "Legal Name": "Meridian Logistics Pvt Ltd",
-      GSTIN: "27AABCM1234M1Z5", Email: "accounts@meridian.com", Phone: "+91 20 4890 1200",
-      "Contact Person": "Rohan Kulkarni", "Billing Address": "5th Floor, Amar Tech Park, Balewadi",
-      City: "Pune", State: "Maharashtra", Industry: "Logistics", Tier: "corporate",
-      Status: "active", "Credit Limit": "500000", "Payment Terms": "30", "Discount %": "10",
-      Website: "www.meridian.com", Notes: "Renews contract every April",
+      "Company Name": "Meridian Logistics", "Contact Person": "Rohan Kulkarni",
+      "Contact Number": "+91 98765 43210", "Email ID": "rohan@meridian.com",
+      Designation: "Travel Desk Head", City: "Pune", Status: "active",
+      "Legal Name": "Meridian Logistics Pvt Ltd", GSTIN: "27AABCM1234M1Z5",
+      "Company Phone": "+91 20 4890 1200", "Company Email": "accounts@meridian.com",
+      "Billing Address": "5th Floor, Amar Tech Park, Balewadi", State: "Maharashtra",
+      Industry: "Logistics", Tier: "corporate", "Credit Limit": "500000",
+      "Payment Terms": "30", "Discount %": "10", Website: "www.meridian.com",
+      Notes: "Renews contract every April",
     },
     {
-      "Company Name": "Bluewave Travel", "Legal Name": "Bluewave Travel LLP",
-      GSTIN: "29AABCB5678N1Z2", Email: "ops@bluewave.travel", Phone: "+91 80 4123 7788",
-      "Contact Person": "Meera Nair", "Billing Address": "12 MG Road",
-      City: "Bengaluru", State: "Karnataka", Industry: "Travel", Tier: "travel_agent",
-      Status: "active", "Credit Limit": "250000", "Payment Terms": "15", "Discount %": "12",
-      Website: "www.bluewave.travel", Notes: "",
+      "Company Name": "Bluewave Travel", "Contact Person": "Meera Nair",
+      "Contact Number": "9812345678", "Email ID": "meera@bluewave.travel",
+      Designation: "Operations Manager", City: "Bengaluru", Status: "interested",
+      "Legal Name": "", GSTIN: "", "Company Phone": "", "Company Email": "",
+      "Billing Address": "", State: "Karnataka", Industry: "Travel", Tier: "travel_agent",
+      "Credit Limit": "", "Payment Terms": "", "Discount %": "", Website: "", Notes: "",
     },
   ],
-  toDocument: (row) => ({
-    name: row.name ?? "",
-    legalName: row.legalName || row.name || "",
-    gstin: (row.gstin ?? "").replace(/\s/g, "").toUpperCase(),
-    email: (row.email ?? "").trim().toLowerCase(),
-    phone: row.phone ?? "",
-    contacts: row.contactPerson
-      ? [{ name: row.contactPerson, designation: "", email: row.email ?? "", phone: row.phone ?? "" }]
-      : [],
-    address: row.address ?? "",
-    city: row.city ?? "",
-    state: row.state ?? "",
-    industry: row.industry ?? "",
-    tier: slug(row.tier ?? "") || "sme",
-    status: slug(row.status ?? "") || "prospect",
-    creditLimit: Number((row.creditLimit ?? "").replace(/[^\d.]/g, "")) || 0,
-    paymentTermDays: Number((row.paymentTermDays ?? "").replace(/\D/g, "")) || 30,
-    negotiatedDiscountPercent:
-      Number((row.negotiatedDiscountPercent ?? "").replace(/[^\d.]/g, "")) || 0,
-    website: row.website ?? "",
-    notes: row.notes ?? "",
-  }),
+  toDocument: (row) => companyFromRows([row]),
+  toDocumentGroup: companyFromRows,
 };
 
 /* ══════════════════════════════════════════════════════════════════
@@ -415,6 +597,7 @@ const accountNumber = (v: string): string | null => {
 export const HOTEL_IMPORT: ImportDescriptor = {
   entity: "hotels",
   label: "Properties",
+  ownable: false,
   description:
     "Partner properties. Room types and seasons are configured per property after import. " +
     "Commission is set separately and is visible only to Owner and Admin.",
@@ -528,7 +711,7 @@ export const HOTEL_IMPORT: ImportDescriptor = {
         "beneficiary", "beneficiary name", "a/c name",
       ],
       example: "Ayati Hospitality LLP",
-      hint: "Exactly as the bank holds it — a mismatch fails the transfer.",
+      hint: "Exactly as the bank holds it. A mismatch fails the transfer.",
     },
     {
       key: "bankAccountNumber", label: "Account Number", required: false,
@@ -583,7 +766,7 @@ export const HOTEL_IMPORT: ImportDescriptor = {
 
     return {
       warnings: [
-        `Bank details are incomplete — no ${missing.join(" or ")}. ` +
+        `Bank details are incomplete: no ${missing.join(" or ")}. ` +
         "The property will import, but its vouchers will show no bank details until this is added.",
       ],
     };

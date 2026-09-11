@@ -270,9 +270,9 @@ function RecordOption({
       <p className="text-sm text-grey-500 tabular truncate">{formatPhone(record.phone)}</p>
 
       <dl className="mt-3 pt-3 border-t border-grey-200 space-y-1 text-sm">
-        <Row label="Company" value={record.companyName ?? "—"} />
+        <Row label="Company" value={record.companyName ?? "-"} />
         <Row label="Stays" value={String(record.totalReservations)} />
-        <Row label="Revenue" value={record.totalRevenue ? money(record.totalRevenue) : "—"} />
+        <Row label="Revenue" value={record.totalRevenue ? money(record.totalRevenue) : "-"} />
         <Row label="Created" value={dateShort(record.createdAt)} />
         <Row label="Source" value={record.source.replace("_", " ")} />
       </dl>

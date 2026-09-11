@@ -20,10 +20,10 @@ import type { Payment, OrgSettings } from "@/data/types";
 const BLANK_ORG: OrgSettings = {
   legalName: "Organisation name not set",
   brandName: "Organisation name not set",
-  gstin: "—",
-  registeredAddress: "Registered address not set — Admin → Settings",
-  supportEmail: "—",
-  supportPhone: "—",
+  gstin: "-",
+  registeredAddress: "Registered address not set. Admin → Settings",
+  supportEmail: "-",
+  supportPhone: "-",
   currency: "INR",
   timezone: "Asia/Kolkata",
   financialYearStart: "04-01",
@@ -426,7 +426,7 @@ function RecordPaymentDialog({
           </Field>
 
           <p className="text-sm text-grey-500 leading-relaxed">
-            The invoice status updates automatically — partially paid if some remains, paid
+            The invoice status updates automatically: partially paid if some remains, paid
             once it is settled in full.
           </p>
         </div>

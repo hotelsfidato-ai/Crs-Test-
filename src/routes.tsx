@@ -64,6 +64,7 @@ const AuditLogPage = lazy(() => import("@/features/admin/AuditLogPage"));
 const SettingsPage = lazy(() => import("@/features/admin/SettingsPage"));
 
 const RegisterPage = lazy(() => import("@/features/register/RegisterPage"));
+const DsrPage = lazy(() => import("@/features/dsr/DsrPage"));
 
 const DesignSystemPage = lazy(() => import("@/features/design-system/DesignSystemPage"));
 
@@ -311,6 +312,9 @@ export function AppRoutes() {
 
                 {/* ── AI ── */}
                 <Route path="/ai" element={<Guard resource="ai"><AiPage /></Guard>} />
+
+                {/* ── Daily sales report ── */}
+                <Route path="/dsr" element={<Guard resource="dsr"><DsrPage /></Guard>} />
 
                 {/* ── Data ── */}
                 <Route

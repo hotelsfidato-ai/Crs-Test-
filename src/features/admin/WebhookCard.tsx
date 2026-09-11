@@ -128,7 +128,7 @@ export function WebhookCard() {
             n8n webhook
           </span>
         }
-        description="Where this platform pushes business events. n8n does the sending — email, WhatsApp, Drive."
+        description="Where this platform pushes business events. n8n does the sending: email, WhatsApp, Drive."
         actions={
           <StatusPill tone={data?.enabled ? "success" : "neutral"}>
             {data?.enabled ? "Active" : "Not sending"}
@@ -150,7 +150,7 @@ export function WebhookCard() {
               </p>
               <p className="text-sm text-grey-600 mt-1 leading-relaxed">
                 A URL is configured and its last test succeeded, but “Push events to
-                this endpoint” is unticked — so no booking has been sent to n8n and
+                this endpoint” is unticked, so no booking has been sent to n8n and
                 none will be. Tick it below and save.
               </p>
             </div>
@@ -160,7 +160,7 @@ export function WebhookCard() {
         <Field
           label="Production webhook URL"
           required
-          hint="From the n8n Webhook node — use the Production URL, not the Test URL."
+          hint="From the n8n Webhook node. Use the Production URL, not the Test URL."
           error={url && !looksLikeUrl ? "Must start with http:// or https://" : undefined}
         >
           {(p) => (
@@ -205,7 +205,7 @@ export function WebhookCard() {
           <ShieldAlert className="size-4 text-grey-400 shrink-0 mt-0.5" />
           <p className="text-xs text-grey-600 leading-relaxed">
             Both values are stored in Firestore and sent from the browser, so any signed-in
-            colleague can read them. The secret keeps strangers who guess the URL out — it
+            colleague can read them. The secret keeps strangers who guess the URL out. It
             is not a password, and it should not be reused anywhere that matters.
           </p>
         </div>
@@ -254,7 +254,7 @@ export function WebhookCard() {
           <span>
             <span className="block text-sm text-ink-900">Push events to this endpoint</span>
             <span className="block text-xs text-grey-500 mt-0.5">
-              Bookings are still queued either way — this only decides whether n8n is told
+              Bookings are still queued either way. This only decides whether n8n is told
               immediately or picks them up on its next poll.
             </span>
           </span>
@@ -273,7 +273,7 @@ export function WebhookCard() {
             <span className="block text-xs text-grey-500 mt-0.5">
               Leave this off if n8n converts <code className="px-1 rounded-xs bg-grey-100">
               voucher.html</code> itself (Gotenberg, Browserless, PDFShift). That keeps one
-              renderer and one template. Tick it only when there is no converter to call —
+              renderer and one template. Tick it only when there is no converter to call:
               the push then carries the PDF, at the cost of a second renderer whose output
               will not exactly match the HTML sheet, and about 24 KB per booking.
             </span>
@@ -334,7 +334,7 @@ export function WebhookCard() {
                   reservations in n8n. */}
               {test.ok && !enabled && (
                 <p className="text-xs text-brand-red mt-2 leading-relaxed font-medium">
-                  The test was sent regardless of the setting below — real events are
+                  The test was sent regardless of the setting below. Real events are
                   not. “Push events to this endpoint” is unticked, so no booking will
                   reach n8n until you tick it and save.
                 </p>
@@ -345,7 +345,7 @@ export function WebhookCard() {
 
         {data?.lastTestAt && !test && (
           <p className="text-xs text-grey-500">
-            Last tested {relative(data.lastTestAt)} —{" "}
+            Last tested {relative(data.lastTestAt)}:{" "}
             <span className={data.lastTestStatus === "ok" ? "text-success" : "text-brand-red"}>
               {data.lastTestStatus === "ok" ? "succeeded" : "failed"}
             </span>
@@ -365,7 +365,7 @@ export function WebhookCard() {
                 await navigator.clipboard?.writeText(JSON.stringify(payload, null, 2));
                 toast.success(
                   "Payload copied",
-                  "The same shape a real booking sends — build the workflow against it.",
+                  "The same shape a real booking sends. Build the workflow against it.",
                 );
               })();
             }}

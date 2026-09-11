@@ -73,12 +73,12 @@ export function delta(value: number, digits = 1): string {
      · optional fields (`lastStayAt`, `contractEnd`) are absent by design.
 
    So these return a dash rather than throwing. A missing date shown as
-   "—" is correct and readable; a missing date that destroys the screen
+   "-" is correct and readable; a missing date that destroys the screen
    is neither.
    ══════════════════════════════════════════════════════════════════ */
 
 /** Shown wherever a date is absent or unparseable. */
-export const NO_DATE = "—";
+export const NO_DATE = "-";
 
 /** null when the value cannot become a real date. */
 function toDate(value: string | Date | null | undefined): Date | null {

@@ -206,7 +206,7 @@ export function InviteUserDialog() {
                 <option value="">All properties</option>
                 {(hotels.data ?? []).map((h) => (
                   <option key={h.id} value={h.id}>
-                    {h.name} — {h.city}
+                    {h.name} · {h.city}
                   </option>
                 ))}
               </NativeSelect>

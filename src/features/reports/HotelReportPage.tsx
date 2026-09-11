@@ -79,7 +79,7 @@ export default function HotelReportPage() {
     { key: "bookings", header: "Bookings", numeric: true, cell: (r) => number(r.bookings) },
     {
       key: "averageRate", header: "Avg rate", numeric: true, hideBelow: "md",
-      cell: (r) => (r.averageRate ? money(Math.round(r.averageRate)) : "—"),
+      cell: (r) => (r.averageRate ? money(Math.round(r.averageRate)) : "-"),
     },
     {
       key: "perRoom", header: "Per room", numeric: true, hideBelow: "xl",
@@ -126,13 +126,13 @@ export default function HotelReportPage() {
         <Card className="p-5">
           <Stat
             label="Revenue per room"
-            value={totalRooms ? moneyCompact(totalRevenue / totalRooms) : "—"}
+            value={totalRooms ? moneyCompact(totalRevenue / totalRooms) : "-"}
           />
         </Card>
         <Card className="p-5">
           <Stat
             label="Top property"
-            value={best ? best.city : "—"}
+            value={best ? best.city : "-"}
             hint={best ? best.hotelName : undefined}
           />
         </Card>

@@ -65,8 +65,8 @@ function performance(s: AssistantSnapshot): string {
     return [
       "There are no live reservations yet.",
       "",
-      "Once bookings are created — or customer and company data is imported and the first " +
-        "reservations raised — this will summarise revenue, room nights, average booking value " +
+      "Once bookings are created (or customer and company data is imported and the first " +
+        "reservations raised), this will summarise revenue, room nights, average booking value " +
         "and cancellation rate.",
     ].join("\n");
   }
@@ -118,7 +118,7 @@ function topAccounts(s: AssistantSnapshot): string {
     "",
     ...s.topAccounts.map(
       (a, i) =>
-        `${i + 1}. ${a.name} — ${moneyCompact(a.revenue)} across ${a.bookings} booking` +
+        `${i + 1}. ${a.name}: ${moneyCompact(a.revenue)} across ${a.bookings} booking` +
         `${a.bookings === 1 ? "" : "s"}`,
     ),
   ].join("\n");
@@ -129,21 +129,21 @@ function followUpEmail(s: AssistantSnapshot): string {
   return [
     "Here is a draft you can edit before sending:",
     "",
-    "Subject: Outstanding invoice — Fidato Hotels",
+    "Subject: Outstanding invoice, Fidato Hotels",
     "",
     `Dear ${account} team,`,
     "",
     "I hope you are well. Our records show an invoice that is now past its due date. I have " +
       "attached a copy for your reference.",
     "",
-    "If it has already been settled, please ignore this note and accept my apologies — do send " +
+    "If it has already been settled, please ignore this note and accept my apologies. Do send " +
       "the payment reference so I can reconcile our end.",
     "",
     "If there is a query holding it up, tell me what you need and I will sort it.",
     "",
     "Kind regards",
     "",
-    "— Fidato Hotels",
+    "Fidato Hotels",
   ].join("\n");
 }
 
@@ -165,7 +165,7 @@ export function summariseReservation(r: Reservation): string {
   if (false) {
     parts.push("It is above the ₹50,000 threshold and is waiting on approval.");
   } else if (r.status === "cancelled") {
-    parts.push(`Cancelled — ${r.cancellationReason ?? "no reason recorded"}.`);
+    parts.push(`Cancelled: ${r.cancellationReason ?? "no reason recorded"}.`);
   }
 
   if (r.hotelConfirmationNumber) {
@@ -191,7 +191,7 @@ export function summariseCustomer(c: Customer): string {
     `${c.fullName} has ${c.totalReservations} booking` +
     `${c.totalReservations === 1 ? "" : "s"} worth ${money(c.totalRevenue)}` +
     `${c.companyName ? `, billed to ${c.companyName}` : ""}.` +
-    `${c.vip ? " Flagged VIP — the property is notified before arrival." : ""}` +
+    `${c.vip ? " Flagged VIP. The property is notified before arrival." : ""}` +
     `${c.preferences.length ? ` Preferences: ${c.preferences.join(", ")}.` : ""}`
   );
 }
@@ -211,7 +211,7 @@ export function summariseCompany(c: Company): string {
   parts.push(`Terms are ${c.paymentTermDays} days.`);
   if (c.creditLimit > 0) {
     parts.push(
-      `Credit is ${utilisation}% used${utilisation > 70 ? " — worth a word with finance before the next large booking." : "."}`,
+      `Credit is ${utilisation}% used${utilisation > 70 ? ", worth a word with finance before the next large booking." : "."}`,
     );
   }
   return parts.join(" ");

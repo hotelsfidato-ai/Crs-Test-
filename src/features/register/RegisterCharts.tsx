@@ -144,7 +144,7 @@ export function RegisterCharts({
               </p>
               <p className="text-sm text-grey-700 mt-1 leading-relaxed">
                 {number(report.data!.totals.receivedSuspect)} entries hold a value larger than
-                the booking itself was worth — bank and UTR reference numbers that landed
+                the booking itself was worth: bank and UTR reference numbers that landed
                 in a money column when the spreadsheet was imported, often repeated down
                 several rows. Summing the column gives a figure in the quadrillions, so
                 no total is shown for it and there is no chart.
@@ -165,7 +165,7 @@ export function RegisterCharts({
                 No report yet for {empty.length === 1 ? "one column" : `${empty.length} columns`}
               </p>
               <p className="text-sm text-grey-600 mt-1 leading-relaxed">
-                <span className="font-mono text-xs">{empty.join(", ")}</span> — nothing has
+                <span className="font-mono text-xs">{empty.join(", ")}</span>: nothing has
                 been entered in {empty.length === 1 ? "it" : "them"} yet, so there is
                 nothing to chart. Fill {empty.length === 1 ? "it" : "them"} in from the
                 table and the report appears here on its own.

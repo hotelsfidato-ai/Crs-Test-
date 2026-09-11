@@ -98,7 +98,7 @@ export default function HotelDetailPage() {
          the selling rate on each reservation, because Fidato negotiates
          per booking rather than publishing a rack rate. */
       key: "maxExtraBeds", header: "Extra beds", numeric: true,
-      cell: (rt) => <span className="tabular text-grey-600">{rt.maxExtraBeds || "—"}</span>,
+      cell: (rt) => <span className="tabular text-grey-600">{rt.maxExtraBeds || "-"}</span>,
     },
     {
       key: "amenities", header: "Amenities", hideBelow: "lg",
@@ -207,7 +207,7 @@ export default function HotelDetailPage() {
                   <>
                     This removes the property, its room types and its seasons
                     permanently. <strong>Setting the status to Paused does what you
-                    probably want</strong> — it stops the property appearing in new
+                    probably want</strong>: it stops the property appearing in new
                     bookings and is reversible. This is not.
                     {" "}It is refused outright if any reservation names this property,
                     since those bookings would be left pointing at nothing.
@@ -314,7 +314,7 @@ export default function HotelDetailPage() {
                       title="No room types yet"
                       description={
                         canConfigureRooms
-                          ? "Add at least one room type before taking a booking here — the reservation wizard has nothing to offer until you do."
+                          ? "Add at least one room type before taking a booking here. The reservation wizard has nothing to offer until you do."
                           : "Nobody has configured room types for this property yet."
                       }
                       action={
@@ -430,7 +430,7 @@ export default function HotelDetailPage() {
                   const [name, count] = mix.split(" - ");
                   return (
                     <DetailRow key={i} label={name ?? mix}>
-                      <span className="tabular">{count ?? "—"}</span>
+                      <span className="tabular">{count ?? "-"}</span>
                     </DetailRow>
                   );
                 })}

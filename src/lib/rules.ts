@@ -34,7 +34,7 @@ export const BUSINESS_RULES: BusinessRule[] = [
     id: "BR-01",
     rule: "A reservation is never deleted, only cancelled.",
     rationale:
-      "The commercial history of a booking has to survive the booking itself — for disputes, commission reconciliation and the cancellation report.",
+      "The commercial history of a booking has to survive the booking itself, for disputes, commission reconciliation and the cancellation report.",
     enforcedIn: "rules.ts · canCancelReservation()",
   },
   {

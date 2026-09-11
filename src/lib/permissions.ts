@@ -121,6 +121,15 @@ export const RESOURCES = [
    * docs/supabase/register-security.md.
    */
   "register",
+  /**
+   * The daily sales report — each salesperson's log of the day's visits.
+   *
+   * ⚠️ This grant decides what RENDERS. The same-day lock — a salesperson
+   * may change their own entries only until the day ends — lives in
+   * firestore.rules (match /dsrVisits, /dsrDays) and lib/dsr.ts, because
+   * a grant cannot express "own" or "today".
+   */
+  "dsr",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -171,6 +180,7 @@ export const RESOURCE_LABELS: Record<Resource, string> = {
   audit_log: "Audit log",
   setting: "Settings",
   register: "Booking register",
+  dsr: "Daily sales report",
 };
 
 export const ACTION_LABELS: Record<Action, string> = {
@@ -208,6 +218,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
 
   admin: {
     dashboard: READ,
+    dsr: ["view", "create", "edit", "delete", "export"],
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export", "delete"],
@@ -255,7 +266,22 @@ const MATRIX: Record<Role, ResourceGrants> = {
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export", "delete"],
-    hotel: READ_EXPORT,
+    /**
+     * ⚠️ Adds and corrects properties — including by bulk import — but
+     * does not delete them, and never sees commission.
+     *
+     * The desk onboards the properties it books into; waiting on an
+     * Admin for every new partner hotel stalls the desk. firestore.rules
+     * already admitted crs_manager to create and update hotels — only
+     * this grant was missing, so the database allowed what the interface
+     * never offered.
+     *
+     * ⚠️ Commission is untouched by this. It lives in
+     * hotels/{id}/private/commercial under an Owner/Admin-only rule, and
+     * hotelsRepo.create never writes it, so a property the desk adds has
+     * its commission set afterwards by an Owner or Admin.
+     */
+    hotel: ["view", "create", "edit", "import", "export"],
     room_config: ["view", "create", "edit"],
     invoice: ["view", "create", "export"],
     report: READ_EXPORT,
@@ -264,10 +290,14 @@ const MATRIX: Record<Role, ResourceGrants> = {
     user: READ,
     audit_log: READ,
     register: ["view", "edit", "export"],
+    /* Reads and corrects everyone's DSR, any day. */
+    dsr: ["view", "create", "edit", "delete", "export"],
   },
 
   manager: {
     dashboard: READ,
+    /* Reads the whole team's; keeps and corrects their own, same day. */
+    dsr: ["view", "create", "edit", "export"],
     customer: ["view", "create", "edit", "merge", "import", "export"],
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export"],
@@ -306,6 +336,8 @@ const MATRIX: Record<Role, ResourceGrants> = {
    */
   salesperson: {
     dashboard: READ,
+    /* Their own, and only until the day ends — firestore.rules. */
+    dsr: ["view", "create", "edit"],
     // Scoped further by ownership — see scopeRecords().
     customer: ["view", "create", "export"],
     company: ["view", "create", "export"],
@@ -405,6 +437,46 @@ export function importableBy(role: Role): Resource[] {
  */
 export function canImportAnything(role: Role): boolean {
   return importableBy(role).length > 0;
+}
+
+/**
+ * May this role create records that belong to somebody else — a booking
+ * "for" a salesperson, or an import tagged to one?
+ *
+ * ⚠️ Owner, Admin and CRS Manager. Deliberately NOT a salesperson:
+ * `ownerId` decides whose list a record appears in and whose name its
+ * commission sits against, so letting a salesperson set it would let
+ * them move business onto or off their own name. firestore.rules holds
+ * the same line — writingOwnRecord() pins a salesperson's writes to
+ * their own uid and leaves every other role free.
+ *
+ * ⚠️ Not a Manager either, although the rules would permit it. This
+ * mirrors the booking wizard, which never offered Managers "Booked
+ * for"; the booking and the import answer the same question and must
+ * give the same answer.
+ */
+export function canAssignOwner(role: Role): boolean {
+  return can(role, "edit", "user") || role === "crs_manager";
+}
+
+/** The roles a record can be tagged to — the people who carry a book. */
+export const OWNER_ROLES = ["salesperson", "manager", "crs_manager"] as const satisfies readonly Role[];
+
+/**
+ * Who a record may be tagged to, excluding the person doing the tagging —
+ * they appear separately, as "me".
+ *
+ * ⚠️ Active accounts only. Tagging leads to a disabled account puts them
+ * in a list nobody signs in to read, and nothing on screen would say so.
+ */
+export function assignableOwners<U extends { id: string; role: Role; status: string }>(
+  users: readonly U[],
+  actorId: string,
+): U[] {
+  return users.filter(
+    (u) => u.status === "active" && u.id !== actorId &&
+      (OWNER_ROLES as readonly Role[]).includes(u.role),
+  );
 }
 
 /** Every action a role holds on a resource — used by the admin matrix screen. */

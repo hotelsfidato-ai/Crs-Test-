@@ -119,7 +119,7 @@ const money = (n: number) =>
   `INR ${Math.round(n).toLocaleString("en-IN")}`;
 
 function longDate(iso?: string): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("en-IN", {
@@ -128,7 +128,7 @@ function longDate(iso?: string): string {
 }
 
 function dateTime(iso?: string): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("en-IN", {
@@ -339,7 +339,7 @@ const bankRow = (label: string, value: string) =>
 
 export function renderVoucherHtml(v: VoucherModel): string {
   const row = (label: string, value: string) =>
-    value && value !== "—"
+    value && value !== "-"
       ? `<tr>
            <td style="padding:3px 16px 3px 0;color:${GREY};font-size:12px;white-space:nowrap;vertical-align:top">${escape(label)}</td>
            <td style="padding:3px 0;color:${INK};font-size:12px;font-weight:600">${escape(value)}</td>
@@ -355,7 +355,7 @@ export function renderVoucherHtml(v: VoucherModel): string {
             Room ${room.index} &middot; ${escape(room.roomType)}
           </div>
           <div style="color:${GREY};font-size:11px;margin-top:2px">
-            ${escape(room.mealPlan)} — ${escape(room.mealPlanFull)}${
+            ${escape(room.mealPlan)} · ${escape(room.mealPlanFull)}${
               room.season ? ` &middot; ${escape(room.season)}` : ""
             }
           </div>
@@ -392,7 +392,7 @@ export function renderVoucherHtml(v: VoucherModel): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reservation voucher ${escape(v.reference)} — ${escape(v.org.brandName)}</title>
+<title>Reservation voucher ${escape(v.reference)} · ${escape(v.org.brandName)}</title>
 <style>
   /* ⚠️ Fixed A4 width. This document is printed and emailed far more
      often than it is scrolled, so it is laid out for the page. */
@@ -464,7 +464,7 @@ export function renderVoucherHtml(v: VoucherModel): string {
       <td style="padding:10px 14px;width:25%;border-left:1px solid ${LINE}">
         <div class="label">Payment</div>
         <div style="font-size:13px;font-weight:600;margin-top:3px">
-          ${escape(v.paymentTermCode)} — ${escape(v.paymentTerm)}
+          ${escape(v.paymentTermCode)} · ${escape(v.paymentTerm)}
         </div>
       </td>
       <td style="padding:10px 14px;width:25%;border-left:1px solid ${LINE};text-align:right">
@@ -643,7 +643,7 @@ export function renderVoucherHtml(v: VoucherModel): string {
   <!-- Policies -->
   <div class="label" style="margin:20px 0 6px">Hotel policies</div>
   <ol style="margin:0;padding-left:16px;color:${GREY};font-size:11px;line-height:1.7">
-    <li>Guests must present government photo identity at check in — driving licence, voter ID, Aadhaar or passport.</li>
+    <li>Guests must present government photo identity at check in: driving licence, voter ID, Aadhaar or passport.</li>
     <li>A valid credit card may be required to guarantee incidental charges.</li>
     <li>Group reservations follow the FHRAI-IATO and FHRAI-TAAI agreements.</li>
     <li>Cancellation of conference accommodation follows the signed agreement.</li>
@@ -706,7 +706,7 @@ export function renderVoucherEmail(
   /* Settings first, then the argument, then the built-in default. Serve
      it from the sending domain — see OrgSettings.logoUrl. */
   const logoUrl = v.org.logoUrl?.trim() || logoOverride || LOGO_PNG_URL;
-  const subject = `Booking confirmed — ${v.hotelName}, ${v.checkIn} (${v.reference})`;
+  const subject = `Booking confirmed: ${v.hotelName}, ${v.checkIn} (${v.reference})`;
 
   const text = [
     `Dear ${v.guestName},`,
@@ -728,7 +728,7 @@ export function renderVoucherEmail(
     "Should you need anything further, simply reply to this email.",
     "",
     "With warm regards,",
-    `Reservations — ${v.org.brandName}`,
+    `Reservations, ${v.org.brandName}`,
     v.org.phone,
     v.org.email,
   ]
@@ -747,7 +747,7 @@ export function renderVoucherEmail(
     </td>`;
 
   const detail = (label: string, value: string) =>
-    value && value !== "—"
+    value && value !== "-"
       ? `<tr>
            <td style="padding:2px 12px 2px 0;font-size:12px;color:${GREY};white-space:nowrap">${escape(label)}</td>
            <td style="padding:2px 0;font-size:12px;color:${INK};font-weight:600">${escape(value)}</td>
@@ -761,7 +761,7 @@ export function renderVoucherEmail(
         <td style="padding:9px 6px 9px 0;border-bottom:1px solid ${LINE};vertical-align:top">
           <div style="font-size:12px;font-weight:700;color:${INK}">Room ${room.index} &middot; ${escape(room.roomType)}</div>
           <div style="font-size:11px;color:${GREY};margin-top:2px">
-            ${escape(room.mealPlan)} — ${escape(room.mealPlanFull)}
+            ${escape(room.mealPlan)} · ${escape(room.mealPlanFull)}
           </div>
           ${room.extras ? `<div style="font-size:11px;color:${GREY};margin-top:1px">${escape(room.extras)}</div>` : ""}
         </td>
@@ -853,7 +853,7 @@ export function renderVoucherEmail(
     <p style="margin:0;font-size:14px;color:${INK};line-height:1.6">
       Thank you for choosing ${escape(v.org.brandName)}. We are pleased to confirm your
       booking at <strong>${escape(v.hotelName)}</strong>, ${escape(v.hotelCity)}.
-      This email is your voucher — please present it at check in.
+      This email is your voucher. Please present it at check in.
     </p>
   </td></tr>
 
@@ -997,7 +997,7 @@ export function renderVoucherEmail(
   <tr><td style="padding:18px 26px 0">
     <div style="font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:${GREY};font-weight:700;margin-bottom:5px">Hotel policies</div>
     <ol style="margin:0;padding-left:16px;color:${GREY};font-size:11px;line-height:1.7">
-      <li>Guests must present government photo identity at check in — driving licence, voter ID, Aadhaar or passport.</li>
+      <li>Guests must present government photo identity at check in: driving licence, voter ID, Aadhaar or passport.</li>
       <li>A valid credit card may be required to guarantee incidental charges.</li>
       <li>Special requests are subject to availability at check in.</li>
       <li>Please share your company GST number at check in if the stay is billed to a company.</li>

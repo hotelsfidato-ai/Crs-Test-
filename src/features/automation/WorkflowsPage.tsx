@@ -98,7 +98,7 @@ export default function WorkflowsPage() {
           <EmptyState
             icon={<Workflow />}
             title="No workflows configured"
-            description="Automation workflows fire on platform events — a reservation confirmed, an invoice overdue, a guest checked out."
+            description="Automation workflows fire on platform events: a reservation confirmed, an invoice overdue, a guest checked out."
           />
         </Card>
       ) : (
@@ -113,7 +113,7 @@ export default function WorkflowsPage() {
         <CardBody className="flex items-start gap-3">
           <Zap className="size-4 text-grey-400 shrink-0 mt-0.5" />
           <p className="text-sm text-grey-600 leading-relaxed">
-            These workflows do not execute in Phase 1 — the run history is simulated. In
+            These workflows do not execute in Phase 1; the run history is simulated. In
             Phase 3 each one becomes an n8n workflow triggered by a webhook from the
             platform, and this screen becomes the control surface for enabling, pausing
             and inspecting them.

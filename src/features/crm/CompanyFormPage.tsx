@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useFieldArray, useForm } from "react-hook-form";
+import { Plus, Trash2 } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,14 +15,30 @@ describeError,
 } from "@/components/ui";
 import { NotFound } from "@/features/shared/NotFound";
 
+/* A contact person needs a name; everything else is optional, as it is
+   on the lead sheets they come from. A row left completely blank is
+   dropped on save rather than rejected. */
+const contactSchema = z.object({
+  name: z.string(),
+  designation: z.string(),
+  phone: z.string(),
+  email: z.string().email("Enter a valid email address").or(z.literal("")),
+});
+
+/**
+ * ⚠️ Only the trading name is required. Legal name, industry and city
+ * used to be, which meant an IMPORTED company — where they are usually
+ * blank — could not be edited at all until someone invented values for
+ * them. Legal name falls back to the trading name on save.
+ */
 const schema = z.object({
-  name: z.string().min(1, "Company name is required"),
-  legalName: z.string().min(1, "Legal name is required"),
+  name: z.string().trim().min(1, "Company name is required"),
+  legalName: z.string().optional(),
   tier: z.enum(["key_account", "corporate", "sme", "travel_agent"]),
   status: z.enum(["active", "prospect", "dormant"]),
-  industry: z.string().min(1, "Industry is required"),
+  industry: z.string().optional(),
   gstin: z.string().optional(),
-  city: z.string().min(1, "City is required"),
+  city: z.string().optional(),
   state: z.string().optional(),
   address: z.string().optional(),
   website: z.string().optional(),
@@ -31,7 +48,17 @@ const schema = z.object({
   paymentTermDays: z.coerce.number().min(0).max(180),
   negotiatedDiscountPercent: z.coerce.number().min(0).max(50),
   notes: z.string(),
+  contacts: z.array(contactSchema).superRefine((rows, ctx) => {
+    rows.forEach((r, i) => {
+      const filled = r.designation.trim() || r.phone.trim() || r.email.trim();
+      if (filled && !r.name.trim()) {
+        ctx.addIssue({ code: "custom", path: [i, "name"], message: "Give this contact a name" });
+      }
+    });
+  }),
 });
+
+const BLANK_CONTACT = { name: "", designation: "", phone: "", email: "" };
 
 type FormValues = z.input<typeof schema>;
 
@@ -54,8 +81,11 @@ export default function CompanyFormPage() {
       name: "", legalName: "", tier: "sme", status: "prospect", industry: "",
       gstin: "", city: "", state: "", address: "", website: "", phone: "", email: "",
       creditLimit: 0, paymentTermDays: 30, negotiatedDiscountPercent: 0, notes: "",
+      contacts: [{ ...BLANK_CONTACT }],
     },
   });
+
+  const contactRows = useFieldArray({ control: form.control, name: "contacts" });
 
   useEffect(() => {
     if (existing.data) {
@@ -66,6 +96,11 @@ export default function CompanyFormPage() {
         address: c.address, website: c.website, phone: c.phone, email: c.email,
         creditLimit: c.creditLimit, paymentTermDays: c.paymentTermDays,
         negotiatedDiscountPercent: c.negotiatedDiscountPercent, notes: c.notes,
+        /* One empty row when there are none, so the form shows where a
+           contact goes instead of a bare "Add" button. */
+        contacts: c.contacts.length
+          ? c.contacts.map((p) => ({ ...BLANK_CONTACT, ...p }))
+          : [{ ...BLANK_CONTACT }],
       });
     }
   }, [existing.data, form]);
@@ -73,9 +108,25 @@ export default function CompanyFormPage() {
   const save = useMutation({
     mutationFn: (values: FormValues) => {
       const parsed = schema.parse(values);
+      const payload = {
+        ...parsed,
+        name: parsed.name.trim(),
+        legalName: parsed.legalName?.trim() || parsed.name.trim(),
+        industry: parsed.industry ?? "",
+        city: parsed.city ?? "",
+        /* Blank rows are the form's scaffolding, not data. */
+        contacts: parsed.contacts
+          .map((p) => ({
+            name: p.name.trim(),
+            designation: p.designation.trim(),
+            phone: p.phone.trim(),
+            email: p.email.trim().toLowerCase(),
+          }))
+          .filter((p) => p.name),
+      };
       return isEdit
-        ? companiesRepo.update(id!, parsed, actor)
-        : companiesRepo.create(parsed, actor);
+        ? companiesRepo.update(id!, payload, actor)
+        : companiesRepo.create(payload, actor);
     },
     onSuccess: (company) => {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
@@ -119,7 +170,7 @@ export default function CompanyFormPage() {
                   <Input id={f} aria-describedby={describedBy} invalid={invalid} autoFocus {...form.register("name")} />
                 )}
               </Field>
-              <Field label="Legal name" required error={errors.legalName?.message}>
+              <Field label="Legal name" hint="Defaults to the trading name" error={errors.legalName?.message}>
                 {({ id: f, describedBy, invalid }) => (
                   <Input id={f} aria-describedby={describedBy} invalid={invalid} {...form.register("legalName")} />
                 )}
@@ -146,7 +197,7 @@ export default function CompanyFormPage() {
                   </NativeSelect>
                 )}
               </Field>
-              <Field label="Industry" required error={errors.industry?.message}>
+              <Field label="Industry" error={errors.industry?.message}>
                 {({ id: f, invalid }) => (
                   <NativeSelect id={f} invalid={invalid} {...form.register("industry")}>
                     <option value="">Select…</option>
@@ -158,13 +209,91 @@ export default function CompanyFormPage() {
               </Field>
             </div>
 
+            {/* ── Contact persons ───────────────────────────────────── */}
+            <div className="pt-1">
+              <div className="flex items-baseline justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-base font-medium text-ink-900">Contact persons</p>
+                  <p className="text-sm text-grey-500">
+                    The people you deal with there. The first is the primary contact.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  leadingIcon={<Plus className="size-3.5" />}
+                  onClick={() => contactRows.append({ ...BLANK_CONTACT })}
+                >
+                  Add
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {contactRows.fields.map((row, i) => {
+                  const rowErrors = errors.contacts?.[i];
+                  return (
+                    <div
+                      key={row.id}
+                      className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] items-start rounded-md border border-grey-200 p-3"
+                    >
+                      <Field label="Name" error={rowErrors?.name?.message}>
+                        {({ id: f, invalid }) => (
+                          <Input
+                            id={f} invalid={invalid} placeholder="Rohan Kulkarni"
+                            {...form.register(`contacts.${i}.name`)}
+                          />
+                        )}
+                      </Field>
+                      <Field label="Designation">
+                        {({ id: f }) => (
+                          <Input
+                            id={f} placeholder="Travel Desk Head"
+                            {...form.register(`contacts.${i}.designation`)}
+                          />
+                        )}
+                      </Field>
+                      <Field label="Contact number">
+                        {({ id: f }) => (
+                          <Input id={f} numeric {...form.register(`contacts.${i}.phone`)} />
+                        )}
+                      </Field>
+                      <Field label="Email" error={rowErrors?.email?.message}>
+                        {({ id: f, invalid }) => (
+                          <Input
+                            id={f} type="email" invalid={invalid}
+                            {...form.register(`contacts.${i}.email`)}
+                          />
+                        )}
+                      </Field>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="sm:mt-6"
+                        aria-label={`Remove contact ${i + 1}`}
+                        onClick={() => contactRows.remove(i)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+                {contactRows.fields.length === 0 && (
+                  <p className="text-sm text-grey-400">No contact persons.</p>
+                )}
+              </div>
+            </div>
+
+            {/* ⚠️ The company's OWN line and inbox — a switchboard,
+                accounts@ — as distinct from any contact person's. */}
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Email" error={errors.email?.message}>
+              <Field label="Company email" error={errors.email?.message}>
                 {({ id: f, invalid }) => (
                   <Input id={f} type="email" invalid={invalid} {...form.register("email")} />
                 )}
               </Field>
-              <Field label="Phone">
+              <Field label="Company phone">
                 {({ id: f }) => <Input id={f} numeric {...form.register("phone")} />}
               </Field>
             </div>
@@ -183,7 +312,7 @@ export default function CompanyFormPage() {
             </Field>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="City" required error={errors.city?.message}>
+              <Field label="City" error={errors.city?.message}>
                 {({ id: f, invalid }) => (
                   <Input id={f} invalid={invalid} {...form.register("city")} />
                 )}

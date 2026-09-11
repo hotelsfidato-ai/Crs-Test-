@@ -87,7 +87,7 @@ export default function InvoicesPage() {
             {money(i.amountDue)}
           </span>
         ) : (
-          <span className="text-grey-400">—</span>
+          <span className="text-grey-400">-</span>
         ),
     },
     {

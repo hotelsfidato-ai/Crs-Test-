@@ -56,7 +56,15 @@ export function AppShell() {
         {/* Main column */}
         <div className="flex flex-col flex-1 min-w-0">
           <TopBar />
-          <main className="flex-1 overflow-y-auto scrollbar-quiet">
+          {/* ⚠️ `relative` is load-bearing. An absolutely-positioned element
+              with no positioned ancestor anchors to the DOCUMENT, not to
+              this scroll area — it escapes both overflow boxes and makes
+              the document taller than the window. The import page's
+              hidden file input did exactly that: "Choose file" scrolled
+              the whole document, shoving the shell up and leaving a blank
+              band beneath it. Making <main> the containing block keeps
+              every such element inside the page that owns it. */}
+          <main className="relative flex-1 overflow-y-auto scrollbar-quiet">
             <Outlet />
           </main>
         </div>

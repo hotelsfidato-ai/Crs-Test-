@@ -83,14 +83,14 @@ export function describeRegisterError(error: unknown): string {
   if (/permission denied|row-level security/i.test(raw)) {
     return (
       "The register refused the request. Your address needs an entry in the " +
-      "register_access allowlist — being a CRS Manager in this app is not enough, " +
+      "register_access allowlist. Being a CRS Manager in this app is not enough; " +
       "the two lists are separate."
     );
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(raw)) {
     return (
       "Could not reach the register database. Check the connection, and that the " +
-      "Supabase project is not paused — free projects pause after a week idle."
+      "Supabase project is not paused. Free projects pause after a week idle."
     );
   }
   return raw;

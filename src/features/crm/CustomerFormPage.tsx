@@ -82,7 +82,7 @@ export default function CustomerFormPage() {
 
   const companyOptions = useMemo(
     () => [
-      { value: "", label: "No company — individual guest" },
+      { value: "", label: "No company (individual guest)" },
       ...(companies.data ?? []).map((c) => ({
         value: c.id,
         label: c.name,
@@ -319,7 +319,7 @@ export default function CustomerFormPage() {
               name="vip"
               render={({ field }) => (
                 <Checkbox
-                  label="Flag as VIP — the property is notified before arrival"
+                  label="Flag as VIP. The property is notified before arrival"
                   checked={field.value}
                   onCheckedChange={field.onChange}
                 />

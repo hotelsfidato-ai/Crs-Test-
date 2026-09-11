@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   can, canAccess, scopeConstraints, ASSIGNABLE_ROLES, DORMANT_ROLES,
-  SYSTEM_ROLES, ROLES,
+  SYSTEM_ROLES, ROLES, canAssignOwner, assignableOwners, type Role,
 } from "./permissions";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -193,6 +193,20 @@ describe("the matrix agrees with firestore.rules", () => {
   /* rules: match /hotels — allow delete: if isOwnerOrAdmin().
      ⚠️ Narrower than who may EDIT a property: a CRS Manager corrects
      one, they do not remove it from the book. */
+  /* rules: match /hotels — create, update admit crs_manager. The owner's
+     requirement: the CRS desk adds the properties it books into. */
+  it("lets the CRS desk add, edit and import properties", () => {
+    for (const action of ["view", "create", "edit", "import"] as const) {
+      expect(can("crs_manager", action, "hotel"), action).toBe(true);
+    }
+  });
+
+  /* ⚠️ Adding a property is not seeing what Fidato earns from it. */
+  it("still keeps the CRS desk away from commission and from deleting", () => {
+    expect(can("crs_manager", "delete", "hotel")).toBe(false);
+    expect(canAccess("crs_manager", "commission_terms")).toBe(false);
+  });
+
   it("lets only owner and admin delete a property, though more may edit", () => {
     for (const role of ["owner", "admin"] as const) {
       expect(can(role, "delete", "hotel"), role).toBe(true);
@@ -212,5 +226,73 @@ describe("the matrix agrees with firestore.rules", () => {
     for (const role of ["crs_manager", "manager", "salesperson", "viewer"] as const) {
       expect(canAccess(role, "payment"), role).toBe(false);
     }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   WORKING ON SOMEBODY ELSE'S BEHALF
+
+   The booking wizard's "Booked for" and the importer's "These records
+   belong to" answer the same question — may this person create records
+   in another person's name? — through one function, so they cannot
+   give different answers.
+   ══════════════════════════════════════════════════════════════════ */
+
+describe("who may create records in another person's name", () => {
+  it("is the CRS desk, Admin and Owner", () => {
+    for (const role of ["owner", "admin", "crs_manager"] as const) {
+      expect(canAssignOwner(role), role).toBe(true);
+    }
+  });
+
+  /**
+   * ⚠️ A salesperson setting ownerId could move business onto or off
+   * their own name. firestore.rules refuses it independently —
+   * writingOwnRecord() — and this keeps the control from being offered.
+   */
+  it("is never a salesperson, and not a manager, finance or viewer", () => {
+    for (const role of ["salesperson", "manager", "finance", "viewer"] as const) {
+      expect(canAssignOwner(role), role).toBe(false);
+    }
+  });
+
+  it("is nobody holding a dormant or system role", () => {
+    for (const role of [...DORMANT_ROLES, ...SYSTEM_ROLES]) {
+      expect(canAssignOwner(role), role).toBe(false);
+    }
+  });
+});
+
+describe("who records can be tagged to", () => {
+  const u = (id: string, role: Role, status = "active") => ({ id, role, status });
+  const staff = [
+    u("me", "crs_manager"),
+    u("haider", "salesperson"),
+    u("pijush", "salesperson", "disabled"),
+    u("mgr", "manager"),
+    u("desk2", "crs_manager"),
+    u("fin", "finance"),
+    u("boss", "owner"),
+  ];
+
+  it("offers the people who carry a book", () => {
+    expect(assignableOwners(staff, "me").map((x) => x.id)).toEqual(["haider", "mgr", "desk2"]);
+  });
+
+  /* The actor is offered separately, as "me", at the top of the list. */
+  it("leaves out the person doing the tagging", () => {
+    expect(assignableOwners(staff, "haider").map((x) => x.id)).not.toContain("haider");
+  });
+
+  /* ⚠️ Leads tagged to a disabled account sit in a list nobody signs in
+     to read, with nothing on screen saying so. */
+  it("leaves out disabled accounts", () => {
+    expect(assignableOwners(staff, "me").map((x) => x.id)).not.toContain("pijush");
+  });
+
+  it("leaves out finance and owners, who do not carry a sales book", () => {
+    const ids = assignableOwners(staff, "me").map((x) => x.id);
+    expect(ids).not.toContain("fin");
+    expect(ids).not.toContain("boss");
   });
 });

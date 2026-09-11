@@ -215,7 +215,7 @@ export default function RolesPage() {
       <p className="flex items-start gap-2 text-xs text-grey-400 mt-4">
         <Info className="size-3.5 shrink-0 mt-px" />
         This matrix is generated from{" "}
-        <code className="text-grey-500">src/lib/permissions.ts</code> — the same module the
+        <code className="text-grey-500">src/lib/permissions.ts</code>, the same module the
         navigation, route guards and every action button consult. In Phase 2 it becomes
         the source for Firestore security rules, so the client and the database cannot
         disagree.

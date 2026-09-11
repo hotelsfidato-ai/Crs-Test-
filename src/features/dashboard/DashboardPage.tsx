@@ -74,8 +74,8 @@ export default function DashboardPage() {
         description={
           <>
             {dateShort(TODAY)} · Viewing as {ROLE_LABELS[role]}
-            {isSalesperson && " — showing only your accounts"}
-            {isHotelManager && user.hotelName && ` — ${user.hotelName}`}
+            {isSalesperson && ", showing only your accounts"}
+            {isHotelManager && user.hotelName && ` · ${user.hotelName}`}
           </>
         }
         actions={

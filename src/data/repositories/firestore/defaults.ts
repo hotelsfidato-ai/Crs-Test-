@@ -84,6 +84,9 @@ export const COMPANY_DEFAULTS: Record<string, unknown> = {
   website: "",
   phone: "",
   email: "",
+  /* ⚠️ An array, so a company saved before contacts existed reads as
+     "none" rather than crashing every `.map` over it. */
+  contacts: [],
   notes: "",
   creditLimit: 0,
   creditUsed: 0,

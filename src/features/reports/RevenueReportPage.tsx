@@ -47,7 +47,7 @@ export default function RevenueReportPage() {
     { key: "roomNights", header: "Room nights", numeric: true, cell: (r) => number(r.roomNights) },
     {
       key: "adr", header: "Avg rate", numeric: true, hideBelow: "md",
-      cell: (r) => (r.roomNights ? money(Math.round(r.revenue / r.roomNights)) : "—"),
+      cell: (r) => (r.roomNights ? money(Math.round(r.revenue / r.roomNights)) : "-"),
     },
     {
       key: "revenue", header: "Revenue", numeric: true,
@@ -73,7 +73,7 @@ export default function RevenueReportPage() {
         <Card className="p-5">
           <Stat
             label="Best month"
-            value={best?.label ?? "—"}
+            value={best?.label ?? "-"}
             hint={best ? moneyCompact(best.revenue) : undefined}
           />
         </Card>

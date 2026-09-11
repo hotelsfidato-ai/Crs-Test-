@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { guessMapping, validateRows, summarise, templateCsv } from "./engine";
-import { CUSTOMER_IMPORT, COMPANY_IMPORT, HOTEL_IMPORT } from "./descriptors";
+import { guessMapping, validateRows, summarise, templateCsv, buildDocuments } from "./engine";
+import { CUSTOMER_IMPORT, COMPANY_IMPORT, HOTEL_IMPORT, companyStatusFor } from "./descriptors";
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT ENGINE
@@ -290,5 +290,214 @@ describe("templateCsv", () => {
     for (const field of CUSTOMER_IMPORT.fields.filter((f) => f.required)) {
       expect(csv).toContain(field.label);
     }
+  });
+});
+
+/* ── Which imports can be tagged to a salesperson ─────────────────
+   ⚠️ ownerId scopes a salesperson's list for customers and companies
+   and scopes nothing for properties, which every role reads. Offering
+   "belongs to Haider" on a property import would be a control that
+   changes nothing. */
+describe("ownable imports", () => {
+  it("lets customers and companies be tagged to a person", async () => {
+    const { CUSTOMER_IMPORT, COMPANY_IMPORT } = await import("./descriptors");
+    expect(CUSTOMER_IMPORT.ownable).toBe(true);
+    expect(COMPANY_IMPORT.ownable).toBe(true);
+  });
+
+  it("does not offer tagging on properties", () => {
+    expect(HOTEL_IMPORT.ownable).toBe(false);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   THE OWNER'S COMPANY LIST
+
+   Pinned to the exact headers of the sheet the owner holds:
+
+     SR. NO. | COMPANY NAME | CITY | CONTACT PERSON | DESIGNATION |
+     CONTACT NUMBER | EMAIL ID | STATUS
+
+   Before this, that sheet lost the contact person to a list no screen
+   read, dropped CONTACT NUMBER as unrecognised, had nowhere to put
+   DESIGNATION, and rejected any row with a blank city or a status word
+   other than active / prospect / dormant.
+   ══════════════════════════════════════════════════════════════════ */
+
+const OWNER_HEADERS = [
+  "SR. NO.", "COMPANY NAME", "CITY", "CONTACT PERSON", "DESIGNATION",
+  "CONTACT NUMBER", "EMAIL ID", "STATUS",
+];
+
+const sheetRow = (cells: Partial<Record<string, string>>): Record<string, string> =>
+  Object.fromEntries(OWNER_HEADERS.map((h) => [h, cells[h] ?? ""]));
+
+function importSheet(rows: Record<string, string>[]) {
+  const mapping = guessMapping(OWNER_HEADERS, COMPANY_IMPORT);
+  const validated = validateRows(rows, mapping, COMPANY_IMPORT);
+  return {
+    mapping, validated,
+    summary: summarise(validated),
+    docs: buildDocuments(validated, COMPANY_IMPORT),
+  };
+}
+
+describe("the owner's company sheet", () => {
+  it("maps every column on its own, and leaves SR. NO. alone", () => {
+    const mapping = guessMapping(OWNER_HEADERS, COMPANY_IMPORT);
+    expect(mapping).toMatchObject({
+      name: "COMPANY NAME",
+      city: "CITY",
+      contactPerson: "CONTACT PERSON",
+      designation: "DESIGNATION",
+      contactPhone: "CONTACT NUMBER",
+      contactEmail: "EMAIL ID",
+      status: "STATUS",
+    });
+    expect(Object.values(mapping)).not.toContain("SR. NO.");
+  });
+
+  /* The owner's rule: company name is what matters, everything else may
+     or may not be filled in. */
+  it("imports a row that has nothing but a company name", () => {
+    const { validated, docs } = importSheet([sheetRow({ "COMPANY NAME": "Orbit Pharma" })]);
+    expect(validated[0]!.errors).toEqual([]);
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatchObject({
+      name: "Orbit Pharma", legalName: "Orbit Pharma", city: "", contacts: [],
+    });
+  });
+
+  it("rejects a row with no company name, and only that", () => {
+    const { validated } = importSheet([sheetRow({ "CONTACT PERSON": "Someone" })]);
+    expect(validated[0]!.errors).toEqual(["Company Name is required"]);
+  });
+
+  it("stores the contact person on the company, with all their details", () => {
+    const { docs } = importSheet([sheetRow({
+      "SR. NO.": "1", "COMPANY NAME": "Meridian Logistics", CITY: "Pune",
+      "CONTACT PERSON": "Rohan Kulkarni", DESIGNATION: "Travel Desk Head",
+      "CONTACT NUMBER": "98765 43210", "EMAIL ID": "Rohan@Meridian.com", STATUS: "Active",
+    })]);
+    expect(docs[0]).toMatchObject({
+      name: "Meridian Logistics", city: "Pune", status: "active",
+      contacts: [{
+        name: "Rohan Kulkarni", designation: "Travel Desk Head",
+        phone: "98765 43210", email: "rohan@meridian.com",
+      }],
+    });
+  });
+
+  /* ⚠️ The company is the point. A short phone number or a mistyped email
+     must not cost the company. */
+  it("warns, and does not reject, on a bad phone or email, keeping what was typed", () => {
+    const { validated, docs } = importSheet([sheetRow({
+      "COMPANY NAME": "Hotel Sai", "CONTACT PERSON": "Sunil",
+      "CONTACT NUMBER": "98765", "EMAIL ID": "sunil@",
+    })]);
+    expect(validated[0]!.errors).toEqual([]);
+    expect(validated[0]!.warnings.join(" ")).toMatch(/Contact Number/);
+    expect(validated[0]!.warnings.join(" ")).toMatch(/Email ID/);
+    expect((docs[0]!.contacts as { phone: string }[])[0]!.phone).toBe("98765");
+  });
+
+  it("turns the same company on several rows into one company with several contacts", () => {
+    const { validated, summary, docs } = importSheet([
+      sheetRow({ "COMPANY NAME": "Tata Motors", CITY: "Pune", "CONTACT PERSON": "Asha", "CONTACT NUMBER": "9800000001" }),
+      sheetRow({ "COMPANY NAME": "Infosys", CITY: "Pune", "CONTACT PERSON": "Ravi" }),
+      sheetRow({ "COMPANY NAME": "  tata motors ", CITY: "Pune", "CONTACT PERSON": "Karan", "CONTACT NUMBER": "9800000002" }),
+    ]);
+
+    expect(validated.every((r) => r.errors.length === 0)).toBe(true);
+    expect(validated[2]!.mergedInto).toBe(2);
+    expect(validated[2]!.notes[0]).toMatch(/Combined with row 2/);
+    expect(summary).toMatchObject({ total: 3, willImport: 2, combined: 1, skipped: 0 });
+
+    expect(docs).toHaveLength(2);
+    const tata = docs.find((d) => d.name === "Tata Motors")!;
+    expect((tata.contacts as { name: string }[]).map((c) => c.name)).toEqual(["Asha", "Karan"]);
+  });
+
+  it("combines but warns when the same company lists two different cities", () => {
+    const { validated, docs } = importSheet([
+      sheetRow({ "COMPANY NAME": "Hotel Sai", CITY: "Pune", "CONTACT PERSON": "A" }),
+      sheetRow({ "COMPANY NAME": "Hotel Sai", CITY: "Nashik", "CONTACT PERSON": "B" }),
+    ]);
+    expect(docs).toHaveLength(1);
+    expect(validated[1]!.warnings.join(" ")).toMatch(/City differs from row 2/);
+  });
+
+  it("does not list the same person twice", () => {
+    const { docs } = importSheet([
+      sheetRow({ "COMPANY NAME": "Acme", "CONTACT PERSON": "Asha", "CONTACT NUMBER": "9800000001" }),
+      sheetRow({ "COMPANY NAME": "Acme", "CONTACT PERSON": "asha", "CONTACT NUMBER": "98000 00001" }),
+    ]);
+    expect(docs[0]!.contacts).toHaveLength(1);
+  });
+
+  /* The Details filter reads these — an imported company must arrive
+     already tagged, not wait for a backfill. */
+  it("tags each imported company with the details it has", () => {
+    const { docs } = importSheet([
+      sheetRow({ "COMPANY NAME": "Full Co", CITY: "Pune", "CONTACT PERSON": "A", "CONTACT NUMBER": "9800000001", "EMAIL ID": "a@x.com" }),
+      sheetRow({ "COMPANY NAME": "Bare Co" }),
+    ]);
+    expect(docs[0]!.detailTags).toEqual(["has:contact", "has:phone", "has:email", "has:city"]);
+    expect(docs[1]!.detailTags).toEqual(["no:contact", "no:phone", "no:email", "no:city"]);
+  });
+
+  /* A number with no name has nobody to belong to. It goes on the
+     company's own line rather than on a nameless contact. */
+  it("puts a number with no contact name on the company itself", () => {
+    const { docs } = importSheet([sheetRow({ "COMPANY NAME": "Acme", "CONTACT NUMBER": "02048901200" })]);
+    expect(docs[0]).toMatchObject({ phone: "02048901200", contacts: [] });
+  });
+
+  /* ⚠️ If the first row for a company is rejected, the next one becomes
+     the company, rather than being folded into a row never written. */
+  it("lets a later row stand in for a rejected first row", () => {
+    const mapping = { ...guessMapping(OWNER_HEADERS, COMPANY_IMPORT), gstin: "GST" };
+    const rows = [
+      { ...sheetRow({ "COMPANY NAME": "Acme", "CONTACT PERSON": "First" }), GST: "not-a-gstin" },
+      { ...sheetRow({ "COMPANY NAME": "Acme", "CONTACT PERSON": "Second" }), GST: "" },
+    ];
+    const validated = validateRows(rows, mapping, COMPANY_IMPORT);
+    expect(validated[0]!.errors.length).toBeGreaterThan(0);
+    expect(validated[1]!.errors).toEqual([]);
+    expect(validated[1]!.mergedInto).toBeUndefined();
+    const docs = buildDocuments(validated, COMPANY_IMPORT);
+    expect((docs[0]!.contacts as { name: string }[])[0]!.name).toBe("Second");
+  });
+});
+
+describe("status words from a lead sheet", () => {
+  it("understands the words people actually use", () => {
+    expect(companyStatusFor("Active")).toBe("active");
+    expect(companyStatusFor("Follow up")).toBe("prospect");
+    expect(companyStatusFor("follow-up")).toBe("prospect");
+    expect(companyStatusFor("Interested")).toBe("prospect");
+    expect(companyStatusFor("NOT INTERESTED")).toBe("dormant");
+    expect(companyStatusFor("Not Interested")).toBe("dormant");
+    expect(companyStatusFor("Something new")).toBe("prospect");
+    expect(companyStatusFor("")).toBe("prospect");
+  });
+
+  /* ⚠️ "Interested" and "Follow up" both become prospect, and the
+     difference is exactly what the salesperson needs, so it is kept. */
+  it("keeps the original word in the notes, and warns only on words it does not know", () => {
+    const { validated, docs } = importSheet([
+      sheetRow({ "COMPANY NAME": "A Co", STATUS: "Follow up" }),
+      sheetRow({ "COMPANY NAME": "B Co", STATUS: "Call after Diwali" }),
+      sheetRow({ "COMPANY NAME": "C Co", STATUS: "prospect" }),
+    ]);
+    expect(validated[0]!.warnings).toEqual([]);
+    expect(docs[0]!.notes).toMatch(/Follow up/);
+
+    expect(validated[1]!.errors).toEqual([]);
+    expect(validated[1]!.warnings.join(" ")).toMatch(/Call after Diwali/);
+    expect(docs[1]).toMatchObject({ status: "prospect" });
+    expect(docs[1]!.notes).toMatch(/Call after Diwali/);
+
+    expect(docs[2]!.notes).toBe("");
   });
 });

@@ -123,7 +123,7 @@ export default function CustomerDetailPage() {
         <Card className="p-5">
           <Stat
             label="Last stay"
-            value={c.lastStayAt ? dateShort(c.lastStayAt) : "—"}
+            value={c.lastStayAt ? dateShort(c.lastStayAt) : "-"}
             hint={c.lastStayAt ? relative(c.lastStayAt) : "No completed stays"}
           />
         </Card>

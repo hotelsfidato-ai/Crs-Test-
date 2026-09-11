@@ -87,13 +87,13 @@ export default function RatesPage() {
     },
     {
       key: "minNights", header: "Min nights", numeric: true, hideBelow: "lg",
-      cell: (s) => <span className="tabular">{s.minNights || "—"}</span>,
+      cell: (s) => <span className="tabular">{s.minNights || "-"}</span>,
     },
     {
       key: "cancellationPolicy", header: "Cancellation policy", hideBelow: "xl",
       cell: (s) => (
         <span className="text-sm text-grey-600 line-clamp-2">
-          {s.cancellationPolicy || "—"}
+          {s.cancellationPolicy || "-"}
         </span>
       ),
     },
@@ -196,7 +196,7 @@ export default function RatesPage() {
             <EmptyState
               compact
               title="No seasons yet"
-              description="Add a season to define which meal plans and stay rules apply, and when. Bookings still work without one — the wizard just will not pre-fill a meal plan."
+              description="Add a season to define which meal plans and stay rules apply, and when. Bookings still work without one; the wizard just will not pre-fill a meal plan."
             />
           }
         />
@@ -205,7 +205,7 @@ export default function RatesPage() {
       <p className="flex items-start gap-2 text-xs text-grey-400 mt-4">
         <Info className="size-3.5 shrink-0 mt-px" />
         Seasons carry no price. The salesperson types the selling rate on each booking, and
-        GST follows that rate — 5% below ₹{GST_THRESHOLD.toLocaleString("en-IN")} per night,
+        GST follows that rate: 5% below ₹{GST_THRESHOLD.toLocaleString("en-IN")} per night,
         18% at or above.
       </p>
     </Page>
@@ -307,7 +307,7 @@ function SeasonDialog({
                 id={id}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Peak — Diwali"
+                placeholder="Peak, Diwali"
               />
             )}
           </Field>
@@ -398,7 +398,7 @@ function SeasonDialog({
           <label className="flex items-center gap-2.5 cursor-pointer">
             <Checkbox checked={isActive} onCheckedChange={(v) => setIsActive(Boolean(v))} />
             <span className="text-sm text-ink-900">
-              Active — offer this season in the reservation wizard
+              Active: offer this season in the reservation wizard
             </span>
           </label>
 

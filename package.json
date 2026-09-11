@@ -1,10 +1,14 @@
 {
   "name": "fidato-hospitality-platform",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "vite --mode emulator",
+    "emulator:local": "firebase emulators:start --only firestore,auth --project crstest-9a0c5",
+    "seed:local": "node scripts/seed-local.mjs",
+    "backfill:tags": "node --experimental-strip-types scripts/backfill-company-tags.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",

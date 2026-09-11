@@ -253,7 +253,7 @@ export default function InventoryPage() {
                 </span>
               ))}
               <StatusPill tone="neutral" dot={false} className="ml-auto">
-                Simulated data — Phase 2 reads live PMS inventory
+                Simulated data. Phase 2 reads live PMS inventory
               </StatusPill>
             </div>
           </CardBody>

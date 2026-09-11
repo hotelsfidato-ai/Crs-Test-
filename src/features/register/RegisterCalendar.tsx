@@ -150,7 +150,7 @@ export function RegisterCalendar({
                         <div className="text-2xs text-grey-500 tabular">{money(revenue)}</div>
                         {rows.slice(0, 2).map((r) => (
                           <div key={r.id} className="text-2xs text-grey-600 truncate" title={r.guest_name ?? ""}>
-                            {r.guest_name ?? "—"}
+                            {r.guest_name ?? "-"}
                           </div>
                         ))}
                         {rows.length > 2 && (
@@ -166,7 +166,7 @@ export function RegisterCalendar({
             <p className="flex items-start gap-2 text-xs text-grey-400 mt-3 leading-relaxed">
               <CalendarOff className="size-3.5 shrink-0 mt-px" />
               Showing {dateField === "check_in_date" ? "arrivals" : "bookings taken"} this
-              month. The 1,657 blank spreadsheet rows never appear here — they carry no
+              month. The 1,657 blank spreadsheet rows never appear here: they carry no
               dates, so there is nowhere to put them.
             </p>
           </>

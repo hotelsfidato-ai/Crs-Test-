@@ -240,7 +240,7 @@ export function RoomTypeDialog({
 
           <p className="text-sm text-grey-500 leading-relaxed">
             No rate here. The salesperson types the selling rate on each booking, because
-            Fidato negotiates every one — see the property's seasons for meal plans and
+            Fidato negotiates every one. See the property's seasons for meal plans and
             stay rules.
           </p>
         </div>

@@ -45,7 +45,7 @@ export default function OccupancyReportPage() {
     },
     {
       key: "adr", header: "Avg rate", numeric: true, hideBelow: "md",
-      cell: (r) => (r.roomNights ? money(Math.round(r.revenue / r.roomNights)) : "—"),
+      cell: (r) => (r.roomNights ? money(Math.round(r.revenue / r.roomNights)) : "-"),
     },
     {
       key: "occupancyPercent", header: "Occupancy", numeric: true,
@@ -150,7 +150,7 @@ export default function OccupancyReportPage() {
       <p className="text-xs text-grey-400 mt-4">
         Occupancy is taken from each property's inventory across the next 30 days and
         covers every channel, not only Fidato. It is deliberately not derived from the
-        reservations in this platform — Fidato sells a slice of each partner property, so
+        reservations in this platform. Fidato sells a slice of each partner property, so
         reservations over total rooms would report a fraction of a percent and tell you
         nothing. &ldquo;Fidato nights&rdquo; is that slice. Phase 2 replaces the simulated
         inventory with the live PMS feed.

@@ -95,7 +95,7 @@ export default function PaymentsPage() {
             value={
               totals.data?.count
                 ? money(Math.round(totals.data.received / totals.data.count))
-                : "—"
+                : "-"
             }
           />
         </Card>

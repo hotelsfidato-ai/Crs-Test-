@@ -53,8 +53,8 @@ export function AutomationHealthBanner() {
               Voucher to send it manually, then check{" "}
               <Link to="/admin/integrations" className="underline font-medium">
                 Admin → Integrations
-              </Link>{" "}
-              — the endpoint is refusing or unreachable.
+              </Link>
+              : the endpoint is refusing or unreachable.
             </p>
           </div>
         </div>
@@ -68,7 +68,7 @@ export function AutomationHealthBanner() {
         <PauseCircle className="size-4 text-grey-500 shrink-0 mt-0.5" />
         <div className="min-w-0">
           <p className="text-base font-medium text-ink-900">
-            Automation is off — {disabled} recent booking{disabled === 1 ? "" : "s"} not sent
+            Automation is off: {disabled} recent booking{disabled === 1 ? "" : "s"} not sent
           </p>
           <p className="text-sm text-grey-600 mt-1 leading-relaxed">
             Nothing was attempted, so no guest has been emailed. Turn on “Push events” in{" "}

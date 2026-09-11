@@ -97,6 +97,11 @@ function matchesSearch<T>(record: T, term: string, fields: string[]): boolean {
 export interface RunQueryOptions {
   /** Equality filters. `"all"` and empty are treated as absent. */
   filterFields?: string[];
+  /**
+   * Filters on an ARRAY field: the chosen value must be one of its
+   * elements (`array-contains`). Firestore allows at most one per query.
+   */
+  arrayFilterFields?: string[];
   searchFields?: string[];
   defaultSort?: { field: string; dir: "asc" | "desc" };
   /** Applied before anything else — row-level scoping. */
@@ -118,6 +123,7 @@ export async function runQuery<T>(
 ): Promise<ListResult<T>> {
   const {
     filterFields = [],
+    arrayFilterFields = [],
     searchFields = [],
     defaultSort,
     scope,
@@ -128,12 +134,27 @@ export async function runQuery<T>(
   const constraints: QueryConstraint[] = [];
 
   // Scoping first — see the note above.
-  if (scope) constraints.push(...scopeConstraints(scope).map((c) => where(c.field, "==", c.value)));
+  const pinned = scope ? scopeConstraints(scope) : [];
+  constraints.push(...pinned.map((c) => where(c.field, "==", c.value)));
 
   for (const field of filterFields) {
     const value = query_.filters?.[field];
-    if (value && value !== "all") constraints.push(where(field, "==", value));
+    if (!value || value === "all") continue;
+    /* ⚠️ A scope already pins this field — a salesperson filtering by
+       salesperson. Adding a second equality would either duplicate the
+       first or, for anyone else's id, silently return nothing. The scope
+       is the truth; the filter defers to it. */
+    if (pinned.some((c) => c.field === field)) continue;
+    constraints.push(where(field, "==", value));
   }
+
+  /* ⚠️ At most one — Firestore rejects a query with two array-contains
+     clauses. The first chosen wins; the screens offer only one. */
+  const arrayField = arrayFilterFields.find((f) => {
+    const v = query_.filters?.[f];
+    return v && v !== "all";
+  });
+  if (arrayField) constraints.push(where(arrayField, "array-contains", query_.filters![arrayField]));
 
   const sortField = query_.sortBy ?? defaultSort?.field;
   const sortDir = query_.sortDir ?? defaultSort?.dir ?? "desc";

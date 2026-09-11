@@ -51,7 +51,7 @@ export default function SignupPage() {
   return (
     <AuthLayout
       title="Set up your account"
-      description="Your administrator has invited you. Use the same work email they invited — if you already had an account here, enter its existing password."
+      description="Your administrator has invited you. Use the same work email they invited. If you already had an account here, enter its existing password."
       footer={
         <>
           Already set up?{" "}

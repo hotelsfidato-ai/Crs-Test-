@@ -32,6 +32,13 @@ export interface CollectionPlan {
   scopes?: string[];
   /** Equality filters the screen's FilterBar offers. */
   filters?: string[];
+  /**
+   * ARRAY fields filtered with `array-contains` — at most one per query.
+   * Indexed alone and under each scope; combinations with the equality
+   * filters rely on Firestore merging indexes, as status × tier already
+   * does, rather than spending the 200-index budget on every pairing.
+   */
+  arrayFilters?: string[];
   /** Sortable columns. The first is the screen's default. */
   sorts?: string[];
   /** Direct relation queries the repositories issue, with direction. */
@@ -53,7 +60,14 @@ export const QUERY_PLAN: Record<string, CollectionPlan> = {
 
   companies: {
     scopes: ["ownerId"],
-    filters: ["status", "tier"],
+    /* ownerId as a FILTER too — the desk choosing whose leads to see. It
+       adds no indexes: the scope already emits ownerId × every sort, and
+       the generator skips the ownerId-scope × ownerId-filter pair. */
+    filters: ["status", "tier", "ownerId"],
+    /* "has:phone", "no:email"… — the Details filter. lib/companyDetails.ts */
+    arrayFilters: ["detailTags"],
+    /* Search as you type within one salesperson's book — lib/companyName.ts. */
+    pairs: [["ownerId", "nameKey", "asc"]],
     sorts: ["totalRevenue", "name", "lastActivityAt"],
   },
 
@@ -79,6 +93,24 @@ export const QUERY_PLAN: Record<string, CollectionPlan> = {
     filters: ["method"],
     sorts: ["receivedAt", "amount"],
     pairs: [["invoiceId", "receivedAt", "desc"]],
+  },
+
+  /* DSR — see dsrRepo. A day and a date range share one index: equality
+     on `day` is a special case of the range, both ordered by createdAt so
+     visits keep the order they were logged, like the sheet's Sr. No. */
+  dsrVisits: {
+    pairs: [
+      ["day", "createdAt", "asc"],
+      ["companyId", "day", "desc"],
+    ],
+    triples: [
+      ["ownerId", "day", "createdAt", "asc"],
+      ["ownerId", "companyId", "day", "desc"],
+    ],
+  },
+
+  dsrDays: {
+    pairs: [["ownerId", "day", "asc"]],
   },
 
   commissions: {

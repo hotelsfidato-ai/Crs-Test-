@@ -103,7 +103,7 @@ export function VoucherButton({ reservation }: { reservation: Reservation }) {
       </DialogTrigger>
 
       <DialogContent
-        title={`Voucher — ${reservation.reference}`}
+        title={`Voucher · ${reservation.reference}`}
         description="Exactly what the guest receives by email."
         size="xl"
         footer={
@@ -147,7 +147,7 @@ export function VoucherButton({ reservation }: { reservation: Reservation }) {
             <p className="flex items-start gap-2 text-xs text-grey-500 mt-3 leading-relaxed">
               <Mail className="size-3.5 shrink-0 mt-0.5" />
               This platform does not send email. The same document is handed to n8n when the
-              booking is created, and n8n delivers it — see Admin → Integrations.
+              booking is created, and n8n delivers it. See Admin → Integrations.
             </p>
           </>
         )}

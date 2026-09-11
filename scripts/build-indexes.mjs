@@ -32,19 +32,25 @@ const field = (fieldPath, dir) => ({
   order: dir === "desc" ? "DESCENDING" : "ASCENDING",
 });
 
+/* An array-contains field is indexed as CONTAINS, not with an order.
+   Marked in a prefix list as `{ contains: "detailTags" }`. */
+const prefixField = (p) =>
+  typeof p === "string" ? field(p, "asc") : { fieldPath: p.contains, arrayConfig: "CONTAINS" };
+const prefixName = (p) => (typeof p === "string" ? p : `${p.contains}[]`);
+
 function add(collectionGroup, prefixes, sort, dir) {
-  const paths = [...prefixes, sort];
+  const paths = [...prefixes.map((p) => (typeof p === "string" ? p : p.contains)), sort];
   // An equality on the field being ordered by needs no composite.
   if (new Set(paths).size !== paths.length) return;
 
-  const key = `${collectionGroup}:${prefixes.join(",")}|${sort}:${dir}`;
+  const key = `${collectionGroup}:${prefixes.map(prefixName).join(",")}|${sort}:${dir}`;
   if (seen.has(key)) return;
   seen.add(key);
 
   indexes.push({
     collectionGroup,
     queryScope: "COLLECTION",
-    fields: [...prefixes.map((p) => field(p, "asc")), field(sort, dir)],
+    fields: [...prefixes.map(prefixField), field(sort, dir)],
   });
 }
 
@@ -68,6 +74,19 @@ for (const [name, plan] of Object.entries(QUERY_PLAN)) {
       for (const sort of sorts) {
         add(name, [scope, filter], sort, "asc");
         add(name, [scope, filter], sort, "desc");
+      }
+    }
+  }
+
+  /* Array filters: alone, and under each scope — a salesperson choosing
+     "No email" in their own book. */
+  for (const arr of plan.arrayFilters ?? []) {
+    for (const sort of sorts) {
+      add(name, [{ contains: arr }], sort, "asc");
+      add(name, [{ contains: arr }], sort, "desc");
+      for (const scope of scopes) {
+        add(name, [scope, { contains: arr }], sort, "asc");
+        add(name, [scope, { contains: arr }], sort, "desc");
       }
     }
   }

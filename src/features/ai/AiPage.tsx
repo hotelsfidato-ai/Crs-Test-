@@ -66,7 +66,7 @@ export default function AiPage() {
       <PageHeader
         title="Assistant"
         description="Ask about the portfolio, or generate a draft. Answers are computed from live platform data."
-        badge={<StatusPill tone="accent" dot={false}>Phase 1 — scripted</StatusPill>}
+        badge={<StatusPill tone="accent" dot={false}>Phase 1 · scripted</StatusPill>}
         actions={
           turns.length > 0 && (
             <Button

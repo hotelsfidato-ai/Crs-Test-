@@ -418,6 +418,88 @@ describe("a salesperson sees only their own book", () => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════════════
+   LOADING DATA ON A SALESPERSON'S BEHALF
+
+   The importer lets the CRS desk tag a whole file to a salesperson, so
+   the records land in THAT person's list. Every write carries
+   ownerId = the salesperson, written by somebody else.
+
+   The client decides who is OFFERED the choice (canAssignOwner); these
+   decide what the database actually accepts, which is the half that
+   holds against the SDK.
+   ══════════════════════════════════════════════════════════════════ */
+
+describe("loading customers and companies on a salesperson's behalf", () => {
+  it("lets the desk, Admin and Owner create records owned by a salesperson", async () => {
+    for (const person of [CRS, ADMIN, OWNER]) {
+      await seed(env);
+      const db = as(env, person);
+      await assertSucceeds(
+        setDoc(doc(db, "customers", "tagged_lead"), {
+          ownerId: SALES_A.uid, ownerName: "Sales A", fullName: "Imported Lead",
+          createdBy: person.uid,
+        }),
+      );
+      await assertSucceeds(
+        setDoc(doc(db, "companies", "tagged_account"), {
+          ownerId: SALES_A.uid, ownerName: "Sales A", name: "Imported Account",
+          createdBy: person.uid,
+        }),
+      );
+    }
+  });
+
+  /* ⚠️ The purpose of tagging, in one assertion: the records must turn
+     up in the salesperson's own book, not merely exist. */
+  it("puts them in the tagged salesperson's book, and no colleague's", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, CRS), "customers", "for_a"), {
+        ownerId: SALES_A.uid, fullName: "For A", createdBy: CRS.uid,
+      }),
+    );
+    await assertSucceeds(getDoc(doc(as(env, SALES_A), "customers", "for_a")));
+    await assertFails(getDoc(doc(as(env, SALES_B), "customers", "for_a")));
+  });
+
+  /* ⚠️ The same write from a salesperson is poaching — it would move a
+     lead, and whatever it later books, onto a colleague's name. */
+  it("refuses a salesperson doing the same for a colleague", async () => {
+    const db = as(env, SALES_A);
+    await assertFails(
+      setDoc(doc(db, "customers", "poached"), { ownerId: SALES_B.uid, fullName: "X" }),
+    );
+    await assertFails(
+      setDoc(doc(db, "companies", "poached"), { ownerId: SALES_B.uid, name: "X" }),
+    );
+  });
+
+  /**
+   * ⚠️ Pinned as it IS, not as the interface presents it. The rules only
+   * constrain a salesperson's ownerId, so a Manager may write one too —
+   * the interface simply never offers them the choice, matching the
+   * booking wizard. If that should become a rule rather than a
+   * convention, this test is the one to flip.
+   */
+  it("does not stop a manager at the rules level, though the interface does", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, MANAGER), "customers", "mgr_tagged"), {
+        ownerId: SALES_A.uid, fullName: "Tagged by a manager",
+      }),
+    );
+  });
+
+  it("refuses roles that cannot create accounts at all", async () => {
+    for (const person of [FINANCE, VIEWER]) {
+      await assertFails(
+        setDoc(doc(as(env, person), "customers", "nope"), {
+          ownerId: SALES_A.uid, fullName: "X",
+        }),
+      );
+    }
+  });
+});
+
 /* ── Immutability ──────────────────────────────────────────────── */
 
 describe("what may be removed, and by whom", () => {
@@ -461,6 +543,26 @@ describe("what may be removed, and by whom", () => {
     await assertFails(deleteDoc(doc(db, "customers", "owned_by_a")));
     await assertFails(deleteDoc(doc(db, "companies", "owned_by_a")));
     await assertFails(deleteDoc(doc(db, "invoices", "inv1")));
+  });
+
+  /* The owner's requirement: the CRS desk adds the properties it books
+     into — by form or by import — without waiting on an Admin. */
+  it("lets the CRS desk add a property and correct it", async () => {
+    const db = as(env, CRS);
+    await assertSucceeds(
+      setDoc(doc(db, "hotels", "desk_added"), { name: "Added by the desk", city: "Pune" }),
+    );
+    await assertSucceeds(updateDoc(doc(db, "hotels", "desk_added"), { city: "Satara" }));
+  });
+
+  /* ⚠️ Adding a property is not seeing, or setting, what Fidato earns
+     from it. Commission stays behind its own Owner/Admin rule. */
+  it("keeps the CRS desk out of a property's commission", async () => {
+    const db = as(env, CRS);
+    await assertFails(getDoc(doc(db, "hotels/h1/private", "commercial")));
+    await assertFails(
+      setDoc(doc(db, "hotels/h1/private", "commercial"), { hotelId: "h1", commissionPercent: 20 }),
+    );
   });
 
   /* ⚠️ Narrower than who may EDIT a property. A CRS Manager corrects a
@@ -867,6 +969,153 @@ describe("a salesperson's write access to leads", () => {
     await assertFails(
       updateDoc(doc(as(env, SALES_B), "customers", "owned_by_a"), {
         totalReservations: 4, totalRevenue: 52000, lastActivityAt: "2026-08-04",
+      }),
+    );
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   DSR — THE DAILY SALES REPORT
+
+   ⚠️ SAME DAY ONLY. A salesperson logs and corrects their own visits
+   until their day ends; after that only the desk can change them. The
+   rule computes "today" in India time from the clock, so these compute
+   it the same way — see dayKeyOf in lib/dsr.ts.
+   ══════════════════════════════════════════════════════════════════ */
+
+const istDay = (offsetDays = 0): number => {
+  const d = new Date(Date.now() + 330 * 60_000 + offsetDays * 86_400_000);
+  return d.getUTCFullYear() * 10_000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+};
+
+const visit = (ownerId: string, day: number, extra: Record<string, unknown> = {}) => ({
+  day, ownerId, ownerName: "x", companyId: "c1", companyName: "ABB India Ltd",
+  contactPerson: "Ganesh", phone: "", email: "", area: "Aundh",
+  visitType: "introduction", remarks: "", ...extra,
+});
+
+/** A visit written with the rules off — how a past day's entry exists. */
+async function seedVisit(id: string, ownerId: string, day: number) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "dsrVisits", id), visit(ownerId, day));
+  });
+}
+
+describe("DSR — a salesperson's own report, same day only", () => {
+  it("lets a salesperson log a visit for today", async () => {
+    await assertSucceeds(
+      setDoc(doc(as(env, SALES_A), "dsrVisits", "v_today"), visit(SALES_A.uid, istDay())),
+    );
+  });
+
+  /* ⚠️ The owner's rule: a past day is the record. */
+  it("refuses a salesperson logging a visit for a past day", async () => {
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "dsrVisits", "v_back"), visit(SALES_A.uid, istDay(-1))),
+    );
+  });
+
+  it("refuses a salesperson logging a visit in a colleague's report", async () => {
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "dsrVisits", "v_poach"), visit(SALES_B.uid, istDay())),
+    );
+  });
+
+  it("lets a salesperson correct and delete their own entry today", async () => {
+    await seedVisit("v_mine", SALES_A.uid, istDay());
+    const db = as(env, SALES_A);
+    await assertSucceeds(updateDoc(doc(db, "dsrVisits", "v_mine"), { remarks: "Corrected" }));
+    await assertSucceeds(deleteDoc(doc(db, "dsrVisits", "v_mine")));
+  });
+
+  it("locks their own entry once its day has passed", async () => {
+    await seedVisit("v_old", SALES_A.uid, istDay(-1));
+    const db = as(env, SALES_A);
+    await assertFails(updateDoc(doc(db, "dsrVisits", "v_old"), { remarks: "Too late" }));
+    await assertFails(deleteDoc(doc(db, "dsrVisits", "v_old")));
+  });
+
+  /* ⚠️ The way round the lock that the rule has to close: move a locked
+     entry's day to today, and it would be editable again. */
+  it("refuses moving an entry to another day or another person", async () => {
+    await seedVisit("v_move", SALES_A.uid, istDay());
+    const db = as(env, SALES_A);
+    await assertFails(updateDoc(doc(db, "dsrVisits", "v_move"), { day: istDay(-3) }));
+    await assertFails(updateDoc(doc(db, "dsrVisits", "v_move"), { ownerId: SALES_B.uid }));
+  });
+
+  it("reads their own report and not a colleague's", async () => {
+    await seedVisit("v_a", SALES_A.uid, istDay());
+    await seedVisit("v_b", SALES_B.uid, istDay());
+    const db = as(env, SALES_A);
+    await assertSucceeds(getDoc(doc(db, "dsrVisits", "v_a")));
+    await assertFails(getDoc(doc(db, "dsrVisits", "v_b")));
+  });
+
+  it("refuses a visit with no company, or a visit type it does not know", async () => {
+    const db = as(env, SALES_A);
+    await assertFails(setDoc(doc(db, "dsrVisits", "v_bad1"), visit(SALES_A.uid, istDay(), { companyName: "" })));
+    await assertFails(setDoc(doc(db, "dsrVisits", "v_bad2"), visit(SALES_A.uid, istDay(), { visitType: "party" })));
+  });
+});
+
+describe("DSR — the desk and the managers", () => {
+  /* The desk corrects anyone's report, any day — the other half of the
+     owner's rule. */
+  it("lets the CRS desk, Admin and Owner correct any past entry", async () => {
+    for (const person of [CRS, ADMIN, OWNER]) {
+      await seedVisit("v_past", SALES_A.uid, istDay(-10));
+      const db = as(env, person);
+      await assertSucceeds(updateDoc(doc(db, "dsrVisits", "v_past"), { remarks: "Fixed by desk" }));
+      await assertSucceeds(
+        setDoc(doc(db, "dsrVisits", "v_added"), visit(SALES_A.uid, istDay(-2))),
+      );
+      await assertSucceeds(deleteDoc(doc(db, "dsrVisits", "v_past")));
+    }
+  });
+
+  it("lets a manager read the whole team's, but keep only their own", async () => {
+    await seedVisit("v_team", SALES_A.uid, istDay(-1));
+    const db = as(env, MANAGER);
+    await assertSucceeds(getDoc(doc(db, "dsrVisits", "v_team")));
+    await assertFails(updateDoc(doc(db, "dsrVisits", "v_team"), { remarks: "Not mine" }));
+    await assertSucceeds(setDoc(doc(db, "dsrVisits", "v_mgr"), visit(MANAGER.uid, istDay())));
+  });
+
+  it("keeps finance and viewers out entirely", async () => {
+    await seedVisit("v_closed", SALES_A.uid, istDay());
+    for (const person of [FINANCE, VIEWER]) {
+      await assertFails(getDoc(doc(as(env, person), "dsrVisits", "v_closed")));
+    }
+  });
+});
+
+describe("DSR — the day's notes", () => {
+  it("lets a salesperson save today's note under their own id", async () => {
+    const day = istDay();
+    await assertSucceeds(
+      setDoc(doc(as(env, SALES_A), "dsrDays", `${SALES_A.uid}_${day}`), {
+        day, ownerId: SALES_A.uid, ownerName: "A", accompaniedBy: "", notes: "Heavy rains — follow-ups",
+      }),
+    );
+  });
+
+  /* ⚠️ The id names the owner and the day; a note filed under a
+     colleague's id would appear in their report. */
+  it("refuses a note whose id does not match its owner and day", async () => {
+    const day = istDay();
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "dsrDays", `${SALES_B.uid}_${day}`), {
+        day, ownerId: SALES_A.uid, ownerName: "A", accompaniedBy: "", notes: "",
+      }),
+    );
+  });
+
+  it("refuses a salesperson writing a note for a past day", async () => {
+    const day = istDay(-1);
+    await assertFails(
+      setDoc(doc(as(env, SALES_A), "dsrDays", `${SALES_A.uid}_${day}`), {
+        day, ownerId: SALES_A.uid, ownerName: "A", accompaniedBy: "", notes: "",
       }),
     );
   });

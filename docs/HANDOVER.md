@@ -7,7 +7,7 @@ between "re-explain the entire project" and "here's exactly where we left off."
 *living* record of the present, not a history. History belongs in [`DECISIONS.md`](DECISIONS.md)
 and in git.
 
-**Last updated:** 2026-08-14
+**Last updated:** 2026-09-10
 
 ---
 
@@ -35,13 +35,17 @@ and in git.
 `CLAUDE.md` carries orientation and traps only, and points here for state. **Keep it that way:**
 state in a file nobody rewrites is state that goes quietly wrong.
 
-### Live data, after the launch wipe
+### Live data, as of 2026-09-10
 
 | Collection | Documents |
 |---|---|
-| `users` | **1** — `influvateseo@gmail.com`, owner. ⚠️ The only way into the app |
+| `users` | **7** — the team has been invited and has signed in |
+| `customers` | 1 |
+| `companies` | 1 |
 | `settings` | 2 — `org` (brand, GSTIN, address) and `webhook` (n8n url, secret, enabled) |
-| *everything else* | **0** |
+| `automationQueue` | 8 — ⚠️ all will sit at `pending`; nothing closes them |
+| `auditLogs` | 8 |
+| `hotels`, `reservations`, `invoices` | **0** — no properties yet, so no booking can be raised |
 
 Cleared: reservations, customers, companies, hotels, roomTypes, seasons, inventory, invoices,
 payments, commissions, automationQueue, automationRuns, auditLogs, notifications, counters,
@@ -53,7 +57,7 @@ importJobs, mergeJobs, and all 6 staff invitations.
 the company details printed on every voucher and switch off the n8n webhook. Clear it only if
 you mean to reconfigure both.
 
-**Empty screens are correct again**, everywhere except the Owner's own account.
+**Most screens are still correctly near-empty** — check these counts before calling one broken.
 
 ---
 
@@ -86,8 +90,48 @@ Nothing here can be fixed from inside this repo.
 
 ## In flight
 
-Nothing is half-finished in the code. The working tree is clean and every change is pushed.
+⚠️ **Uncommitted, awaiting the owner's local test (2026-09-10):** tagging an import to a
+salesperson ("These records belong to"), plus a local sandbox — `npm run emulator:local`,
+`npm run seed:local`, `npm run dev:local`. Plain `npm run dev` talks to PRODUCTION; the sandbox
+exists so a test import cannot leave permanent customers in the live database. Commit, deploy
+and update the manual only once the owner confirms.
+
 **The launch wipe is half-finished** — Firestore is done, the register is not. See *Blocked*.
+
+### Audit, 2026-09-10 — ranked, each verified against the code
+
+1. ⚠️ **HIGH — any staff account can send branded email and WhatsApp to anyone.** `settings`
+   is `allow read: if active()`, so every role can read `settings/webhook` including its
+   `secret`. n8n takes the recipient (`voucher.to`), subject and WhatsApp number straight from
+   the payload and never checks them against a real reservation. Fix is in n8n: treat the POST
+   as a trigger only — read the reservation by id with the automation account and build the
+   message from that. The secret keeps the public out; it cannot keep staff out, because the
+   browser must hold it.
+2. ⚠️ **HIGH at launch — two pickers read every customer/company, unbounded.**
+   `customersRepo.all()` (booking wizard) and `companiesRepo.all()` (customer form), for every
+   non-sales role. One read per record per open, cached 30 s. At 2,000 imported customers,
+   ~25 wizard opens exhaust Spark's 50,000 reads/day — and then every screen fails for
+   everyone until the quota resets. Needs search-as-you-type with `limit()`.
+3. **The Finance section cannot be used.** Nothing creates an invoice; payments are recorded
+   only from an invoice; nothing writes a commission. Spec 05 §5.7 — "create from a
+   reservation", numbered from `counters/invoices` — was never built. Every acceptance box is
+   unticked.
+4. **`counters` is writable by any active user.** A Viewer can reset `counters/reservations`
+   and cause duplicate booking references. Latent GST risk once invoicing uses
+   `counters/invoices`. A rule can require `next == resource.data.next + 1` — that compares
+   against the existing document and needs no extra read, so the comment's deadlock concern
+   does not apply.
+5. **`xlsx` 0.18.5 has prototype-pollution and ReDoS advisories, and parses every uploaded
+   spreadsheet.** The npm release is abandoned; SheetJS ships fixed 0.20.x from its own CDN.
+   Uploaders are trusted staff, but the files often come from outside.
+6. **Customer import's Company column is never linked.** The template promises "Matched to an
+   existing company by name"; the code stores the name as text and sets no `companyId`.
+7. `react-router` 7.18.1 advisory — **does not apply**: it affects RSC mode, and this app uses
+   declarative routing. Upgrade for hygiene.
+8. Dead code: `if (false)` approval branch in `features/ai/responses.ts`.
+
+Checked and clean: no secrets in the tree or anywhere in git history; `.env` never committed;
+typecheck clean; lint shows only dev-time Fast Refresh warnings.
 
 **Flagged but deliberately not done** — out of scope when found:
 

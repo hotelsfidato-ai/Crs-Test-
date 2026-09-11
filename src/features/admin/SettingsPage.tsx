@@ -202,7 +202,7 @@ export default function SettingsPage() {
 
               <Field
                 label="Email logo URL"
-                hint="Serve this from the domain you send email from — images loaded from an unrelated host are a spam signal. Leave blank to use the default."
+                hint="Serve this from the domain you send email from. Images loaded from an unrelated host are a spam signal. Leave blank to use the default."
                 error={errors.logoUrl?.message}
               >
                 {({ id, invalid }) => (
@@ -232,7 +232,7 @@ export default function SettingsPage() {
                   </span>
                   <span className="block text-xs text-grey-500 mt-0.5">
                     Adds a role picker to the top bar for Owner and Admin, for checking
-                    what each role sees. It grants no extra access — every write is still
+                    what each role sees. It grants no extra access: every write is still
                     recorded against the real account and the security rules ignore the
                     selection entirely. Leave it off in normal use: while it is on, the top
                     bar can say “Salesperson” when an Owner is signed in.
@@ -244,7 +244,7 @@ export default function SettingsPage() {
                 <Field label="Currency">
                   {({ id }) => (
                     <NativeSelect id={id} disabled={!editable} {...form.register("currency")}>
-                      <option value="INR">INR — Indian Rupee</option>
+                      <option value="INR">INR · Indian Rupee</option>
                     </NativeSelect>
                   )}
                 </Field>

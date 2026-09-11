@@ -7,6 +7,9 @@ import { db } from "@/lib/firebase";
 import { computeTax, CURRENT_GST_VERSION } from "@/lib/tax";
 import { ASSIGNABLE_ROLES, type ScopeContext } from "@/lib/permissions";
 import { postWebhook, shouldSend } from "@/lib/webhook";
+import { companyDetailTags } from "@/lib/companyDetails";
+import { companyNameKey, PREFIX_END } from "@/lib/companyName";
+import { canChangeDsr, isoOfDay } from "@/lib/dsr";
 
 const ROLE_KEYS = ASSIGNABLE_ROLES;
 import type {
@@ -15,7 +18,7 @@ import type {
   NotificationTemplate, AutomationEvent, AutomationEventType, Integration, OrgSettings,
   ListQuery, ListResult, ReservationStatus, ImportEntity,
   InventoryDay, AutomationWorkflow, AutomationRun, AutomationStatus, Invitation,
-  WebhookConfig, ReservationAutomation,
+  WebhookConfig, ReservationAutomation, DsrVisit, DsrDay, VisitType,
 } from "@/data/types";
 import {
   type Actor, fromDoc, toDoc, getOne, listAll, runQuery, countWhere,
@@ -216,7 +219,7 @@ export const hotelsRepo = {
       throw new Error(
         `${hotel.name} is named on ${used} reservation${used === 1 ? "" : "s"}, ` +
         "so removing it would leave them pointing at nothing. Set the property to " +
-        "Paused instead — it stops appearing in new bookings and can be undone.",
+        "Paused instead: it stops appearing in new bookings and can be undone.",
       );
     }
 
@@ -309,7 +312,11 @@ export const roomConfigRepo = {
 export const companiesRepo = {
   list: (q?: ListQuery, ctx?: ScopeContext): Promise<ListResult<Company>> =>
     runQuery<Company>("companies", q, {
-      filterFields: ["status", "tier"],
+      /* ownerId: "whose leads are these" — the owner's request. Served by
+         the same indexes that already scope a salesperson's own list. */
+      filterFields: ["status", "tier", "ownerId"],
+      /* "has:phone", "no:email"… — see lib/companyDetails.ts. */
+      arrayFilterFields: ["detailTags"],
       searchFields: ["name", "legalName", "city", "industry", "email", "gstin"],
       defaultSort: { field: "name", dir: "asc" },
       scope: ctx,
@@ -322,10 +329,54 @@ export const companiesRepo = {
 
   get: (id: string): Promise<Company | null> => getOne<Company>("companies", id),
 
+  /**
+   * Companies whose name starts with what was typed — search as you type.
+   *
+   * ⚠️ BOUNDED, in the database. The pickers that read every company into
+   * the browser are the read-budget risk in docs/PLAN.md Phase 2; this is
+   * the replacement, one read per result, never per company on file.
+   * ⚠️ A salesperson must pass their own id as `ownerId`, or the rules
+   * refuse the query outright rather than returning their share of it.
+   */
+  search: (typed: string, ownerId?: string, max = 8): Promise<Company[]> => {
+    const key = companyNameKey(typed);
+    if (!key) return Promise.resolve([]);
+    return listAll<Company>(
+      "companies",
+      ...(ownerId ? [where("ownerId", "==", ownerId)] : []),
+      where("nameKey", ">=", key),
+      where("nameKey", "<", key + PREFIX_END),
+      orderBy("nameKey"),
+      limit(max),
+    );
+  },
+
+  /**
+   * The company already in `ownerId`'s book under this name, if any.
+   *
+   * ⚠️ `ownerId` is required for a salesperson — the rules refuse any
+   * company query they could not see every result of — and it keeps a
+   * visit linking inside the DSR owner's own book rather than onto a
+   * colleague's account.
+   */
+  findByName: async (name: string, ownerId?: string): Promise<Company | null> => {
+    const key = companyNameKey(name);
+    if (!key) return null;
+    const hits = await listAll<Company>(
+      "companies",
+      ...(ownerId ? [where("ownerId", "==", ownerId)] : []),
+      where("nameKey", "==", key),
+      limit(1),
+    );
+    return hits[0] ?? null;
+  },
+
   create: async (input: Partial<Company>, actor: Actor): Promise<Company> => {
     const ref = await addDoc(collection(db, "companies"), {
       ...COMPANY_DEFAULTS,
       ...toDoc(input),
+      detailTags: companyDetailTags(input),
+      nameKey: companyNameKey(input.name ?? ""),
       ownerId: input.ownerId ?? actor.id,
       ownerName: input.ownerName ?? actor.name,
       creditUsed: 0, totalReservations: 0, totalRevenue: 0,
@@ -346,8 +397,16 @@ export const companiesRepo = {
   },
 
   update: async (id: string, patch: Partial<Company>, actor: Actor): Promise<Company> => {
+    /* ⚠️ The tags describe the WHOLE company, and a patch may carry only
+       part of it — so they are computed from what the document will be
+       after the write, not from the patch alone. A patch that clears the
+       last phone number must flip the company to "no:phone". */
+    const before = await getOne<Company>("companies", id);
     await updateDoc(doc(db, "companies", id), {
-      ...toDoc(patch), updatedAt: serverTimestamp(), updatedBy: actor.id,
+      ...toDoc(patch),
+      detailTags: companyDetailTags({ ...before, ...patch }),
+      nameKey: companyNameKey(patch.name ?? before?.name ?? ""),
+      updatedAt: serverTimestamp(), updatedBy: actor.id,
     });
     const updated = (await getOne<Company>("companies", id))!;
     await recordAudit({
@@ -1070,7 +1129,7 @@ export const reservationsRepo = {
       detail:
         `${existing.customerName} at ${existing.hotelName}, ` +
         `check-in ${existing.checkIn}, ${existing.totalAmount}` +
-        (reason ? ` — ${reason}` : ""),
+        (reason ? `: ${reason}` : ""),
       actor,
     });
     await deleteDoc(doc(db, "reservations", id));
@@ -1594,8 +1653,20 @@ export const importRepo = {
     rows: Record<string, unknown>[],
     actor: Actor,
     onProgress?: (done: number, total: number) => void,
+    /**
+     * Whose book the records join. Omitted means the importer's own.
+     *
+     * ⚠️ Owner and author are recorded separately and must stay so.
+     * `ownerId` is the salesperson the records now belong to — it
+     * decides whose list they appear in and whose name the business
+     * sits against. `createdBy` stays the person who pressed Import,
+     * because "who put 400 leads in Haider's name" is exactly the
+     * question the audit trail exists to answer.
+     */
+    owner?: { id: string; name: string },
   ): Promise<{ created: number }> => {
     const collectionName = entity;
+    const belongsTo = owner ?? { id: actor.id, name: actor.name };
     let created = 0;
 
     for (let i = 0; i < rows.length; i += 400) {
@@ -1611,8 +1682,8 @@ export const importRepo = {
              dereferences — and 200 rows all render as a blank page. */
           ...DEFAULTS_FOR[entity],
           ...row,
-          ownerId: actor.id,
-          ownerName: actor.name,
+          ownerId: belongsTo.id,
+          ownerName: belongsTo.name,
           totalReservations: 0,
           totalRevenue: 0,
           lastActivityAt: serverTimestamp(),
@@ -1625,9 +1696,15 @@ export const importRepo = {
       onProgress?.(created, rows.length);
     }
 
+    const forSomeoneElse = belongsTo.id !== actor.id;
     await recordAudit({
       entityType: entity, entityId: "bulk", entityLabel: `${created} ${entity}`,
-      action: "imported", summary: `Imported ${created} ${entity}`, actor,
+      action: "imported",
+      summary: forSomeoneElse
+        ? `Imported ${created} ${entity} for ${belongsTo.name}`
+        : `Imported ${created} ${entity}`,
+      ...(forSomeoneElse ? { detail: `Assigned to ${belongsTo.name} (${belongsTo.id})` } : {}),
+      actor,
     });
     return { created };
   },
@@ -1991,6 +2068,208 @@ export const searchRepo = {
         subtitle: `${h.city}, ${h.state}`, link: `/hotels/${h.id}`,
       })),
     ];
+  },
+};
+
+/* ── DSR — the daily sales report ──────────────────────────────────
+   One document per visit (dsrVisits) and one per salesperson per day
+   for the sheet's other content (dsrDays). See lib/dsr.ts for the
+   same-day lock, which firestore.rules enforces.                     */
+
+/** What the visit form sends. `companyId` set means "this company". */
+export interface DsrVisitInput {
+  id?: string;
+  day: number;
+  companyId?: string;
+  companyName: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  area: string;
+  visitType: VisitType;
+  remarks: string;
+}
+
+/** A salesperson whose DSR is being written — themselves, or chosen by the desk. */
+export interface DsrOwner {
+  id: string;
+  name: string;
+}
+
+/* ⚠️ Bounded, always. A month of one salesperson is ~120 visits; a
+   month of the whole team a few hundred. These caps sit well above both
+   and stop a mis-set range from reading a year into the browser. */
+const DSR_DAY_LIMIT = 300;
+const DSR_RANGE_LIMIT = 1500;
+
+export const dsrRepo = {
+  /** One day's visits, in the order they were logged — the sheet's Sr. No. */
+  day: (day: number, ownerId?: string): Promise<DsrVisit[]> =>
+    listAll<DsrVisit>(
+      "dsrVisits",
+      ...(ownerId ? [where("ownerId", "==", ownerId)] : []),
+      where("day", "==", day),
+      orderBy("createdAt", "asc"),
+      limit(DSR_DAY_LIMIT),
+    ),
+
+  /** Every visit between two days inclusive — the monthly DSR. */
+  range: (from: number, to: number, ownerId?: string): Promise<DsrVisit[]> =>
+    listAll<DsrVisit>(
+      "dsrVisits",
+      ...(ownerId ? [where("ownerId", "==", ownerId)] : []),
+      where("day", ">=", from),
+      where("day", "<=", to),
+      orderBy("day", "asc"),
+      orderBy("createdAt", "asc"),
+      limit(DSR_RANGE_LIMIT),
+    ),
+
+  /**
+   * Visits to one company, newest first — its page's Visits tab.
+   *
+   * ⚠️ A salesperson must pass their own id: the rules let them read only
+   * their own visits, and a query that could return a colleague's is
+   * refused whole rather than filtered.
+   */
+  forCompany: (companyId: string, ownerId?: string): Promise<DsrVisit[]> =>
+    listAll<DsrVisit>(
+      "dsrVisits",
+      ...(ownerId ? [where("ownerId", "==", ownerId)] : []),
+      where("companyId", "==", companyId),
+      orderBy("day", "desc"),
+      limit(50),
+    ),
+
+  /**
+   * Adds or corrects a visit.
+   *
+   * The company is resolved on every save: the one chosen from the
+   * search, else one already in the owner's book under the same name
+   * (see companyNameKey), else a NEW company is created as a lead in
+   * that owner's book, carrying this contact person. The owner chose
+   * this on 2026-09-10 — the DSR builds the company list.
+   *
+   * ⚠️ Matching stays inside the DSR owner's book. A visit never links
+   * onto a colleague's account, which would move the lead's history
+   * under someone else's name.
+   */
+  saveVisit: async (
+    input: DsrVisitInput,
+    owner: DsrOwner,
+    actor: Actor,
+  ): Promise<{ visit: DsrVisit; createdCompany: Company | null }> => {
+    const companyName = input.companyName.trim();
+    if (!companyName) throw new Error("Enter the company visited.");
+
+    /* ⚠️ Checked BEFORE anything is written. A visit to a new company
+       creates the company first; if the visit were then refused — a form
+       left open past midnight, the day now locked — the company would
+       remain, with no visit to explain it. The rule is the real boundary;
+       this only stops a refused visit leaving debris behind. */
+    if (!canChangeDsr(actor.role, actor.id, owner.id, input.day)) {
+      throw new Error(
+        owner.id === actor.id
+          ? "That day's report is locked. Ask the CRS desk to add the visit."
+          : "You can only add to your own report.",
+      );
+    }
+
+    let company: Company | null = input.companyId ? await getOne<Company>("companies", input.companyId) : null;
+    if (!company) company = await companiesRepo.findByName(companyName, owner.id);
+
+    let createdCompany: Company | null = null;
+    if (!company) {
+      const contact = input.contactPerson.trim()
+        ? [{
+            name: input.contactPerson.trim(),
+            designation: "",
+            phone: input.phone.trim(),
+            email: input.email.trim().toLowerCase(),
+          }]
+        : [];
+      company = await companiesRepo.create(
+        {
+          name: companyName,
+          legalName: companyName,
+          address: input.area.trim(),
+          contacts: contact,
+          status: "prospect",
+          ownerId: owner.id,
+          ownerName: owner.name,
+          notes: `First recorded in ${owner.name}'s DSR on ${isoOfDay(input.day)}.`,
+        },
+        actor,
+      );
+      createdCompany = company;
+    }
+
+    const fields = {
+      day: input.day,
+      ownerId: owner.id,
+      ownerName: owner.name,
+      companyId: company.id,
+      companyName: company.name,
+      contactPerson: input.contactPerson.trim(),
+      phone: input.phone.trim(),
+      email: input.email.trim().toLowerCase(),
+      area: input.area.trim(),
+      visitType: input.visitType,
+      remarks: input.remarks.trim(),
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.id,
+    };
+
+    let id = input.id;
+    if (id) {
+      await updateDoc(doc(db, "dsrVisits", id), fields);
+    } else {
+      const ref = await addDoc(collection(db, "dsrVisits"), {
+        ...fields, createdAt: serverTimestamp(), createdBy: actor.id,
+      });
+      id = ref.id;
+    }
+
+    /* The company was just visited. Best effort: `lastActivityAt` is one
+       of the three roll-up fields a salesperson may touch on their own
+       company, and a failure here must not lose the visit already saved. */
+    await updateDoc(doc(db, "companies", company.id), { lastActivityAt: serverTimestamp() })
+      .catch(() => undefined);
+
+    return { visit: (await getOne<DsrVisit>("dsrVisits", id))!, createdCompany };
+  },
+
+  removeVisit: (id: string): Promise<void> => deleteDoc(doc(db, "dsrVisits", id)),
+
+  /** The day's other content — who they went with, what else they did. */
+  dayNote: (ownerId: string, day: number): Promise<DsrDay | null> =>
+    getOne<DsrDay>("dsrDays", `${ownerId}_${day}`),
+
+  dayNotes: (from: number, to: number, ownerId?: string): Promise<DsrDay[]> =>
+    listAll<DsrDay>(
+      "dsrDays",
+      ...(ownerId ? [where("ownerId", "==", ownerId)] : []),
+      where("day", ">=", from),
+      where("day", "<=", to),
+      orderBy("day", "asc"),
+      limit(DSR_RANGE_LIMIT),
+    ),
+
+  saveDayNote: async (
+    owner: DsrOwner,
+    day: number,
+    note: { accompaniedBy: string; notes: string },
+    actor: Actor,
+  ): Promise<void> => {
+    await setDoc(doc(db, "dsrDays", `${owner.id}_${day}`), {
+      day,
+      ownerId: owner.id,
+      ownerName: owner.name,
+      accompaniedBy: note.accompaniedBy.trim(),
+      notes: note.notes.trim(),
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.id,
+    });
   },
 };
 

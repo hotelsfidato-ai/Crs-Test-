@@ -151,7 +151,7 @@ export default function UsersPage() {
                 consequence={
                   <>
                     Their access is revoked immediately. <strong>Setting the account
-                    to Disabled does the same thing and is reversible</strong> — this
+                    to Disabled does the same thing and is reversible</strong>; this
                     is not. Their bookings and audit rows survive but lose the name.
                     The Firebase Auth account is not removed, so {u.email} stays
                     claimed and cannot be re-invited without clearing it from the
@@ -266,7 +266,7 @@ export default function UsersPage() {
 
       <p className="text-xs text-grey-400 mt-4 leading-relaxed">
         Inviting someone records the role they will get. They create their own account and
-        password at the sign-up screen using the invited address — no one, including an
+        password at the sign-up screen using the invited address. No one, including an
         administrator, ever handles someone else's password. Until they do, they have no
         access at all.
       </p>

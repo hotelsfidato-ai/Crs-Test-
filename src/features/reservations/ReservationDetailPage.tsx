@@ -178,7 +178,7 @@ export default function ReservationDetailPage() {
                 consequence={
                   <>
                     This removes the booking permanently. <strong>Cancelling is
-                    usually what you want</strong> — it keeps the record and its
+                    usually what you want</strong>: it keeps the record and its
                     reason, and this does not.
                     {r.automation?.status === "sent" && (
                       <>
@@ -204,8 +204,8 @@ export default function ReservationDetailPage() {
               <p className="text-base font-medium text-brand-red">Cancelled</p>
               <p className="text-sm text-brand-red mt-1 leading-relaxed">
                 {r.cancellationReason || "No reason recorded"} · cancelled by{" "}
-                {r.cancelledBy} on {r.cancelledAt ? dateTime(r.cancelledAt) : "—"}. The
-                record is kept for audit — reservations are never deleted.
+                {r.cancelledBy} on {r.cancelledAt ? dateTime(r.cancelledAt) : "-"}. The
+                record is kept for audit. Reservations are never deleted.
               </p>
             </div>
           </CardBody>
@@ -332,7 +332,7 @@ export default function ReservationDetailPage() {
                     {r.specialRequests && (
                       <div>
                         <p className="text-2xs font-semibold uppercase tracking-wide text-grey-400 mb-1.5">
-                          Special requests — sent to the property
+                          Special requests (sent to the property)
                         </p>
                         <p className="text-base text-ink-900 leading-relaxed">
                           {r.specialRequests}
@@ -342,7 +342,7 @@ export default function ReservationDetailPage() {
                     {r.internalNotes && (
                       <div>
                         <p className="text-2xs font-semibold uppercase tracking-wide text-grey-400 mb-1.5">
-                          Internal — never shown to the guest
+                          Internal (never shown to the guest)
                         </p>
                         <p className="text-base text-grey-600 leading-relaxed">
                           {r.internalNotes}
@@ -556,7 +556,7 @@ function CancelDialog({
       </DialogTrigger>
       <DialogContent
         title={`Cancel ${reference}?`}
-        description="The reservation is kept and marked cancelled — records are never deleted."
+        description="The reservation is kept and marked cancelled. Records are never deleted."
         footer={
           <>
             <DialogClose asChild>

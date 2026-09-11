@@ -215,6 +215,25 @@ export interface InventoryDay {
 export type CompanyTier = "key_account" | "corporate" | "sme" | "travel_agent";
 export type CompanyStatus = "active" | "prospect" | "dormant";
 
+/**
+ * A person Fidato deals with at a company — the travel desk head, the
+ * admin who books.
+ *
+ * ⚠️ NOT a Customer. A customer is someone a room is booked for, and must
+ * carry a unique email and phone. A contact on a lead list often has
+ * neither, so forcing them into `customers` would reject exactly the rows
+ * the owner most needs to keep. They live on the company.
+ *
+ * ⚠️ Every field may be blank except, in practice, the name. The source
+ * is a hand-kept spreadsheet.
+ */
+export interface CompanyContact {
+  name: string;
+  designation: string;
+  phone: string;
+  email: string;
+}
+
 export interface Company extends Auditable {
   id: string;
   name: string;
@@ -227,8 +246,26 @@ export interface Company extends Auditable {
   state: string;
   address: string;
   website: string;
+  /** The company's own line and address — a switchboard, accounts@. */
   phone: string;
   email: string;
+  /**
+   * The people Fidato deals with there, first one primary.
+   *
+   * ⚠️ Distinct from the customers linked by `companyId`, which the company
+   * page lists as "Linked customers". Before this field existed the
+   * importer wrote contacts to a `contacts` array the type did not declare
+   * and no screen read — every contact person imported was saved and
+   * invisible.
+   */
+  contacts: CompanyContact[];
+  /**
+   * "has:phone", "no:email"… — derived, drives the Details filter.
+   * ⚠️ Only ever set by `companyDetailTags` in lib/companyDetails.ts.
+   */
+  detailTags?: string[];
+  /** Normalised name for search and matching — see lib/companyName.ts. */
+  nameKey?: string;
   /** Assigned salesperson. Drives row-level scoping. */
   ownerId: string;
   ownerName: string;
@@ -504,6 +541,73 @@ export interface Commission extends Auditable {
   amount: number;
   status: CommissionStatus;
   periodMonth: string;
+}
+
+/* ── DSR — the daily sales report ──────────────────────────────── */
+
+/**
+ * What a sales visit was. Drawn from the remarks salespeople actually
+ * write in their DSR workbooks — "Hotel Introduction", "Courtesy visit.
+ * Brand recall", "Was busy so didn't meet" — so a manager can count
+ * introductions per person instead of reading every remark.
+ */
+export type VisitType =
+  | "introduction"
+  | "courtesy"
+  | "follow_up"
+  | "meeting"
+  | "contract"
+  | "not_met";
+
+/**
+ * `dsrVisits/{id}` — one sales call or visit, one row of a DSR sheet.
+ *
+ * ⚠️ `day` is an INTEGER, yyyymmdd (20260910), and there is no separate
+ * date string. The security rules lock a salesperson's entry at the end
+ * of its day by comparing `day` with today, and rules can compute a
+ * number from the clock but cannot format a date string. A second,
+ * string copy of the date could disagree with the one the rule checks,
+ * and the entry would display one day and lock on another.
+ */
+export interface DsrVisit {
+  id: string;
+  day: number;
+  /** The salesperson whose DSR this is — scopes reading and editing. */
+  ownerId: string;
+  ownerName: string;
+  /** Always linked: an existing company, or one created by this visit. */
+  companyId: string;
+  companyName: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  /** Locality — "Aundh", "Baner". The DSR's own column. */
+  area: string;
+  visitType: VisitType;
+  remarks: string;
+  createdAt: IsoDateTime;
+  createdBy: string;
+  updatedAt: IsoDateTime;
+  updatedBy: string;
+}
+
+/**
+ * `dsrDays/{ownerId}_{day}` — what a DSR sheet carries besides its
+ * rows: who the salesperson went out with, and on a day with no visits,
+ * why and what they did instead ("heavy rains in city — follow-ups,
+ * emailers to travel agents").
+ */
+export interface DsrDay {
+  id: string;
+  day: number;
+  ownerId: string;
+  ownerName: string;
+  /** "Neeraj Sir" — a joint visit, noted in the sheet's title row. */
+  accompaniedBy: string;
+  /** Other work done, or why there were no visits. */
+  notes: string;
+  updatedAt: IsoDateTime;
+  updatedBy: string;
 }
 
 /* ── users ─────────────────────────────────────────────────────── */

@@ -76,7 +76,7 @@ export default function ForecastReportPage() {
         <Card className="p-5">
           <Stat
             label="Trend"
-            value={data ? delta(data.growthRate) : "—"}
+            value={data ? delta(data.growthRate) : "-"}
             hint="Month on month"
           />
         </Card>

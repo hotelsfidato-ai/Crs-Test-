@@ -26,7 +26,7 @@ const STATUS_ICONS = {
 
 const STATUS_DETAIL: Record<Integration["status"], string> = {
   connected: "Live and syncing.",
-  available: "Not yet connected — arrives with the phase noted below.",
+  available: "Not yet connected. Arrives with the phase noted below.",
   error: "The last sync failed. Credentials or endpoint need attention.",
 };
 

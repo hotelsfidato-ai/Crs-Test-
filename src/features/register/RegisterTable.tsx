@@ -225,7 +225,7 @@ export function RegisterTable({
 function renderCell(row: RegisterBookingRow, field: keyof RegisterBookingRow) {
   const value = row[field];
   if (value === null || value === undefined || value === "") {
-    return <span className="text-grey-300">—</span>;
+    return <span className="text-grey-300">-</span>;
   }
   if (
     field === "total_revenue" || field === "room_rate" ||

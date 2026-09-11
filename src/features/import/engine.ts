@@ -155,6 +155,12 @@ export interface ValidatedRow {
   mapped: Record<string, string>;
   errors: string[];
   warnings: string[];
+  /** Neutral information — nothing to fix. "Added to row 4 as another contact." */
+  notes: string[];
+  /** Normalised grouping value, when the descriptor groups rows. */
+  groupKey?: string;
+  /** The row this one was combined into, when it is not the first of its group. */
+  mergedInto?: number;
 }
 
 export interface ExistingKeys {
@@ -170,11 +176,17 @@ export function validateRows(
 ): ValidatedRow[] {
   /* Duplicates *within the file* are errors — a file containing the
      same person twice is a mistake in the file. Collisions with stored
-     records are warnings, resolved afterwards on the merge screen. */
-  const seen: Record<string, Map<string, number>> = {};
-  for (const key of descriptor.duplicateKeys) seen[key.field] = new Map();
+     records are warnings, resolved afterwards on the merge screen.
 
-  return rows.map((raw, index) => {
+     ⚠️ EXCEPT within a group. When the descriptor groups rows, two rows
+     sharing the grouping key are one record described twice — the same
+     company with a second contact — and flagging them would reject the
+     very rows grouping exists to keep. */
+  const seen: Record<string, Map<string, { row: number; group?: string }>> = {};
+  for (const key of descriptor.duplicateKeys) seen[key.field] = new Map();
+  const grouping = descriptor.groupBy;
+
+  const validated = rows.map((raw, index): ValidatedRow => {
     const rowNumber = index + 2;
     const mapped: Record<string, string> = {};
     for (const field of descriptor.fields) {
@@ -184,6 +196,8 @@ export function validateRows(
 
     const errors: string[] = [];
     const warnings: string[] = [];
+    const groupValue = grouping ? grouping.normalise(mapped[grouping.field] ?? "") : "";
+    const groupKey = groupValue || undefined;
 
     for (const field of descriptor.fields) {
       const value = mapped[field.key] ?? "";
@@ -192,7 +206,9 @@ export function validateRows(
         continue;
       }
       const message = field.validate?.(value);
-      if (message) errors.push(`${field.label}: ${message}`);
+      if (!message) continue;
+      if (field.lenient) warnings.push(`${field.label}: ${message}`);
+      else errors.push(`${field.label}: ${message}`);
     }
 
     /* ⚠️ Only once the cells are individually sound. Told that a row is
@@ -212,9 +228,10 @@ export function validateRows(
 
       const firstSeen = seen[key.field]!.get(normalised);
       if (firstSeen !== undefined) {
-        errors.push(`Same ${key.label} as row ${firstSeen}`);
+        const sameGroup = groupKey !== undefined && firstSeen.group === groupKey;
+        if (!sameGroup) errors.push(`Same ${key.label} as row ${firstSeen.row}`);
       } else {
-        seen[key.field]!.set(normalised, rowNumber);
+        seen[key.field]!.set(normalised, { row: rowNumber, group: groupKey });
       }
 
       if (existing[key.field]?.has(normalised)) {
@@ -222,24 +239,95 @@ export function validateRows(
       }
     }
 
-    return { rowNumber, raw, mapped, errors, warnings };
+    return { rowNumber, raw, mapped, errors, warnings, notes: [], groupKey };
   });
+
+  if (grouping) markGroups(validated, descriptor);
+  return validated;
+}
+
+/**
+ * Second pass: which valid rows join an earlier one.
+ *
+ * ⚠️ Only rows that will actually import take part. If the first "Tata
+ * Motors" row is rejected, the second becomes the company rather than
+ * being folded into a row that is never written.
+ */
+function markGroups(rows: ValidatedRow[], descriptor: ImportDescriptor): void {
+  const grouping = descriptor.groupBy!;
+  const first = new Map<string, ValidatedRow>();
+  const labelOf = (key: string) => descriptor.fields.find((f) => f.key === key)?.label ?? key;
+
+  for (const row of rows) {
+    if (row.errors.length || !row.groupKey) continue;
+    const head = first.get(row.groupKey);
+    if (!head) {
+      first.set(row.groupKey, row);
+      continue;
+    }
+
+    row.mergedInto = head.rowNumber;
+    row.notes.push(`Combined with row ${head.rowNumber}, same ${labelOf(grouping.field).toLowerCase()}`);
+
+    /* Same company, different city — probably two branches, possibly two
+       companies that share a name. Combined, but said out loud. */
+    for (const field of grouping.shouldAgree ?? []) {
+      const a = (head.mapped[field] ?? "").trim();
+      const b = (row.mapped[field] ?? "").trim();
+      if (a && b && a.toLowerCase() !== b.toLowerCase()) {
+        row.warnings.push(
+          `${labelOf(field)} differs from row ${head.rowNumber} ("${a}" vs "${b}"). ` +
+          `combined into one; check it is the same company`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * The documents an import will write — one per row, or one per group.
+ *
+ * ⚠️ The ONLY path from validated rows to documents, so the count on
+ * the button, the summary and what is actually written cannot disagree.
+ */
+export function buildDocuments(
+  rows: ValidatedRow[],
+  descriptor: ImportDescriptor,
+): Record<string, unknown>[] {
+  const valid = rows.filter((r) => r.errors.length === 0);
+  if (!descriptor.groupBy || !descriptor.toDocumentGroup) {
+    return valid.map((r) => descriptor.toDocument(r.mapped));
+  }
+
+  const groups = new Map<string, Record<string, string>[]>();
+  for (const r of valid) {
+    const key = r.groupKey ?? `row:${r.rowNumber}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(r.mapped);
+    else groups.set(key, [r.mapped]);
+  }
+  return [...groups.values()].map((group) => descriptor.toDocumentGroup!(group));
 }
 
 export interface ValidationSummary {
   total: number;
+  /** RECORDS that will be written — fewer than valid rows when rows combine. */
   willImport: number;
   withWarnings: number;
   skipped: number;
+  /** Valid rows folded into an earlier row's record. */
+  combined: number;
 }
 
 export function summarise(rows: ValidatedRow[]): ValidationSummary {
   const valid = rows.filter((r) => r.errors.length === 0);
+  const combined = valid.filter((r) => r.mergedInto !== undefined).length;
   return {
     total: rows.length,
-    willImport: valid.length,
+    willImport: valid.length - combined,
     withWarnings: valid.filter((r) => r.warnings.length > 0).length,
     skipped: rows.length - valid.length,
+    combined,
   };
 }
 
@@ -323,7 +411,8 @@ export function downloadErrorReport(
   );
 }
 
-function triggerDownload(blob: Blob, fileName: string): void {
+/** Saves a Blob as a file. Shared by the importer and the DSR export. */
+export function triggerDownload(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

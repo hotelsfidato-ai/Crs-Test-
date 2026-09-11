@@ -34,7 +34,7 @@ const ISSUE_MESSAGES: Record<AuthIssue, string> = {
   no_profile:
     "That account exists but has no access yet. Ask your administrator to invite " +
     "this address, then use “Set up your account” with the same email and your " +
-    "existing password — it will attach the invitation to the account you already have.",
+    "existing password. It will attach the invitation to the account you already have.",
   disabled:
     "That account has been disabled. Ask your administrator to re-enable it.",
 };

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useActor, useSession, useScope } from "@/lib/session";
-import { can } from "@/lib/permissions";
+import { canAssignOwner, assignableOwners } from "@/lib/permissions";
 import {
   adminRepo, companiesRepo, customersRepo, hotelsRepo, reservationsRepo,
   lineTotal, TODAY,
@@ -92,23 +92,19 @@ export default function NewReservationPage() {
   const step = STEPS[stepIndex]!.key;
   const role = useSession((s) => s.role);
 
-  /* ⚠️ Booking on behalf of someone else is the CRS desk's job. A
-     salesperson never sees this — letting them reassign ownership
-     would let them move commission onto or off their own name. */
-  const canAssignOwner = can(role, "edit", "user") || role === "crs_manager";
+  /* ⚠️ Booking on behalf of someone else is the CRS desk's job. Shared
+     with the importer through lib/permissions, so "who may book for a
+     salesperson" and "who may import for one" cannot drift apart. */
+  const mayAssign = canAssignOwner(role);
 
   const staff = useQuery({
     queryKey: ["assignable-owners"],
     queryFn: () => adminRepo.allUsers(),
-    enabled: canAssignOwner,
+    enabled: mayAssign,
   });
 
-  const assignableOwners = (staff.data ?? []).filter(
-    (u) => u.status === "active" && u.id !== actor.id &&
-      (u.role === "salesperson" || u.role === "manager" || u.role === "crs_manager"),
-  );
-
-  const assignedOwner = assignableOwners.find((u) => u.id === ownerId);
+  const owners = assignableOwners(staff.data ?? [], actor.id);
+  const assignedOwner = owners.find((u) => u.id === ownerId);
 
   /* ⚠️ Scoped, like every other customer list. Without the scope this
      issues an unfiltered query, and Firestore fails a query outright
@@ -533,7 +529,7 @@ export default function NewReservationPage() {
                     >
                       {(Object.keys(PAYMENT_TERM_LABELS) as PaymentTerm[]).map((t) => (
                         <option key={t} value={t}>
-                          {t} — {PAYMENT_TERM_LABELS[t]}
+                          {t} · {PAYMENT_TERM_LABELS[t]}
                         </option>
                       ))}
                     </NativeSelect>
@@ -548,7 +544,7 @@ export default function NewReservationPage() {
                     </p>
                     <p className="text-sm text-grey-600 mt-1 leading-relaxed">
                       Fidato does not own this property, so the booking needs proof it was
-                      accepted. Fill in <strong>at least one</strong> — whichever the hotel
+                      accepted. Fill in <strong>at least one</strong>, whichever the hotel
                       actually gave you.
                     </p>
                   </div>
@@ -590,13 +586,13 @@ export default function NewReservationPage() {
                     <p className="flex items-start gap-2 text-sm text-brand-red leading-relaxed">
                       <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
                       Enter the confirmation number, the name of who confirmed it, or the
-                      time — one of the three is enough.
+                      time. One of the three is enough.
                     </p>
                   )}
                 </div>
 
                 {/* ── Whose booking is this ── */}
-                {canAssignOwner && (
+                {mayAssign && (
                   <Field
                     label="Booked for"
                     hint="The salesperson this booking belongs to. It appears in their list and against their name."
@@ -608,12 +604,12 @@ export default function NewReservationPage() {
                         onChange={(e) => setOwnerId(e.target.value)}
                       >
                         <option value="">
-                          {actor.name} — me
+                          {actor.name} (me)
                         </option>
-                        {assignableOwners.map((u) => (
+                        {owners.map((u) => (
                           <option key={u.id} value={u.id}>
                             {u.name}
-                            {u.department ? ` — ${u.department}` : ""}
+                            {u.department ? ` · ${u.department}` : ""}
                           </option>
                         ))}
                       </NativeSelect>
@@ -627,7 +623,7 @@ export default function NewReservationPage() {
                     <p className="text-sm text-[#8a6300] leading-relaxed">
                       Bill to company needs a company on the invoice, and this guest is not
                       attached to one. Either pick a different payment method or link the
-                      customer to a company first — otherwise the invoice has nobody to go to.
+                      customer to a company first, otherwise the invoice has nobody to go to.
                     </p>
                   </div>
                 )}
@@ -667,7 +663,7 @@ export default function NewReservationPage() {
               />
               <CardBody className="space-y-5">
 
-                <ReviewRow label="Customer" value={customer?.fullName ?? "—"} sub={customer?.email} />
+                <ReviewRow label="Customer" value={customer?.fullName ?? "-"} sub={customer?.email} />
                 <ReviewRow
                   label="Company"
                   value={customer?.companyName ?? "Individual booking"}
@@ -679,7 +675,7 @@ export default function NewReservationPage() {
                 />
                 <ReviewRow
                   label="Property"
-                  value={hotel?.name ?? "—"}
+                  value={hotel?.name ?? "-"}
                   sub={hotel ? `${hotel.city}, ${hotel.state}` : undefined}
                 />
                 <ReviewRow
@@ -687,7 +683,7 @@ export default function NewReservationPage() {
                   value={
                     range.from && range.to
                       ? `${dateShort(range.from)} → ${dateShort(range.to)}`
-                      : "—"
+                      : "-"
                   }
                   sub={`${nights} night${nights === 1 ? "" : "s"}`}
                 />
@@ -874,7 +870,7 @@ function RoomTypeRow({
             >
               {offered.map((plan) => (
                 <option key={plan} value={plan}>
-                  {MEAL_PLAN_SHORT[plan]} — {MEAL_PLAN_LABELS[plan]}
+                  {MEAL_PLAN_SHORT[plan]} · {MEAL_PLAN_LABELS[plan]}
                 </option>
               ))}
             </NativeSelect>
