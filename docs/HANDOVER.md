@@ -7,18 +7,22 @@ between "re-explain the entire project" and "here's exactly where we left off."
 *living* record of the present, not a history. History belongs in [`DECISIONS.md`](DECISIONS.md)
 and in git.
 
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-11
 
 ---
 
 ## The five-line version
 
-1. **Wiped for launch on 2026-08-14.** Firestore holds nothing but `settings` and the one Owner.
-2. Phase 2 is deployed and current — https://crstest-9a0c5.web.app
-3. **The booking register is NOT yet cleared** — the app cannot do it. Run
-   [`supabase/clear-register.sql`](supabase/clear-register.sql) in the Supabase dashboard.
-4. Everything blocked below is a Supabase or DNS step outside this repo.
-5. First job at launch: re-invite staff, then import properties → companies → customers.
+1. **v1.0.0 released 2026-09-11** (tag `v1.0.0`): Daily sales report, import tagged to a
+   salesperson, company contacts with Salesperson and Details filters. Rules, 181 indexes and
+   hosting all deployed; the one live company was backfilled with `detailTags` and `nameKey`.
+2. Live at https://crstest-9a0c5.web.app
+3. **Phase 2 of [`PLAN.md`](PLAN.md) (real paging, true totals, database search, bounded
+   pickers) must land before the real company and customer lists are imported.**
+4. **The booking register is NOT yet cleared**, and everything blocked below is a Supabase or
+   DNS step outside this repo.
+5. Test new data flows in the local sandbox first: `npm run emulator:local`, `npm run seed:local`,
+   `npm run dev:local`. Plain `npm run dev` talks to PRODUCTION.
 
 ---
 
@@ -26,11 +30,12 @@ and in git.
 
 | | |
 |---|---|
-| Hosting | https://crstest-9a0c5.web.app — current build |
-| Firestore rules | Deployed |
+| Hosting | https://crstest-9a0c5.web.app · v1.0.0 |
+| Firestore rules | Deployed with v1.0.0 (adds `dsrVisits`, `dsrDays`) |
+| Firestore indexes | 181 of the 200 Spark allows, generated from `src/data/queryPlan.ts` |
 | Firebase project | `crstest-9a0c5` · Spark plan |
-| Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` — **public**, `main` pushed and current |
-| Tests | 153 unit · 101 rules · typecheck and build clean |
+| Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` · **public**, `main` and tag `v1.0.0` pushed |
+| Tests | 198 unit · 122 rules · typecheck and build clean |
 
 `CLAUDE.md` carries orientation and traps only, and points here for state. **Keep it that way:**
 state in a file nobody rewrites is state that goes quietly wrong.
@@ -90,11 +95,12 @@ Nothing here can be fixed from inside this repo.
 
 ## In flight
 
-⚠️ **Uncommitted, awaiting the owner's local test (2026-09-10):** tagging an import to a
-salesperson ("These records belong to"), plus a local sandbox — `npm run emulator:local`,
-`npm run seed:local`, `npm run dev:local`. Plain `npm run dev` talks to PRODUCTION; the sandbox
-exists so a test import cannot leave permanent customers in the live database. Commit, deploy
-and update the manual only once the owner confirms.
+**Next: Phase 2 of [`PLAN.md`](PLAN.md)**, before any real import. Phases 3 and 4 (the audit's
+security items below, Finance invoicing, commissions) are not started. The manual in
+`docs/manual/` does not yet describe the Daily sales report or owner-tagged import.
+
+**Known with v1.0.0:** a salesperson only searches their own book, so two salespeople can each
+create the same company from a DSR visit. The desk sees both; merging companies is not built.
 
 **The launch wipe is half-finished** — Firestore is done, the register is not. See *Blocked*.
 
