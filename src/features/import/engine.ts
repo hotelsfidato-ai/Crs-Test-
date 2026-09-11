@@ -1,5 +1,6 @@
 import Papa from "papaparse";
-import type { ImportDescriptor, ImportField } from "./descriptors";
+import type { ImportContext, ImportDescriptor, ImportField } from "./descriptors";
+import { duplicateValue } from "@/lib/duplicateKey";
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT ENGINE
@@ -29,8 +30,29 @@ export function isExcel(fileName: string): boolean {
 
 /* ── Parsing ───────────────────────────────────────────────────── */
 
-export async function parseFile(file: File, sheetName?: string): Promise<ParsedFile> {
-  return isExcel(file.name) ? parseExcel(file, sheetName) : parseCsv(file);
+/**
+ * Reads a CSV or workbook. For a workbook with several sheets, `descriptor`
+ * picks the sheet whose headings match its columns best.
+ *
+ * ⚠️ Not simply the first sheet. A workbook that opens on a "Read me" or
+ * a summary tab would otherwise have its instructions validated as data:
+ * every line rejected, nothing imported, and no hint that the rows were
+ * one tab over.
+ */
+export async function parseFile(
+  file: File,
+  sheetName?: string,
+  descriptor?: ImportDescriptor,
+): Promise<ParsedFile> {
+  return isExcel(file.name) ? parseExcel(file, sheetName, descriptor) : parseCsv(file);
+}
+
+/** How many of the descriptor's columns a heading row names outright (label, key or alias). */
+function headingMatches(headers: string[], descriptor: ImportDescriptor): number {
+  const names = new Set(headers.map(squash));
+  return descriptor.fields.filter((f) =>
+    [f.label, f.key, ...f.aliases].some((n) => names.has(squash(n))),
+  ).length;
 }
 
 async function parseCsv(file: File): Promise<ParsedFile> {
@@ -57,14 +79,32 @@ async function parseCsv(file: File): Promise<ParsedFile> {
   };
 }
 
-async function parseExcel(file: File, sheetName?: string): Promise<ParsedFile> {
+async function parseExcel(
+  file: File,
+  sheetName?: string,
+  descriptor?: ImportDescriptor,
+): Promise<ParsedFile> {
   // Lazy — keeps ~400 kB out of every other route.
   const XLSX = await import("xlsx");
   const buffer = await file.arrayBuffer();
   const book = XLSX.read(buffer, { type: "array", cellDates: false, raw: false });
 
   const sheets = book.SheetNames;
-  const active = sheetName && sheets.includes(sheetName) ? sheetName : sheets[0];
+  let active = sheetName && sheets.includes(sheetName) ? sheetName : sheets[0];
+  if (!sheetName && descriptor && sheets.length > 1) {
+    let best = 0;
+    for (const name of sheets) {
+      const [heading] = XLSX.utils.sheet_to_json<unknown[]>(book.Sheets[name]!, {
+        header: 1, blankrows: false,
+      });
+      const score = headingMatches((heading ?? []).map((h) => String(h ?? "").trim()), descriptor);
+      // Strictly better only, so a tie keeps the earlier sheet.
+      if (score > best) {
+        best = score;
+        active = name;
+      }
+    }
+  }
   if (!active) throw new Error("The workbook has no sheets.");
 
   const sheet = book.Sheets[active]!;
@@ -148,6 +188,20 @@ export function guessMapping(
 
 /* ── Validation ────────────────────────────────────────────────── */
 
+/** One file row as the descriptor's fields, straight from the mapped columns. */
+export function mapRow(
+  raw: Record<string, string>,
+  mapping: Record<string, string>,
+  descriptor: ImportDescriptor,
+): Record<string, string> {
+  const mapped: Record<string, string> = {};
+  for (const field of descriptor.fields) {
+    const source = mapping[field.key];
+    mapped[field.key] = source ? (raw[source] ?? "").trim() : "";
+  }
+  return mapped;
+}
+
 export interface ValidatedRow {
   /** 1-based spreadsheet row, counting the header. */
   rowNumber: number;
@@ -161,7 +215,24 @@ export interface ValidatedRow {
   groupKey?: string;
   /** The row this one was combined into, when it is not the first of its group. */
   mergedInto?: number;
+  /**
+   * The problem with each field, keyed by field. What the row editor
+   * highlights, so the person fixing row 23 is taken to the cell at fault
+   * rather than handed a sentence to decode.
+   */
+  fieldErrors: Record<string, string>;
+  /** Fields whose value was typed on the review screen, not read from the file. */
+  edited: string[];
 }
+
+/**
+ * Corrections typed on the review screen, by spreadsheet row, then field.
+ *
+ * ⚠️ Applied OVER the file, never written back into it. The parsed file
+ * stays exactly as uploaded, so "Reset to file" is always possible and a
+ * re-mapped column cannot silently discard someone's correction.
+ */
+export type RowEdits = Record<number, Record<string, string>>;
 
 export interface ExistingKeys {
   /** Normalised values already stored, per duplicate-key field. */
@@ -173,6 +244,8 @@ export function validateRows(
   mapping: Record<string, string>,
   descriptor: ImportDescriptor,
   existing: ExistingKeys = {},
+  edits: RowEdits = {},
+  ctx?: ImportContext,
 ): ValidatedRow[] {
   /* Duplicates *within the file* are errors — a file containing the
      same person twice is a mistake in the file. Collisions with stored
@@ -188,14 +261,18 @@ export function validateRows(
 
   const validated = rows.map((raw, index): ValidatedRow => {
     const rowNumber = index + 2;
-    const mapped: Record<string, string> = {};
-    for (const field of descriptor.fields) {
-      const source = mapping[field.key];
-      mapped[field.key] = source ? (raw[source] ?? "").trim() : "";
+    const mapped = mapRow(raw, mapping, descriptor);
+    const edit = edits[rowNumber] ?? {};
+    const edited: string[] = [];
+    for (const [key, value] of Object.entries(edit)) {
+      if (!(key in mapped)) continue;
+      mapped[key] = value.trim();
+      edited.push(key);
     }
 
     const errors: string[] = [];
     const warnings: string[] = [];
+    const fieldErrors: Record<string, string> = {};
     const groupValue = grouping ? grouping.normalise(mapped[grouping.field] ?? "") : "";
     const groupKey = groupValue || undefined;
 
@@ -203,33 +280,44 @@ export function validateRows(
       const value = mapped[field.key] ?? "";
       if (field.required && !value) {
         errors.push(`${field.label} is required`);
+        fieldErrors[field.key] = "Required";
         continue;
       }
       const message = field.validate?.(value);
       if (!message) continue;
       if (field.lenient) warnings.push(`${field.label}: ${message}`);
-      else errors.push(`${field.label}: ${message}`);
+      else {
+        errors.push(`${field.label}: ${message}`);
+        fieldErrors[field.key] = message;
+      }
     }
 
     /* ⚠️ Only once the cells are individually sound. Told that a row is
        half a bank block while the account number is also unreadable,
        the operator fixes the wrong thing. */
+    const notes: string[] = [];
     if (!errors.length) {
-      const row = descriptor.checkRow?.(mapped);
+      const row = descriptor.checkRow?.(mapped, ctx);
       if (row?.errors) errors.push(...row.errors);
       if (row?.warnings) warnings.push(...row.warnings);
+      if (row?.notes) notes.push(...row.notes);
+      for (const [key, message] of Object.entries(row?.fieldErrors ?? {})) {
+        fieldErrors[key] ??= message;
+      }
     }
 
     for (const key of descriptor.duplicateKeys) {
-      const value = mapped[key.field] ?? "";
-      if (!value) continue;
-      const normalised = key.normalise(value);
+      const normalised = duplicateValue(key, (f) => mapped[f]);
       if (!normalised) continue;
 
       const firstSeen = seen[key.field]!.get(normalised);
       if (firstSeen !== undefined) {
         const sameGroup = groupKey !== undefined && firstSeen.group === groupKey;
-        if (!sameGroup) errors.push(`Same ${key.label} as row ${firstSeen.row}`);
+        if (!sameGroup) {
+          const message = `Same ${key.label} as row ${firstSeen.row}`;
+          errors.push(message);
+          for (const f of [key.field, ...(key.with ?? [])]) fieldErrors[f] ??= message;
+        }
       } else {
         seen[key.field]!.set(normalised, { row: rowNumber, group: groupKey });
       }
@@ -239,7 +327,7 @@ export function validateRows(
       }
     }
 
-    return { rowNumber, raw, mapped, errors, warnings, notes: [], groupKey };
+    return { rowNumber, raw, mapped, errors, warnings, notes, groupKey, fieldErrors, edited };
   });
 
   if (grouping) markGroups(validated, descriptor);
@@ -293,10 +381,11 @@ function markGroups(rows: ValidatedRow[], descriptor: ImportDescriptor): void {
 export function buildDocuments(
   rows: ValidatedRow[],
   descriptor: ImportDescriptor,
+  ctx?: ImportContext,
 ): Record<string, unknown>[] {
   const valid = rows.filter((r) => r.errors.length === 0);
   if (!descriptor.groupBy || !descriptor.toDocumentGroup) {
-    return valid.map((r) => descriptor.toDocument(r.mapped));
+    return valid.map((r) => descriptor.toDocument(r.mapped, ctx));
   }
 
   const groups = new Map<string, Record<string, string>[]>();

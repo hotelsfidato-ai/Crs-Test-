@@ -10,6 +10,9 @@ import { postWebhook, shouldSend } from "@/lib/webhook";
 import { companyDetailTags } from "@/lib/companyDetails";
 import { companyNameKey, PREFIX_END } from "@/lib/companyName";
 import { canChangeDsr, isoOfDay } from "@/lib/dsr";
+import { duplicateValue, type DuplicateKey } from "@/lib/duplicateKey";
+import { roomCode } from "@/lib/roomCode";
+import { squash, type ImportContext } from "@/features/import/descriptors";
 
 const ROLE_KEYS = ASSIGNABLE_ROLES;
 import type {
@@ -255,6 +258,33 @@ export const hotelsRepo = {
 
 /* ── Room configuration ────────────────────────────────────────── */
 
+/**
+ * Rewrites each property's `roomMix` ("Deluxe Room - 20") from its room types.
+ *
+ * ⚠️ roomMix is what the property list and the property's summary show,
+ * and nothing kept it in step with the room types themselves: after 93
+ * room types were imported, every property still read "0 room types".
+ * It stays a copy on the property, rather than the list reading room
+ * types, because the list shows every property at once and on Spark that
+ * would be one query per property on every visit. So every path that
+ * changes room types ends here instead.
+ */
+async function syncRoomMix(hotelIds: Iterable<string>): Promise<void> {
+  const ids = [...new Set(hotelIds)].filter(Boolean);
+  if (!ids.length) return;
+  const mixes = await Promise.all(ids.map(async (hotelId) => {
+    const types = await listAll<RoomType>("roomTypes", where("hotelId", "==", hotelId), orderBy("name"));
+    return [hotelId, types.map((t) => `${t.name} - ${t.totalRooms ?? 0}`)] as const;
+  }));
+  for (let i = 0; i < mixes.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const [hotelId, roomMix] of mixes.slice(i, i + 400)) {
+      batch.update(doc(db, "hotels", hotelId), { roomMix });
+    }
+    await batch.commit();
+  }
+}
+
 export const roomConfigRepo = {
   createRoomType: async (input: Partial<RoomType>, actor: Actor): Promise<RoomType> => {
     const ref = await addDoc(collection(db, "roomTypes"), {
@@ -262,16 +292,23 @@ export const roomConfigRepo = {
       createdAt: serverTimestamp(), createdBy: actor.id,
       updatedAt: serverTimestamp(), updatedBy: actor.id,
     });
-    return (await getOne<RoomType>("roomTypes", ref.id))!;
+    const created = (await getOne<RoomType>("roomTypes", ref.id))!;
+    await syncRoomMix([created.hotelId]);
+    return created;
   },
 
   updateRoomType: async (id: string, patch: Partial<RoomType>, actor: Actor): Promise<void> => {
     await updateDoc(doc(db, "roomTypes", id), {
       ...toDoc(patch), updatedAt: serverTimestamp(), updatedBy: actor.id,
     });
+    const after = await getOne<RoomType>("roomTypes", id);
+    if (after) await syncRoomMix([after.hotelId]);
   },
 
-  deleteRoomType: (id: string) => deleteDoc(doc(db, "roomTypes", id)),
+  deleteRoomType: async (id: string, hotelId: string): Promise<void> => {
+    await deleteDoc(doc(db, "roomTypes", id));
+    await syncRoomMix([hotelId]);
+  },
 
   createSeason: async (input: Partial<Season>, actor: Actor): Promise<Season> => {
     const ref = await addDoc(collection(db, "seasons"), {
@@ -1607,9 +1644,100 @@ const DEFAULTS_FOR: Record<ImportEntity, Record<string, unknown>> = {
   customers: CUSTOMER_DEFAULTS,
   companies: COMPANY_DEFAULTS,
   hotels: HOTEL_DEFAULTS,
+  /* Only for a room type the sheet creates. An update writes just the
+     columns the row filled, so these never overwrite a stored value. */
+  roomTypes: {
+    code: "", description: "", totalRooms: 0, maxOccupancy: 2, maxExtraBeds: 0,
+    amenities: [], sizeSqft: 0,
+  },
 };
 
+/**
+ * Room types are UPSERTED: a row naming a room type the property already
+ * has updates it in place, so the sheet can be uploaded again whenever a
+ * hotel changes its mix, and nothing is ever added twice.
+ *
+ * ⚠️ The stored room types are re-read here, not taken from the review
+ * screen's copy. A room type added by hand after the file was checked,
+ * or a colleague's upload in the meantime, would otherwise be duplicated.
+ */
+async function commitRoomTypes(
+  rows: Record<string, unknown>[],
+  actor: Actor,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ created: number; updated: number }> {
+  const stored = await listAll<RoomType>("roomTypes");
+  const keyOf = (hotelId: string, name: string) => `${hotelId}|${squash(name)}`;
+  const idFor = new Map(stored.map((r) => [keyOf(r.hotelId, r.name), r.id]));
+  let created = 0;
+  let updated = 0;
+  let done = 0;
+
+  for (let i = 0; i < rows.length; i += 400) {
+    const chunk = rows.slice(i, i + 400);
+    const batch = writeBatch(db);
+    for (const row of chunk) {
+      const hotelId = String(row.hotelId ?? "");
+      const name = String(row.name ?? "");
+      // Validation rejects both; this only keeps a bad document out if it ever did not.
+      if (!hotelId || !name) continue;
+      const key = keyOf(hotelId, name);
+      const id = idFor.get(key);
+      if (id) {
+        batch.update(doc(db, "roomTypes", id), {
+          ...row, updatedAt: serverTimestamp(), updatedBy: actor.id,
+        });
+        updated++;
+      } else {
+        const ref = doc(collection(db, "roomTypes"));
+        batch.set(ref, {
+          ...DEFAULTS_FOR.roomTypes,
+          code: roomCode(name),
+          ...row,
+          createdAt: serverTimestamp(), createdBy: actor.id,
+          updatedAt: serverTimestamp(), updatedBy: actor.id,
+        });
+        idFor.set(key, ref.id);
+        created++;
+      }
+    }
+    await batch.commit();
+    done += chunk.length;
+    onProgress?.(done, rows.length);
+  }
+
+  await syncRoomMix(rows.map((r) => String(r.hotelId ?? "")));
+
+  await recordAudit({
+    entityType: "roomTypes", entityId: "bulk", entityLabel: `${created + updated} room types`,
+    action: "imported",
+    summary: `Imported room types: ${created} added, ${updated} updated`,
+    actor,
+  });
+  return { created, updated };
+}
+
 export const importRepo = {
+  /**
+   * What the rows must be checked against before they can be judged.
+   * Room types: every property, to resolve "Property Name", and every
+   * stored room type, so a re-upload is shown as an update.
+   *
+   * Two small collections (dozens of properties, a few hundred room
+   * types), read once per import rather than once per row.
+   */
+  context: async (entity: ImportEntity): Promise<ImportContext> => {
+    if (entity !== "roomTypes") return {};
+    const [hotels, roomTypes] = await Promise.all([
+      listAll<Hotel>("hotels"),
+      listAll<RoomType>("roomTypes"),
+    ]);
+    return {
+      hotels: hotels.map((h) => ({ id: h.id, name: h.name, city: h.city })),
+      roomTypes: roomTypes.map((r) => ({ id: r.id, hotelId: r.hotelId, name: r.name })),
+    };
+  },
+
   /**
    * The normalised values already stored, for collision warnings.
    *
@@ -1621,7 +1749,7 @@ export const importRepo = {
    */
   existingKeys: async (
     entity: ImportEntity,
-    fields: { field: string; normalise: (v: string) => string }[],
+    fields: DuplicateKey[],
   ): Promise<Record<string, Set<string>>> => {
     if (!fields.length) return {};
     const rows = await listAll<Record<string, unknown>>(
@@ -1629,13 +1757,9 @@ export const importRepo = {
       limit(EXISTING_SCAN_LIMIT),
     );
     const out: Record<string, Set<string>> = {};
-    for (const { field, normalise } of fields) {
-      out[field] = new Set(
-        rows
-          .map((r) => String(r[field] ?? ""))
-          .filter(Boolean)
-          .map(normalise)
-          .filter(Boolean),
+    for (const key of fields) {
+      out[key.field] = new Set(
+        rows.map((r) => duplicateValue(key, (f) => r[f])).filter(Boolean),
       );
     }
     return out;
@@ -1664,7 +1788,8 @@ export const importRepo = {
      * question the audit trail exists to answer.
      */
     owner?: { id: string; name: string },
-  ): Promise<{ created: number }> => {
+  ): Promise<{ created: number; updated?: number }> => {
+    if (entity === "roomTypes") return commitRoomTypes(rows, actor, onProgress);
     const collectionName = entity;
     const belongsTo = owner ?? { id: actor.id, name: actor.name };
     let created = 0;

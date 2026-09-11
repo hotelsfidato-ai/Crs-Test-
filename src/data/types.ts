@@ -981,7 +981,7 @@ export interface MergeJob {
   actorId: string;
 }
 
-export type ImportEntity = "customers" | "companies" | "hotels";
+export type ImportEntity = "customers" | "companies" | "hotels" | "roomTypes";
 
 export interface ImportIssue {
   row: number;

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { guessMapping, validateRows, summarise, templateCsv, buildDocuments } from "./engine";
-import { CUSTOMER_IMPORT, COMPANY_IMPORT, HOTEL_IMPORT, companyStatusFor } from "./descriptors";
+import { guessMapping, validateRows, summarise, templateCsv, buildDocuments, parseFile } from "./engine";
+import {
+  CUSTOMER_IMPORT, COMPANY_IMPORT, HOTEL_IMPORT, ROOM_TYPE_IMPORT, companyStatusFor,
+} from "./descriptors";
+import { duplicateValue } from "@/lib/duplicateKey";
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT ENGINE
@@ -244,6 +247,97 @@ describe("property bank details", () => {
       const [r] = validateRows([sample], mapping, HOTEL_IMPORT);
       expect(r!.errors, JSON.stringify(sample)).toEqual([]);
     }
+  });
+});
+
+/* ⚠️ One brand, several cities. The owner's own property list carries The
+   Peerless Hotel in Durgapur, Hyderabad and Kolkata, and a name-only key
+   rejected the second and third as copies of the first. */
+describe("property duplicates", () => {
+  const mapping = Object.fromEntries(HOTEL_IMPORT.fields.map((f) => [f.key, f.label]));
+  const peerless = (city: string) => ({
+    "Property Name": "THE PEERLESS HOTEL", City: city, State: "West Bengal",
+  });
+  const [nameKey] = HOTEL_IMPORT.duplicateKeys;
+
+  it("accepts the same property name in different cities", () => {
+    const rows = validateRows(
+      [peerless("Durgapur "), peerless("Hyderabad "), peerless("Kolkata ")],
+      mapping, HOTEL_IMPORT,
+    );
+    expect(rows.map((r) => r.errors)).toEqual([[], [], []]);
+  });
+
+  it("still rejects the same property twice in one city", () => {
+    const rows = validateRows(
+      [peerless("Kolkata"), { ...peerless(" kolkata "), "Property Name": "The  Peerless Hotel" }],
+      mapping, HOTEL_IMPORT,
+    );
+    expect(rows[0]!.errors).toEqual([]);
+    expect(rows[1]!.errors).toEqual(["Same property name and city as row 2"]);
+  });
+
+  /* The stored side must build its key the same way, or a re-uploaded
+     file stops warning that it is already in. */
+  it("warns only when a stored property has the same name AND city", () => {
+    const stored = { name: "The Peerless Hotel", city: "Kolkata" };
+    const existing = { name: new Set([duplicateValue(nameKey!, (f) => stored[f as keyof typeof stored])]) };
+    const [kolkata, durgapur] = validateRows(
+      [peerless("Kolkata"), peerless("Durgapur")], mapping, HOTEL_IMPORT, existing,
+    );
+    expect(kolkata!.warnings).toEqual(["A record already exists with this property name and city"]);
+    expect(durgapur!.warnings).toEqual([]);
+  });
+});
+
+/* Fixing a rejected row on the review screen instead of re-uploading. */
+describe("row edits", () => {
+  const mapping = Object.fromEntries(HOTEL_IMPORT.fields.map((f) => [f.key, f.label]));
+  const kalaSagar = {
+    "Property Name": "HOTEL KALA SAGAR", City: "Pune", State: "Maharashtra",
+    "Account Name": "KALASAGAR CHITRA MANDIR PVT LTD",
+    "Account Number": "A/c No. 050329070000002", IFSC: "BKID0000503",
+  };
+
+  it("points each error at the field that caused it", () => {
+    const [r] = validateRows([kalaSagar], mapping, HOTEL_IMPORT);
+    expect(r!.fieldErrors).toEqual({ bankAccountNumber: "Digits only" });
+    expect(r!.edited).toEqual([]);
+  });
+
+  it("re-checks the corrected value, keeps its leading zero, and imports it", () => {
+    const rows = validateRows([kalaSagar], mapping, HOTEL_IMPORT, {}, {
+      2: { bankAccountNumber: "050329070000002" },
+    });
+    expect(rows[0]!.errors).toEqual([]);
+    expect(rows[0]!.edited).toEqual(["bankAccountNumber"]);
+    expect(buildDocuments(rows, HOTEL_IMPORT)[0]!.bankAccountNumber).toBe("050329070000002");
+  });
+
+  it("leaves the parsed file untouched", () => {
+    const raw = { ...kalaSagar };
+    validateRows([raw], mapping, HOTEL_IMPORT, {}, { 2: { bankAccountNumber: "050329070000002" } });
+    expect(raw["Account Number"]).toBe("A/c No. 050329070000002");
+  });
+
+  /* A correction can create a problem as well as clear one. */
+  it("judges an edited row against the rest of the file", () => {
+    const other = { ...kalaSagar, "Property Name": "HOTEL SADANAND REGENCY", "Account Number": "" };
+    const rows = validateRows([kalaSagar, other], mapping, HOTEL_IMPORT, {}, {
+      2: { bankAccountNumber: "050329070000002" },
+      3: { name: "Hotel Kala Sagar" },
+    });
+    expect(rows[1]!.errors).toEqual(["Same property name and city as row 2"]);
+    expect(Object.keys(rows[1]!.fieldErrors).sort()).toEqual(["city", "name"]);
+  });
+
+  it("fills a column the file does not have at all", () => {
+    const partial = { ...mapping, starRating: "" };
+    delete (partial as Record<string, string>).starRating;
+    const [r] = validateRows([kalaSagar], partial, HOTEL_IMPORT, {}, {
+      2: { bankAccountNumber: "050329070000002", starRating: "4" },
+    });
+    expect(HOTEL_IMPORT.toDocument(r!.mapped).starRating).toBe(4);
   });
 });
 
@@ -499,5 +593,117 @@ describe("status words from a lead sheet", () => {
     expect(docs[1]!.notes).toMatch(/Call after Diwali/);
 
     expect(docs[2]!.notes).toBe("");
+  });
+});
+
+/* Room types: lenient numbers, matched to a property, updated on re-upload. */
+describe("room type import", () => {
+  const mapping = Object.fromEntries(ROOM_TYPE_IMPORT.fields.map((f) => [f.key, f.label]));
+  const hotels = [
+    { id: "h1", name: "THE PEERLESS HOTEL", city: "Durgapur" },
+    { id: "h2", name: "THE PEERLESS HOTEL", city: "Hyderabad" },
+    { id: "h3", name: "THE PEERLESS HOTEL", city: "Kolkata" },
+    { id: "h4", name: "BNGV THE GRANDEUR HOTEL\u00a0AND\u00a0BANQUETS", city: "BENGALURU" },
+    { id: "h5", name: "Hotel Centre Point", city: "Solapur" },
+  ];
+  const ctx = { hotels, roomTypes: [{ id: "r1", hotelId: "h3", name: "Club Room" }] };
+  const room = (over: Record<string, string> = {}) => ({
+    "Property Name": "THE PEERLESS HOTEL", City: "Kolkata", "Room Type": "Superior Room",
+    "Total Rooms": "58", ...over,
+  });
+  const check = (over: Record<string, string> = {}) =>
+    validateRows([room(over)], mapping, ROOM_TYPE_IMPORT, {}, {}, ctx)[0]!;
+
+  it("finds the right one of three same-named properties by city", () => {
+    const r = check();
+    expect(r.errors).toEqual([]);
+    expect(ROOM_TYPE_IMPORT.toDocument(r.mapped, ctx)).toMatchObject({
+      hotelId: "h3", hotelName: "THE PEERLESS HOTEL", name: "Superior Room", totalRooms: 58,
+    });
+  });
+
+  it("refuses to guess between same-named properties when the city is missing", () => {
+    expect(check({ City: "" }).errors.join(" ")).toContain("3 properties are called");
+  });
+
+  it("matches through non-breaking spaces and a decorated name, with a warning for the latter", () => {
+    expect(check({ "Property Name": "BNGV THE GRANDEUR HOTEL AND BANQUETS", City: "Bengaluru" }).errors)
+      .toEqual([]);
+    const loose = check({ "Property Name": "Centre Point", City: "Solapur" });
+    expect(loose.errors).toEqual([]);
+    expect(loose.warnings.join(" ")).toContain("by a similar name");
+  });
+
+  it("rejects a row whose property is not in the system, and points at the name", () => {
+    const r = check({ "Property Name": "HOTEL SILVER CREST", City: "Pune" });
+    expect(r.errors.join(" ")).toContain("Import it as a property first");
+    expect(Object.keys(r.fieldErrors)).toEqual(["hotelName"]);
+  });
+
+  /* "Don't make it strict": numbers are read out of their surroundings. */
+  it("reads numbers leniently and never rejects a row over one", () => {
+    const r = check({ "Total Rooms": "12 ROOMS", "Max Occupancy": "2 to 4", "Size (sq ft)": "1,150 sq ft" });
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([
+      "Total Rooms: Read as 12", "Max Occupancy: Read as 4", "Size (sq ft): Read as 1150",
+    ]);
+    expect(ROOM_TYPE_IMPORT.toDocument(r.mapped, ctx)).toMatchObject({
+      totalRooms: 12, maxOccupancy: 4, sizeSqft: 1150,
+    });
+    const na = check({ "Total Rooms": "NA" });
+    expect(na.errors).toEqual([]);
+    expect(na.warnings).toEqual(["Total Rooms: Not a number, so it is left blank"]);
+  });
+
+  /* An update must not blank what the sheet left empty. */
+  it("leaves out blank numbers, so uploading again never wipes a stored count", () => {
+    const doc = ROOM_TYPE_IMPORT.toDocument(check({ "Total Rooms": "" }).mapped, ctx);
+    expect(doc).not.toHaveProperty("totalRooms");
+    expect(doc).not.toHaveProperty("sizeSqft");
+    expect(doc).not.toHaveProperty("code");
+  });
+
+  it("says whether a row adds a room type or updates one", () => {
+    expect(check().notes).toEqual(["New room type"]);
+    expect(check({ "Room Type": "club room" }).notes)
+      .toEqual(["Updates the room type already on this property"]);
+  });
+
+  it("rejects the same room type twice for one property, but not across properties", () => {
+    const rows = validateRows(
+      [room(), room({ "Room Type": "SUPERIOR  ROOM" }), room({ City: "Hyderabad" })],
+      mapping, ROOM_TYPE_IMPORT, {}, {}, ctx,
+    );
+    expect(rows[1]!.errors).toEqual(["Same room type for this property as row 2"]);
+    expect(rows[2]!.errors).toEqual([]);
+  });
+
+  it("validates its own template samples against a matching property list", () => {
+    const own = { hotels: [
+      { id: "a", name: "Ayati Resort & Spa", city: "Mahabaleshwar" },
+      { id: "p", name: "The Peerless Hotel", city: "Kolkata" },
+    ] };
+    for (const r of validateRows(ROOM_TYPE_IMPORT.samples, mapping, ROOM_TYPE_IMPORT, {}, {}, own)) {
+      expect(r.errors).toEqual([]);
+    }
+  });
+});
+
+/* ⚠️ A workbook that opens on a "Read me" tab had its instructions
+   validated as data: every line rejected, nothing imported. */
+describe("choosing the sheet in a workbook", () => {
+  it("reads the sheet whose headings match, not simply the first", async () => {
+    const XLSX = await import("xlsx");
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["Room types for audit"], ["Check the blue numbers."]]), "Read me");
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([
+      ["Property Name", "City", "Room Type", "Total Rooms", "Source"],
+      ["The Peerless Hotel", "Kolkata", "Club Room", "25", "peerlesshotels.com"],
+    ]), "Room types");
+    const bytes = XLSX.write(book, { type: "array", bookType: "xlsx" });
+    const parsed = await parseFile(new File([bytes], "rooms.xlsx"), undefined, ROOM_TYPE_IMPORT);
+    expect(parsed.activeSheet).toBe("Room types");
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]!["Room Type"]).toBe("Club Room");
   });
 });

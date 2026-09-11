@@ -828,8 +828,14 @@ function RoomTypeRow({
         <div className="min-w-0">
           <p className="font-medium text-ink-900">{roomType.name}</p>
           <p className="text-sm text-grey-500">
-            {roomType.totalRooms} available · sleeps {roomType.maxOccupancy} ·{" "}
-            {roomType.sizeSqft} sq ft
+            {/* ⚠️ 0 means "not set yet", not "sold out". Counts for a few
+                properties are still being collected from the hotels, and
+                capping at 0 made those properties impossible to book. The
+                count is a sanity cap, not live availability; Fidato does
+                not hold these hotels' inventory. */}
+            {roomType.totalRooms > 0 ? `${roomType.totalRooms} rooms` : "Room count not set"}
+            {" · "}sleeps {roomType.maxOccupancy}
+            {roomType.sizeSqft > 0 && ` · ${roomType.sizeSqft} sq ft`}
           </p>
         </div>
 
@@ -848,7 +854,7 @@ function RoomTypeRow({
             <button
               type="button"
               onClick={() => setQuantity(quantity + 1)}
-              disabled={quantity >= roomType.totalRooms}
+              disabled={roomType.totalRooms > 0 && quantity >= roomType.totalRooms}
               aria-label={`Add one ${roomType.name}`}
               className="flex items-center justify-center size-7 rounded-sm border border-grey-300 text-grey-600 hover:bg-grey-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             >

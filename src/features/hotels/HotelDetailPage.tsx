@@ -87,7 +87,8 @@ export default function HotelDetailPage() {
         <div className="min-w-0">
           <p className="font-medium text-ink-900">{rt.name}</p>
           <p className="text-sm text-grey-500">
-            {rt.code} · sleeps {rt.maxOccupancy} · {rt.sizeSqft} sq ft
+            {rt.code} · sleeps {rt.maxOccupancy}
+            {rt.sizeSqft > 0 && ` · ${rt.sizeSqft} sq ft`}
           </p>
         </div>
       ),

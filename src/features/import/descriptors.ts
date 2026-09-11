@@ -1,6 +1,7 @@
 import { MEAL_PLANS, type ImportEntity, type MealPlan } from "@/data/types";
 import { companyDetailTags } from "@/lib/companyDetails";
 import { companyNameKey } from "@/lib/companyName";
+import type { DuplicateKey } from "@/lib/duplicateKey";
 
 /* ══════════════════════════════════════════════════════════════════
    IMPORT DESCRIPTORS
@@ -75,6 +76,24 @@ export const normalisePhone = (v: string) => v.replace(/\D/g, "").slice(-10);
 
 const slug = (v: string) => v.trim().toLowerCase().replace(/\s+/g, "_");
 
+/** What a cross-column check can say about a row. */
+export interface RowCheck {
+  errors?: string[];
+  warnings?: string[];
+  /** Neutral information, nothing to fix: "Updates the room type already on this property". */
+  notes?: string[];
+  /** Pins an error to the field at fault, for the row editor. */
+  fieldErrors?: Record<string, string>;
+}
+
+/** Stored records an import is checked against. */
+export interface ImportContext {
+  /** Every property, for resolving a room type's "Property Name". */
+  hotels?: { id: string; name: string; city: string }[];
+  /** Room types already stored, so uploading again updates rather than duplicates. */
+  roomTypes?: { id: string; hotelId: string; name: string }[];
+}
+
 export interface ImportDescriptor {
   entity: ImportEntity;
   label: string;
@@ -99,9 +118,9 @@ export interface ImportDescriptor {
    * columns are individually fine and jointly useless — a bank branch
    * with no account number being the case this exists for.
    */
-  checkRow?: (mapped: Record<string, string>) => { errors?: string[]; warnings?: string[] };
+  checkRow?: (mapped: Record<string, string>, ctx?: ImportContext) => RowCheck;
   /** Fields whose normalised value identifies a duplicate. */
-  duplicateKeys: { field: string; normalise: (v: string) => string; label: string }[];
+  duplicateKeys: DuplicateKey[];
   /**
    * Rows that describe the same record, combined into one instead of
    * rejected as duplicates.
@@ -120,7 +139,13 @@ export interface ImportDescriptor {
   /** Two example rows for the downloadable template. */
   samples: Record<string, string>[];
   /** Builds the stored document from a mapped row. */
-  toDocument: (row: Record<string, string>) => Record<string, unknown>;
+  toDocument: (row: Record<string, string>, ctx?: ImportContext) => Record<string, unknown>;
+  /**
+   * Stored records must be loaded before the rows can be checked. Room
+   * types need the property list, to turn "Property Name" into the
+   * property each row belongs to.
+   */
+  needsContext?: boolean;
   /** Builds ONE document from every row in a group. Required with groupBy. */
   toDocumentGroup?: (rows: Record<string, string>[]) => Record<string, unknown>;
 }
@@ -772,11 +797,16 @@ export const HOTEL_IMPORT: ImportDescriptor = {
     };
   },
 
+  /* ⚠️ Name AND city. One brand runs several properties under the same
+     name (The Peerless Hotel in Durgapur, Hyderabad and Kolkata), and a
+     name-only key rejected every one after the first. The same name
+     twice in one city is still a mistake in the file. */
   duplicateKeys: [
     {
       field: "name",
-      normalise: (v) => v.trim().toLowerCase(),
-      label: "property name",
+      with: ["city"],
+      normalise: (v) => v.trim().toLowerCase().replace(/\s+/g, " "),
+      label: "property name and city",
     },
   ],
   samples: [
@@ -840,8 +870,246 @@ export const HOTEL_IMPORT: ImportDescriptor = {
   }),
 };
 
+/* ══════════════════════════════════════════════════════════════════
+   ROOM TYPES
+
+   One row per room type, against a property already in the system.
+
+   ⚠️ LENIENT BY DESIGN. Room counts come from fact sheets, rate sheets
+   and hotel websites, and they arrive as "12 ROOMS", "2 to 4" and
+   "1,150 sq ft". Every number is read out of whatever surrounds it, and
+   one that cannot be read WARNS and is left blank; it never loses the
+   row. Only two things reject a row: no room type name, and no property
+   it can belong to, because a room type with no property cannot exist.
+
+   ⚠️ UPLOADING AGAIN UPDATES. A room type already on the property (same
+   name, any capitalisation) is updated in place, not added a second
+   time, so the sheet can be re-uploaded whenever a hotel changes its
+   mix. A blank or unreadable number leaves the stored value alone.
+   ══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Lower-case letters and digits only, single-spaced. A name typed with
+ * non-breaking spaces, or with "&" for "and", compares equal to its
+ * plain twin.
+ */
+export const squash = (v: string) =>
+  v.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+
+/* Words that decorate a property's name without identifying it. */
+const NAME_NOISE = new Set([
+  "hotel", "hotels", "the", "by", "fidato", "lepere", "and", "resort", "resorts", "spa", "inn",
+]);
+const looseName = (v: string) =>
+  squash(v).split(" ").filter((w) => w && !NAME_NOISE.has(w)).join(" ");
+
+type PropertyRef = NonNullable<ImportContext["hotels"]>[number];
+
+/**
+ * Finds the property a row belongs to: name and city first, then name
+ * alone, then the name with its decoration stripped ("Hotel Centre
+ * Point" finds "Centre Point"). Anything short of an exact match says so.
+ */
+export function resolveProperty(
+  name: string,
+  city: string,
+  hotels: PropertyRef[],
+): { hotel?: PropertyRef; warning?: string; error?: string } {
+  const n = squash(name);
+  const c = squash(city);
+  const byName = hotels.filter((h) => squash(h.name) === n);
+  const exact = byName.filter((h) => !c || squash(h.city) === c);
+
+  if (exact.length === 1) return { hotel: exact[0] };
+  if (exact.length > 1) {
+    return {
+      error: `${exact.length} properties are called "${name}". Add the city to say which ` +
+        `(${exact.map((h) => h.city).join(", ")}).`,
+    };
+  }
+  if (byName.length === 1) {
+    const h = byName[0]!;
+    return { hotel: h, warning: `Matched to ${h.name} in ${h.city}; the file says "${city}".` };
+  }
+  if (byName.length > 1) {
+    return {
+      error: `"${name}" is in ${byName.map((h) => h.city).join(", ")}, and "${city}" is none of them.`,
+    };
+  }
+
+  const loose = looseName(name);
+  const similar = loose
+    ? hotels.filter((h) => looseName(h.name) === loose && (!c || squash(h.city) === c))
+    : [];
+  if (similar.length === 1) {
+    const h = similar[0]!;
+    return { hotel: h, warning: `Matched to "${h.name}" (${h.city}) by a similar name.` };
+  }
+  return {
+    error: `No property called "${name}"${city ? ` in ${city}` : ""}. ` +
+      "Import it as a property first, or correct the name.",
+  };
+}
+
+/**
+ * The number in a cell, whatever surrounds it: "12 ROOMS" is 12,
+ * "1,150 sq ft" is 1150. Where there are several, `pick` decides: a room
+ * count takes the first, an occupancy of "2 to 4" takes the largest.
+ */
+export function numberIn(value: string, pick: "first" | "max" = "first"): number | undefined {
+  const found = value.replace(/,/g, "").match(/\d+(\.\d+)?/g);
+  if (!found) return undefined;
+  const numbers = found.map(Number);
+  return pick === "max" ? Math.max(...numbers) : numbers[0];
+}
+
+/* Warns, never rejects: says what the cell was read as, or that it was
+   left blank. A plain number says nothing. */
+const lenientNumber = (pick: "first" | "max") => (v: string): string | null => {
+  if (!v.trim()) return null;
+  const read = numberIn(v, pick);
+  if (read === undefined) return "Not a number, so it is left blank";
+  return /^\s*[\d,]+(\.\d+)?\s*$/.test(v) ? null : `Read as ${read}`;
+};
+
+/** Only the numbers the row actually gives, so an update never blanks a stored one. */
+function roomNumbers(row: Record<string, string>): Record<string, number> {
+  const out: Record<string, number> = {};
+  const put = (key: string, pick: "first" | "max") => {
+    const n = numberIn(row[key] ?? "", pick);
+    if (n !== undefined) out[key] = Math.round(n);
+  };
+  put("totalRooms", "first");
+  put("maxOccupancy", "max");
+  put("maxExtraBeds", "first");
+  put("sizeSqft", "first");
+  return out;
+}
+
+export const ROOM_TYPE_IMPORT: ImportDescriptor = {
+  entity: "roomTypes",
+  label: "Room types",
+  ownable: false,
+  needsContext: true,
+  description:
+    "Room categories and how many rooms of each a property has, matched to the property by its " +
+    "name and city. Uploading again updates the room types already there instead of adding them twice.",
+  fields: [
+    {
+      key: "hotelName", label: "Property Name", required: true,
+      aliases: ["property", "hotel", "hotel name"],
+      example: "Ayati Resort & Spa",
+      hint: "As the property is named in the system. A close spelling is matched with a warning.",
+    },
+    {
+      key: "city", label: "City", required: false,
+      aliases: ["town", "location"],
+      example: "Mahabaleshwar",
+      hint: "Needed when two properties share a name, like The Peerless Hotel.",
+    },
+    {
+      key: "name", label: "Room Type", required: true,
+      aliases: ["room category", "category", "room name", "room"],
+      example: "Ananda Cottage",
+      hint: "As salespeople quote it. The same name uploaded again updates that room type.",
+    },
+    {
+      key: "totalRooms", label: "Total Rooms", required: false,
+      aliases: ["rooms", "no of rooms", "number of rooms", "count", "inventory", "keys"],
+      example: "18",
+      hint: "\"18 rooms\" is read as 18. Blank leaves a stored count alone.",
+      validate: lenientNumber("first"), lenient: true,
+    },
+    {
+      key: "maxOccupancy", label: "Max Occupancy", required: false,
+      aliases: ["occupancy", "pax", "max pax", "max guests", "guests"],
+      example: "3",
+      hint: "\"2 to 4\" is read as 4. A new room type defaults to 2.",
+      validate: lenientNumber("max"), lenient: true,
+    },
+    {
+      key: "maxExtraBeds", label: "Max Extra Beds", required: false,
+      aliases: ["extra beds", "extra bed"],
+      example: "1",
+      hint: "A new room type defaults to 0.",
+      validate: lenientNumber("first"), lenient: true,
+    },
+    {
+      key: "sizeSqft", label: "Size (sq ft)", required: false,
+      aliases: ["size", "sq ft", "sqft", "area", "room size"],
+      example: "600",
+      validate: lenientNumber("first"), lenient: true,
+    },
+    {
+      key: "code", label: "Code", required: false,
+      aliases: ["room code"],
+      example: "AC",
+      hint: "Made from the name's initials when blank.",
+    },
+    {
+      key: "description", label: "Description", required: false,
+      aliases: ["about", "details"],
+      example: "Cottage with a balcony over the valley.",
+    },
+  ],
+
+  checkRow: (row, ctx) => {
+    if (!ctx?.hotels) {
+      return { errors: ["The property list could not be loaded, so this row cannot be matched."] };
+    }
+    const found = resolveProperty(row.hotelName ?? "", row.city ?? "", ctx.hotels);
+    if (!found.hotel) {
+      return { errors: [found.error!], fieldErrors: { hotelName: found.error! } };
+    }
+    const name = squash(row.name ?? "");
+    const existing = (ctx.roomTypes ?? []).some(
+      (r) => r.hotelId === found.hotel!.id && squash(r.name) === name,
+    );
+    return {
+      warnings: found.warning ? [found.warning] : [],
+      notes: [existing ? "Updates the room type already on this property" : "New room type"],
+    };
+  },
+
+  /* ⚠️ Room type name, within one property. The same name at two
+     properties is normal; twice at one property is a mistake in the
+     file, because the second row would silently overwrite the first. */
+  duplicateKeys: [
+    {
+      field: "name",
+      with: ["hotelName", "city"],
+      normalise: (v) => squash(v),
+      label: "room type for this property",
+    },
+  ],
+  samples: [
+    {
+      "Property Name": "Ayati Resort & Spa", City: "Mahabaleshwar", "Room Type": "Ananda Cottage",
+      "Total Rooms": "18", "Max Occupancy": "3", "Max Extra Beds": "1", "Size (sq ft)": "600",
+      Code: "", Description: "",
+    },
+    {
+      "Property Name": "The Peerless Hotel", City: "Kolkata", "Room Type": "Club Room",
+      "Total Rooms": "25", "Max Occupancy": "3", "Max Extra Beds": "1", "Size (sq ft)": "",
+      Code: "CLB", Description: "",
+    },
+  ],
+  toDocument: (row, ctx) => {
+    const hotel = resolveProperty(row.hotelName ?? "", row.city ?? "", ctx?.hotels ?? []).hotel;
+    return {
+      hotelId: hotel?.id ?? "",
+      hotelName: hotel?.name ?? row.hotelName ?? "",
+      name: (row.name ?? "").trim(),
+      ...roomNumbers(row),
+      ...(row.code?.trim() ? { code: row.code.trim().toUpperCase() } : {}),
+      ...(row.description?.trim() ? { description: row.description.trim() } : {}),
+    };
+  },
+};
+
 export const DESCRIPTORS: Record<ImportEntity, ImportDescriptor> = {
   customers: CUSTOMER_IMPORT,
   companies: COMPANY_IMPORT,
   hotels: HOTEL_IMPORT,
+  roomTypes: ROOM_TYPE_IMPORT,
 };

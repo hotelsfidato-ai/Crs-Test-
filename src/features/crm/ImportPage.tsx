@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Upload, FileSpreadsheet, Download, CheckCircle2, AlertTriangle,
-  ArrowRight, RotateCcw, FileWarning, UserRound,
+  ArrowRight, RotateCcw, FileWarning, UserRound, Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useActor, useSession } from "@/lib/session";
@@ -12,14 +12,15 @@ import { adminRepo, importRepo } from "@/data/repositories";
 import { number } from "@/lib/format";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button, Field,
-  NativeSelect, StatusPill, EmptyState, ProgressBar, Segmented, Tooltip, toast,
+  NativeSelect, StatusPill, EmptyState, ProgressBar, Segmented, Tooltip, Dialog, toast,
 } from "@/components/ui";
 import { DESCRIPTORS, type ImportDescriptor } from "@/features/import/descriptors";
 import {
-  parseFile, guessMapping, validateRows, summarise, buildDocuments, isExcel,
+  parseFile, guessMapping, validateRows, summarise, buildDocuments, isExcel, mapRow,
   downloadCsvTemplate, downloadExcelTemplate, downloadErrorReport,
-  type ParsedFile, type ValidatedRow,
+  type ParsedFile, type ValidatedRow, type RowEdits,
 } from "@/features/import/engine";
+import { RowEditor } from "@/features/import/RowEditor";
 import type { ImportEntity } from "@/data/types";
 
 /* ══════════════════════════════════════════════════════════════════
@@ -45,7 +46,7 @@ import type { ImportEntity } from "@/data/types";
 
 type Stage = "upload" | "map" | "review" | "done";
 
-const ENTITY_ORDER: ImportEntity[] = ["customers", "companies", "hotels"];
+const ENTITY_ORDER: ImportEntity[] = ["customers", "companies", "hotels", "roomTypes"];
 
 /**
  * The importer's own name for a thing, and the permission matrix's.
@@ -59,6 +60,7 @@ const RESOURCE_FOR: Record<ImportEntity, Resource> = {
   customers: "customer",
   companies: "company",
   hotels: "hotel",
+  roomTypes: "room_config",
 };
 
 /** ⚠️ Mirrors importRepo.existingKeys. Quoted in the UI, so it must match. */
@@ -91,8 +93,11 @@ export default function ImportPage() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [parseError, setParseError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [result, setResult] = useState<{ created: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated?: number } | null>(null);
   const [dragging, setDragging] = useState(false);
+  /* Corrections typed on the review screen, and the row being corrected. */
+  const [edits, setEdits] = useState<RowEdits>({});
+  const [editingRow, setEditingRow] = useState<number | null>(null);
   /* Empty means "me" — the same convention as the booking wizard. */
   const [ownerId, setOwnerId] = useState("");
 
@@ -137,10 +142,55 @@ export default function ImportPage() {
     staleTime: 60_000,
   });
 
+  /* The stored records the rows are checked against: for room types,
+     the properties they must belong to. Loaded with the file, like the
+     collision check above. */
+  const context = useQuery({
+    queryKey: ["import-context", entity],
+    queryFn: () => importRepo.context(entity),
+    enabled: Boolean(descriptor.needsContext) && (stage === "map" || stage === "review"),
+    staleTime: 60_000,
+  });
+  const ctx = context.data;
+  /* ⚠️ Rows are not checked until the context is in. Checked early,
+     every room type reads "no such property" for a second and then
+     flips to Ready, which looks like the file was wrong. A failed load
+     lets the check run, and each row then says why it cannot match. */
+  const contextReady = !descriptor.needsContext || context.isSuccess || context.isError;
+
   const validated: ValidatedRow[] = useMemo(() => {
     if (!parsed) return [];
-    return validateRows(parsed.rows, mapping, descriptor, existing.data ?? {});
-  }, [parsed, mapping, descriptor, existing.data]);
+    return validateRows(parsed.rows, mapping, descriptor, existing.data ?? {}, edits, ctx);
+  }, [parsed, mapping, descriptor, existing.data, edits, ctx]);
+
+  const editing = editingRow === null
+    ? undefined
+    : validated.find((r) => r.rowNumber === editingRow);
+
+  /* The editor's live check: the whole file, with this row's draft in
+     place of whatever it held, so duplicates are judged against every
+     other row exactly as they will be on save. */
+  const checkDraft = useCallback(
+    (draft: Record<string, string>) => {
+      if (!parsed || editingRow === null) return undefined;
+      return validateRows(
+        parsed.rows, mapping, descriptor, existing.data ?? {},
+        { ...edits, [editingRow]: draft }, ctx,
+      ).find((r) => r.rowNumber === editingRow);
+    },
+    [parsed, mapping, descriptor, existing.data, edits, editingRow, ctx],
+  );
+
+  function saveEdit(rowNumber: number, changes: Record<string, string>, fixed: boolean) {
+    setEdits((current) => {
+      const next = { ...current };
+      if (Object.keys(changes).length) next[rowNumber] = changes;
+      else delete next[rowNumber];
+      return next;
+    });
+    setEditingRow(null);
+    if (fixed) toast.success(`Row ${rowNumber} is ready`, "It will be imported with the rest.");
+  }
 
   const summary = useMemo(() => summarise(validated), [validated]);
 
@@ -149,7 +199,7 @@ export default function ImportPage() {
       /* ⚠️ Through buildDocuments, not a map over rows — for companies,
          several rows become one company, and the count on the button is
          the count of documents it builds. */
-      const documents = buildDocuments(validated, descriptor);
+      const documents = buildDocuments(validated, descriptor, ctx);
       setProgress({ done: 0, total: documents.length });
       return importRepo.commit(
         entity,
@@ -166,10 +216,15 @@ export default function ImportPage() {
       setStage("done");
       queryClient.invalidateQueries({ queryKey: [entity] });
       queryClient.invalidateQueries({ queryKey: ["import-existing", entity] });
-      toast.success(
-        "Import complete",
-        `${out.created} ${descriptor.label.toLowerCase()} added${forWhom}.`,
-      );
+      queryClient.invalidateQueries({ queryKey: ["import-context", entity] });
+      if (entity === "roomTypes") {
+        /* roomMix on each property was rewritten too, so the property
+           list and pages must refetch, not only the room type tables. */
+        for (const key of ["hotel-room-types", "hotel", "hotels", "hotels-all"]) {
+          queryClient.invalidateQueries({ queryKey: [key] });
+        }
+      }
+      toast.success("Import complete", `${outcome(out, descriptor.label)}${forWhom}.`);
     },
     onError: () =>
       toast.error(
@@ -181,12 +236,13 @@ export default function ImportPage() {
   async function handleFile(file: File) {
     setParseError(null);
     try {
-      const next = await parseFile(file);
+      const next = await parseFile(file, undefined, descriptor);
       if (!next.rows.length) {
         setParseError("That file has headings but no rows.");
         return;
       }
       setParsed(next);
+      setEdits({});
       setMapping(guessMapping(next.headers, descriptor));
       setStage("map");
     } catch (error) {
@@ -200,6 +256,7 @@ export default function ImportPage() {
   function reset() {
     setOwnerId("");
     setParsed(null);
+    setEdits({});
     setMapping({});
     setParseError(null);
     setResult(null);
@@ -450,6 +507,7 @@ export default function ImportPage() {
             <Button variant="ghost" onClick={reset}>Back</Button>
             <Button
               trailingIcon={<ArrowRight className="size-4" />}
+              loading={!contextReady}
               onClick={() => setStage("review")}
             >
               Check {number(parsed.rows.length)} row{parsed.rows.length === 1 ? "" : "s"}
@@ -532,7 +590,7 @@ export default function ImportPage() {
           <Card>
             <CardHeader
               title="Row by row"
-              description="Rejected rows are skipped; the rest are imported. Warnings do not block anything."
+              description="Rejected rows are skipped unless you fix them here. Warnings do not block anything."
               actions={
                 summary.skipped > 0 ? (
                   <Button
@@ -564,7 +622,11 @@ export default function ImportPage() {
                 </div>
               )}
 
-              <RowPreview rows={validated} descriptor={descriptor} />
+              <RowPreview
+                rows={validated}
+                descriptor={descriptor}
+                onEdit={commit.isPending ? undefined : setEditingRow}
+              />
             </CardBody>
             <CardFooter>
               <Button variant="ghost" onClick={() => setStage("map")}>
@@ -587,6 +649,19 @@ export default function ImportPage() {
             </CardFooter>
           </Card>
 
+          <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditingRow(null)}>
+            {editing && (
+              <RowEditor
+                key={editing.rowNumber}
+                row={editing}
+                descriptor={descriptor}
+                fileValues={mapRow(editing.raw, mapping, descriptor)}
+                check={checkDraft}
+                onSave={(changes, fixed) => saveEdit(editing.rowNumber, changes, fixed)}
+              />
+            )}
+          </Dialog>
+
           <p className="text-xs text-grey-400 mt-4 leading-relaxed">
             Duplicate warnings are checked against the {number(EXISTING_SCAN_LIMIT)} most
             recent stored records. That is enough to catch a re-uploaded file, not a full audit of
@@ -602,7 +677,7 @@ export default function ImportPage() {
         <Card>
           <EmptyState
             icon={<CheckCircle2 />}
-            title={`${number(result.created)} ${descriptor.label.toLowerCase()} imported${forWhom}`}
+            title={`${outcome(result, descriptor.label)}${forWhom}`}
             description={
               summary.skipped > 0
                 ? `${number(summary.skipped)} row${summary.skipped === 1 ? " was" : "s were"} rejected and not imported. Download them, fix them, and upload again.`
@@ -612,8 +687,12 @@ export default function ImportPage() {
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {/* ⚠️ Properties live at /hotels, not /crm/hotels — the old
                     `/crm/${entity}` sent every property import to NotFound. */}
-                <Button onClick={() => navigate(entity === "hotels" ? "/hotels" : `/crm/${entity}`)}>
-                  View {descriptor.label.toLowerCase()}
+                <Button
+                  onClick={() =>
+                    navigate(entity === "hotels" || entity === "roomTypes" ? "/hotels" : `/crm/${entity}`)
+                  }
+                >
+                  {entity === "roomTypes" ? "View properties" : `View ${descriptor.label.toLowerCase()}`}
                 </Button>
                 {summary.skipped > 0 && (
                   <Button
@@ -637,6 +716,14 @@ export default function ImportPage() {
 }
 
 /* ── Pieces ────────────────────────────────────────────────────── */
+
+/** "12 room types added and 5 updated", or "40 customers added". */
+function outcome(out: { created: number; updated?: number }, label: string): string {
+  const what = label.toLowerCase();
+  if (!out.updated) return `${number(out.created)} ${what} added`;
+  if (!out.created) return `${number(out.updated)} ${what} updated`;
+  return `${number(out.created)} ${what} added and ${number(out.updated)} updated`;
+}
 
 function FieldReference({ descriptor }: { descriptor: ImportDescriptor }) {
   return (
@@ -696,10 +783,12 @@ function FieldReference({ descriptor }: { descriptor: ImportDescriptor }) {
 const PREVIEW_LIMIT = 100;
 
 function RowPreview({
-  rows, descriptor,
+  rows, descriptor, onEdit,
 }: {
   rows: ValidatedRow[];
   descriptor: ImportDescriptor;
+  /** Opens the row editor. Absent while the import is being written. */
+  onEdit?: (rowNumber: number) => void;
 }) {
   // Problems first — they are the reason anyone reads this table.
   const ordered = [...rows].sort(
@@ -731,6 +820,9 @@ function RowPreview({
                 ))}
                 <th className="text-left text-2xs font-semibold uppercase tracking-wide text-grey-500 px-4 h-9">
                   Result
+                </th>
+                <th className="w-24 px-4 h-9">
+                  <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
@@ -764,6 +856,36 @@ function RowPreview({
                     ) : (
                       <span className="text-sm text-grey-400">Ready</span>
                     )}
+                    {r.edited.length > 0 && (
+                      <StatusPill tone="info" dot={false} className="ml-2 align-middle">
+                        Edited
+                      </StatusPill>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
+                    {onEdit &&
+                      (r.errors.length > 0 ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          leadingIcon={<Pencil className="size-3.5" />}
+                          onClick={() => onEdit(r.rowNumber)}
+                        >
+                          Fix
+                        </Button>
+                      ) : (
+                        <Tooltip content="Edit this row">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8"
+                            aria-label={`Edit row ${r.rowNumber}`}
+                            onClick={() => onEdit(r.rowNumber)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                        </Tooltip>
+                      ))}
                   </td>
                 </tr>
               ))}

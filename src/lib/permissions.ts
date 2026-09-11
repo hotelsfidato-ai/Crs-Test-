@@ -223,7 +223,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
     company: ["view", "create", "edit", "merge", "import", "export"],
     reservation: ["view", "create", "edit", "cancel", "export", "delete"],
     hotel: ["view", "create", "edit", "import", "export", "delete"],
-    room_config: ["view", "create", "edit"],
+    room_config: ["view", "create", "edit", "import"],
     commission_terms: ["view", "edit"],
     invoice: ["view", "create", "edit", "export"],
     payment: ["view", "create", "edit", "export"],
@@ -282,7 +282,7 @@ const MATRIX: Record<Role, ResourceGrants> = {
      * its commission set afterwards by an Owner or Admin.
      */
     hotel: ["view", "create", "edit", "import", "export"],
-    room_config: ["view", "create", "edit"],
+    room_config: ["view", "create", "edit", "import"],
     invoice: ["view", "create", "export"],
     report: READ_EXPORT,
     notification: ["view", "create"],
@@ -420,7 +420,7 @@ export function canAccess(role: Role, resource: Resource): boolean {
  * and the screen's entity picker is built from whichever of these the
  * signed-in role may actually import.
  */
-export const IMPORTABLE = ["customer", "company", "hotel"] as const satisfies readonly Resource[];
+export const IMPORTABLE = ["customer", "company", "hotel", "room_config"] as const satisfies readonly Resource[];
 
 /** The entities this role may bulk-import. Empty means the screen is pointless. */
 export function importableBy(role: Role): Resource[] {

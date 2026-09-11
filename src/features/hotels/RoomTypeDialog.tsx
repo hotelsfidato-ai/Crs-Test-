@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { roomCode } from "@/lib/roomCode";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BedDouble, Pencil, Trash2 } from "lucide-react";
 import { roomConfigRepo } from "@/data/repositories";
@@ -70,7 +71,7 @@ export function RoomTypeDialog({
         hotelName,
         name: draft.name.trim(),
         // Falls back to an initials-style code so the column is never blank.
-        code: draft.code.trim().toUpperCase() || codeFrom(draft.name),
+        code: draft.code.trim().toUpperCase() || roomCode(draft.name),
         description: draft.description.trim(),
         totalRooms: Number(draft.totalRooms) || 0,
         maxOccupancy: Number(draft.maxOccupancy) || 2,
@@ -86,6 +87,7 @@ export function RoomTypeDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel-room-types", hotelId] });
+      queryClient.invalidateQueries({ queryKey: ["hotel", hotelId] });
       toast.success(
         isEdit ? "Room type updated" : "Room type added",
         `${draft.name} is now bookable at ${hotelName}.`,
@@ -260,9 +262,10 @@ export function DeleteRoomTypeButton({
   const queryClient = useQueryClient();
 
   const remove = useMutation({
-    mutationFn: () => roomConfigRepo.deleteRoomType(roomType.id),
+    mutationFn: () => roomConfigRepo.deleteRoomType(roomType.id, hotelId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel-room-types", hotelId] });
+      queryClient.invalidateQueries({ queryKey: ["hotel", hotelId] });
       toast.success("Room type removed", `${roomType.name} is no longer bookable.`);
     },
     onError: (error) => {
@@ -310,11 +313,4 @@ export function DeleteRoomTypeButton({
       </DialogContent>
     </Dialog>
   );
-}
-
-function codeFrom(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "STD";
-  if (words.length === 1) return words[0]!.slice(0, 3).toUpperCase();
-  return words.map((w) => w[0]).join("").slice(0, 4).toUpperCase();
 }
