@@ -53,7 +53,7 @@ state in a file nobody rewrites is state that goes quietly wrong.
 | `automationQueue` | 8 — ⚠️ all will sit at `pending`; nothing closes them |
 | `auditLogs` | 10 (two record the property and room type load) |
 | `hotels` | **28**, loaded 2026-09-11 from `fidato-hotels-template (2) (1).xlsx` with the four review-screen corrections (Silvanus IFSC cleared, Khandela 4 stars, Kala Sagar and Sadanand account numbers without "A/c No.") |
-| `roomTypes` | **104** (1,301 rooms): 93 from the fact sheets (`Fidato room types - verified.xlsx`), 11 from the rate sheet with no counts (`Fidato room types - rate sheet only.xlsx`) |
+| `roomTypes` | **105** (1,340 rooms after the Silvanus and Durgapur correction): 93 from the fact sheets (`Fidato room types - verified.xlsx`), 11 from the rate sheet with no counts (`Fidato room types - rate sheet only.xlsx`) |
 | `reservations`, `invoices` | **0**, bookings can now be raised against the 27 properties with room types |
 
 Cleared: reservations, customers, companies, hotels, roomTypes, seasons, inventory, invoices,
@@ -111,8 +111,11 @@ properties.xlsx`):
 - Counts for Stone Leaf, Winway, Grand Lucent, De-Lush and Patria (room types are live with 0,
   which the booking wizard reads as "Room count not set" and does not cap).
 - Grand Majestic (Shimla): no room types in any file, so it cannot be booked.
-- Six fact-sheet totals disagree with the property file: Taj Pearl 24/40, Silvanus 60/74,
-  Durgapur 83/108, Fiori 57/58, Ayati 30/33, BLVD 64/62.
+- Property totals all match the blue sheet (1,727 for these 28; its 1,785 adds Hills and Lakes 34 and
+  Silver Crest 24, which are not in the system). Room-type splits still disagree for Taj Pearl
+  24/40, Fiori 57/58, Ayati 30/33 and BLVD 64/62. Silvanus (website, 74) and Durgapur (directory,
+  108) were corrected on 2026-09-11; Durgapur's old "Executive Premium Room" is set to 0 and should
+  be removed from its Rooms tab.
 - Three rate-sheet categories are on no fact sheet and so not in the system: Silvanus "Forest
   Room with Private Pool", Peerless Kolkata "Club Room", Centre Point "Studio (4 pax)".
 Fix them in the spreadsheet and upload it from Import → Room types: an existing room type is
