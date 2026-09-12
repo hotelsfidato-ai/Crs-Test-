@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeTax, gstRateFor, GST_THRESHOLD } from "./tax";
+import { computeTax, gstRateFor, splitGstInclusive, GST_THRESHOLD } from "./tax";
 
 /* ══════════════════════════════════════════════════════════════════
    GST BANDS
@@ -73,5 +73,53 @@ describe("computeTax", () => {
     const result = computeTax([]);
     expect(result.taxAmount).toBe(0);
     expect(result.byBand).toHaveLength(0);
+  });
+});
+
+/* Negotiated rates that already include GST: the tax is taken out, not added. */
+describe("splitGstInclusive", () => {
+  const base = (p: number) => splitGstInclusive(p) as { base: number; rate: number };
+
+  it("takes 5% out of an inclusive rate in the low band", () => {
+    expect(base(5250)).toEqual({ base: 5000, rate: 0.05 });
+  });
+
+  it("takes 18% out of an inclusive rate in the high band", () => {
+    expect(base(11800)).toEqual({ base: 10000, rate: 0.18 });
+    expect(base(8850)).toEqual({ base: 7500, rate: 0.18 });
+  });
+
+  /* The band follows the pre-tax tariff, so the split must land back in
+     the band it was taken at, or the invoice taxes it differently. */
+  it("always lands in the band it was taken at", () => {
+    for (let p = 500; p <= 30000; p += 37) {
+      const split = splitGstInclusive(p);
+      if ("error" in split) continue;
+      expect(gstRateFor(split.base), `₹${p}`).toBe(split.rate);
+    }
+  });
+
+  it("rounds a rate just under the threshold down, never into the high band", () => {
+    const split = base(7874.99);
+    expect(split.rate).toBe(0.05);
+    expect(split.base).toBeLessThan(GST_THRESHOLD);
+  });
+
+  it("refuses an inclusive rate no pre-tax tariff can produce", () => {
+    for (const p of [7875, 8000, 8849]) {
+      expect(splitGstInclusive(p), `₹${p}`).toHaveProperty("error");
+    }
+  });
+
+  /* What the salesperson typed is what the guest pays, give or take the
+     rupee the per-line tax rounding can move it. */
+  it("gives back the entered amount once the tax is added again", () => {
+    for (const p of [1999, 3500, 5250, 7000, 9999, 12500]) {
+      const { base: b, rate } = base(p);
+      const nights = 3;
+      const tax = computeTax([{ sellingRate: b, taxableAmount: b * nights }]).taxAmount;
+      expect(Math.abs(b * nights + tax - p * nights), `₹${p}`).toBeLessThanOrEqual(1);
+      expect(rate).toBe(gstRateFor(b));
+    }
   });
 });

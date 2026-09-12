@@ -409,6 +409,8 @@ export interface Reservation extends Auditable {
   totalAdults: number;
   totalChildren: number;
 
+  /** The rates were entered including GST (the lines hold pre-tax figures). */
+  ratesIncludeGst?: boolean;
   roomCharges: number;
   extrasCharges: number;
   discountAmount: number;

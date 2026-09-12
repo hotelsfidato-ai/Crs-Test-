@@ -87,6 +87,37 @@ export function computeTax(
   };
 }
 
+/**
+ * The pre-tax tariff inside a GST-inclusive per-night rate: for a
+ * negotiated rate that already includes GST.
+ *
+ * The band follows the PRE-tax tariff, so the inclusive rate is tried at
+ * each band and kept where the result lands in that same band.
+ *
+ * ⚠️ An inclusive rate from ₹7,875 up to ₹8,850 has no valid pre-tax
+ * tariff: taken at 5% it is ₹7,500 or more (so 18%), and taken at 18% it
+ * is under ₹7,500 (so 5%). No invoice can show that price, so it is
+ * returned as an error, never guessed. The pre-tax base at 5% is rounded
+ * DOWN so a rate a paisa under the threshold cannot round into it.
+ */
+export function splitGstInclusive(
+  inclusive: number,
+  version: GstVersion = CURRENT_GST_VERSION,
+): { base: number; rate: number } | { error: string } {
+  const band = BANDS[version] ?? BANDS[CURRENT_GST_VERSION];
+  const low = Math.floor((inclusive / (1 + band.low)) * 100) / 100;
+  if (low < GST_THRESHOLD) return { base: low, rate: band.low };
+  const high = Math.round((inclusive / (1 + band.high)) * 100) / 100;
+  if (high >= GST_THRESHOLD) return { base: high, rate: band.high };
+  const floor = Math.round(GST_THRESHOLD * (1 + band.low));
+  const ceiling = Math.round(GST_THRESHOLD * (1 + band.high));
+  return {
+    error:
+      `An amount including GST from ₹${floor.toLocaleString("en-IN")} to ₹${(ceiling - 1).toLocaleString("en-IN")} ` +
+      "is not possible under the GST bands. Check the rate with the hotel, or untick \"Rates include GST\" and enter it before tax.",
+  };
+}
+
 /** "5%" / "18%" — for column headers and pill labels. */
 export function gstLabel(rate: number): string {
   return `${Math.round(rate * 100)}%`;

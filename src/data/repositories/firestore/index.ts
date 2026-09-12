@@ -695,6 +695,12 @@ export interface CreateReservationInput {
   checkIn: string;
   checkOut: string;
   rooms: ReservationRoom[];
+  /**
+   * The rates were agreed inclusive of GST. The room lines arrive already
+   * converted to pre-tax figures (see splitGstInclusive); this only
+   * decides that no corporate discount is taken off them as well.
+   */
+  ratesIncludeGst?: boolean;
   paymentTerm: Reservation["paymentTerm"];
   channel?: Reservation["channel"];
   specialRequests?: string;
@@ -914,7 +920,10 @@ export const reservationsRepo = {
         (new Date(input.checkOut).getTime() - new Date(input.checkIn).getTime()) / 86_400_000,
       ),
     );
-    const quote = reservationsRepo.quote(input.rooms, nights, company);
+    /* ⚠️ No corporate discount on GST-inclusive rates: a rate agreed
+       inclusive of tax is the final price, and the wizard quoted it
+       that way. The company is still recorded on the booking below. */
+    const quote = reservationsRepo.quote(input.rooms, nights, input.ratesIncludeGst ? null : company);
 
     const reference = await nextReference();
 
@@ -950,6 +959,7 @@ export const reservationsRepo = {
       totalChildren: input.rooms.reduce((s, r) => s + r.children, 0),
 
       roomCharges: quote.roomCharges,
+      ratesIncludeGst: Boolean(input.ratesIncludeGst),
       extrasCharges: 0,
       discountAmount: quote.discountAmount,
       taxAmount: quote.taxAmount,

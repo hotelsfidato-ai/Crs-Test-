@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { differenceInCalendarDays, parseISO, addDays } from "date-fns";
 import {
-  Check, ChevronLeft, ChevronRight, AlertTriangle, Minus, Plus, Star,
+  Check, ChevronLeft, ChevronRight, AlertTriangle, Minus, Plus, Star, Copy,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useActor, useSession, useScope } from "@/lib/session";
@@ -13,11 +13,11 @@ import {
   lineTotal, TODAY,
 } from "@/data/repositories";
 import { money, moneyCompact, dateShort, percent, humanise } from "@/lib/format";
-import { GST_THRESHOLD } from "@/lib/tax";
+import { GST_THRESHOLD, splitGstInclusive } from "@/lib/tax";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button, Field,
   Combobox, DateRangePicker, Textarea, Input, NativeSelect, StatusPill, Skeleton,
-  EmptyState, StarRating, toast, describeError,
+  EmptyState, StarRating, Checkbox, toast, describeError,
 } from "@/components/ui";
 import {
   MEAL_PLANS, MEAL_PLAN_LABELS, MEAL_PLAN_SHORT, PAYMENT_TERM_LABELS,
@@ -52,9 +52,19 @@ const STEPS = [
   { key: "review", label: "Review" },
 ] as const;
 
+/**
+ * One physical room.
+ *
+ * ⚠️ Per ROOM, not per room type. Two Executive Deluxe rooms on one
+ * booking are routinely different: one for two adults at one rate, the
+ * other for three with an extra bed at another. A single "× 2" line
+ * forced both onto one occupancy and one rate, so each room is its own
+ * entry and becomes its own line on the reservation (quantity 1).
+ */
 interface RoomSelection {
+  /** Stable across edits, so React and "copy to all" can find this room. */
+  key: string;
   roomTypeId: string;
-  quantity: number;
   adults: number;
   children: number;
   extraBeds: number;
@@ -88,6 +98,10 @@ export default function NewReservationPage() {
   /* Empty means "me". Only roles that book on behalf of someone else
      ever change it — see canAssignOwner. */
   const [ownerId, setOwnerId] = useState("");
+  /* ⚠️ Negotiated rates often already include GST. Ticked, every rate
+     typed on the rates step is the final price per night, and the GST
+     is taken out of it rather than added on top. */
+  const [ratesIncludeGst, setRatesIncludeGst] = useState(false);
 
   const step = STEPS[stepIndex]!.key;
   const role = useSession((s) => s.role);
@@ -158,31 +172,76 @@ export default function NewReservationPage() {
     );
   }, [seasons.data, range.from]);
 
-  /* Build the priced room lines the repository expects. */
-  const rooms: ReservationRoom[] = useMemo(() => {
-    if (!roomTypes.data) return [];
-    return selections.flatMap((sel) => {
+  /* Room selections in room-type order, so every room of a type sits
+     together on the rates step whatever order they were added in. */
+  const orderedSelections = useMemo(() => {
+    const order = new Map((roomTypes.data ?? []).map((t, i) => [t.id, i]));
+    return [...selections].sort(
+      (a, b) => (order.get(a.roomTypeId) ?? 0) - (order.get(b.roomTypeId) ?? 0),
+    );
+  }, [selections, roomTypes.data]);
+
+  /* A GST-inclusive rate no pre-tax tariff can produce, per room. */
+  const inclusiveErrors = useMemo(() => {
+    const out = new Map<string, string>();
+    if (!ratesIncludeGst) return out;
+    for (const sel of selections) {
+      const split = splitGstInclusive(Number(sel.sellingRate) || 0);
+      if ("error" in split) out.set(sel.key, split.error);
+    }
+    return out;
+  }, [selections, ratesIncludeGst]);
+
+  /* Build the priced room lines the repository expects: one per room.
+     With "Rates include GST", every typed rate is converted to its
+     pre-tax figure here, so the tax, the invoice and the voucher all
+     work from pre-tax rates exactly as before, and the total comes back
+     to what was typed. */
+  const lineByKey = useMemo(() => {
+    const out = new Map<string, ReservationRoom>();
+    if (!roomTypes.data) return out;
+    for (const sel of orderedSelections) {
       const rt = roomTypes.data.find((t) => t.id === sel.roomTypeId);
-      if (!rt || sel.quantity < 1) return [];
-      return [{
+      if (!rt) continue;
+      let sellingRate = Number(sel.sellingRate) || 0;
+      /* A rate for an extra the room does not have is not stored: it
+         cannot be charged, and left on the line it reads like one was. */
+      let extraBedRate = sel.extraBeds ? Number(sel.extraBedRate) || 0 : 0;
+      let childRate = sel.children ? Number(sel.childRate) || 0 : 0;
+      if (ratesIncludeGst) {
+        const split = splitGstInclusive(sellingRate);
+        if ("base" in split) {
+          const pre = (v: number) => Math.round((v / (1 + split.rate)) * 100) / 100;
+          sellingRate = split.base;
+          extraBedRate = pre(extraBedRate);
+          childRate = pre(childRate);
+        }
+      }
+      out.set(sel.key, {
         roomTypeId: rt.id,
         roomTypeName: rt.name,
         mealPlan: sel.mealPlan,
         ...(season ? { seasonId: season.id, seasonName: season.name } : {}),
-        quantity: sel.quantity,
+        quantity: 1,
         adults: sel.adults,
         children: sel.children,
         extraBeds: sel.extraBeds,
-        sellingRate: Number(sel.sellingRate) || 0,
-        extraBedRate: Number(sel.extraBedRate) || 0,
-        childRate: Number(sel.childRate) || 0,
-      }];
-    });
-  }, [selections, roomTypes.data, season]);
+        sellingRate,
+        extraBedRate,
+        childRate,
+      });
+    }
+    return out;
+  }, [orderedSelections, roomTypes.data, season, ratesIncludeGst]);
+  const rooms: ReservationRoom[] = useMemo(() => [...lineByKey.values()], [lineByKey]);
 
+  /* ⚠️ No corporate discount on GST-inclusive rates. A rate negotiated
+     inclusive of tax is the agreed final price; taking the company's
+     percentage off it as well would discount the same booking twice.
+     Mirrored in reservationsRepo.create, which is the real gate. */
   const quote = useMemo(
-    () => reservationsRepo.quote(rooms, nights, company.data),
-    [rooms, nights, company.data],
+    () => reservationsRepo.quote(rooms, nights, ratesIncludeGst ? null : company.data),
+    [rooms, nights, company.data, ratesIncludeGst],
   );
 
   const create = useMutation({
@@ -194,6 +253,7 @@ export default function NewReservationPage() {
           checkIn: range.from!,
           checkOut: range.to!,
           rooms,
+          ratesIncludeGst,
           paymentTerm,
           specialRequests,
           internalNotes,
@@ -238,7 +298,7 @@ export default function NewReservationPage() {
     (step === "customer" && Boolean(customerId)) ||
     (step === "property" && Boolean(hotelId)) ||
     (step === "dates" && nights > 0 && rooms.length > 0) ||
-    (step === "rates" && hasConfirmation) ||
+    (step === "rates" && hasConfirmation && inclusiveErrors.size === 0) ||
     step === "review";
 
   return (
@@ -462,12 +522,16 @@ export default function NewReservationPage() {
                           key={rt.id}
                           roomType={rt}
                           season={season}
-                          selection={selections.find((s) => s.roomTypeId === rt.id)}
-                          onChange={(next) =>
+                          rooms={orderedSelections.filter((s) => s.roomTypeId === rt.id)}
+                          onAdd={(room) => setSelections((prev) => [...prev, room])}
+                          onRemove={() =>
                             setSelections((prev) => {
-                              const rest = prev.filter((s) => s.roomTypeId !== rt.id);
-                              return next ? [...rest, next] : rest;
+                              const last = [...prev].reverse().find((s) => s.roomTypeId === rt.id);
+                              return last ? prev.filter((s) => s.key !== last.key) : prev;
                             })
+                          }
+                          onChange={(next) =>
+                            setSelections((prev) => prev.map((s) => (s.key === next.key ? next : s)))
                           }
                         />
                       ))}
@@ -483,9 +547,26 @@ export default function NewReservationPage() {
             <>
               <CardHeader
                 title="Rates and payment"
-                description="You set the selling rate. The corporate discount and GST are applied on top."
+                description={
+                  ratesIncludeGst
+                    ? "The rates you enter include GST. The quote shows the GST inside them."
+                    : "You set the selling rate. The corporate discount and GST are applied on top."
+                }
               />
               <CardBody className="space-y-5">
+                <div className="rounded-md border border-grey-200 bg-grey-50 p-3.5">
+                  <Checkbox
+                    checked={ratesIncludeGst}
+                    onCheckedChange={setRatesIncludeGst}
+                    label="Rates include GST"
+                  />
+                  <p className="text-sm text-grey-500 mt-1.5 ml-[26px] leading-relaxed">
+                    {ratesIncludeGst
+                      ? "Each rate below is the final price per night. GST is taken out of it, and no corporate discount is added."
+                      : "Tick this when the rate agreed with the hotel already includes GST."}
+                  </p>
+                </div>
+
                 {selections.length === 0 ? (
                   <EmptyState
                     compact
@@ -494,20 +575,38 @@ export default function NewReservationPage() {
                   />
                 ) : (
                   <div className="space-y-3">
-                    {selections.map((sel) => {
+                    {orderedSelections.map((sel) => {
                       const rt = roomTypes.data?.find((t) => t.id === sel.roomTypeId);
-                      if (!rt) return null;
-                      const line = rooms.find((r) => r.roomTypeId === sel.roomTypeId);
+                      const line = lineByKey.get(sel.key);
+                      if (!rt || !line) return null;
+                      const siblings = orderedSelections.filter((s) => s.roomTypeId === sel.roomTypeId);
+                      const index = siblings.findIndex((s) => s.key === sel.key);
                       return (
                         <RateLine
-                          key={sel.roomTypeId}
+                          key={sel.key}
                           roomType={rt}
                           selection={sel}
+                          index={index}
+                          count={siblings.length}
                           nights={nights}
-                          subtotal={line ? lineTotal(line, nights) : 0}
+                          line={line}
+                          inclusive={ratesIncludeGst}
+                          error={inclusiveErrors.get(sel.key)}
                           onChange={(next) =>
+                            setSelections((prev) => prev.map((s) => (s.key === next.key ? next : s)))
+                          }
+                          onCopyToAll={() =>
                             setSelections((prev) =>
-                              prev.map((s) => (s.roomTypeId === sel.roomTypeId ? next : s)),
+                              prev.map((s) =>
+                                s.roomTypeId === sel.roomTypeId && s.key !== sel.key
+                                  ? {
+                                      ...s,
+                                      sellingRate: sel.sellingRate,
+                                      extraBedRate: sel.extraBedRate,
+                                      childRate: sel.childRate,
+                                    }
+                                  : s,
+                              ),
                             )
                           }
                         />
@@ -689,10 +788,17 @@ export default function NewReservationPage() {
                 />
                 <ReviewRow
                   label="Rooms"
-                  value={`${rooms.reduce((s, r) => s + r.quantity, 0)} room${
-                    rooms.reduce((s, r) => s + r.quantity, 0) === 1 ? "" : "s"
-                  }`}
-                  sub={rooms.map((r) => `${r.quantity} × ${r.roomTypeName}`).join(", ")}
+                  value={`${rooms.length} room${rooms.length === 1 ? "" : "s"}`}
+                  sub={roomSummary(rooms)}
+                />
+                <ReviewRow
+                  label="Rates"
+                  value={ratesIncludeGst ? "Include GST" : "GST added on top"}
+                  sub={
+                    ratesIncludeGst && company.data?.negotiatedDiscountPercent
+                      ? "No corporate discount: the rates entered are the final price"
+                      : undefined
+                  }
                 />
                 <ReviewRow label="Channel" value={humanise(channel)} />
                 {specialRequests && <ReviewRow label="Special requests" value={specialRequests} />}
@@ -741,7 +847,10 @@ export default function NewReservationPage() {
               </p>
             ) : (
               <>
-                <QuoteRow label="Room charges" value={money(quote.roomCharges)} />
+                <QuoteRow
+                  label={ratesIncludeGst ? "Room charges before GST" : "Room charges"}
+                  value={money(quote.roomCharges)}
+                />
                 {quote.discountAmount > 0 && (
                   <QuoteRow
                     label={`Discount (${quote.discountPercent}%)`}
@@ -770,6 +879,7 @@ export default function NewReservationPage() {
                   </div>
                   <p className="text-xs text-grey-500 mt-1">
                     {moneyCompact(quote.totalAmount / Math.max(1, nights))} per night
+                    {ratesIncludeGst && " · rates include GST"}
                   </p>
                 </div>
               </>
@@ -784,38 +894,42 @@ export default function NewReservationPage() {
 /* ── Pieces ────────────────────────────────────────────────────── */
 
 function RoomTypeRow({
-  roomType, season, selection, onChange,
+  roomType, season, rooms, onAdd, onRemove, onChange,
 }: {
   roomType: RoomType;
   season?: Season;
-  selection?: RoomSelection;
-  onChange: (next: RoomSelection | null) => void;
+  /** This type's rooms on the booking, in order. */
+  rooms: RoomSelection[];
+  onAdd: (room: RoomSelection) => void;
+  onRemove: () => void;
+  onChange: (next: RoomSelection) => void;
 }) {
-  const quantity = selection?.quantity ?? 0;
-  /* Falls back to EP when no season covers these dates. Room-only is
-     the safe default: it is the one plan every property offers, and it
-     under-promises rather than billing the guest for meals nobody
-     agreed to. */
+  const quantity = rooms.length;
   /* ⚠️ Falls back to every plan, not just EP. A property with no
      season configured should still be sellable on any board basis —
      restricting to room-only would silently drop the meal from the
      booking, and it is the meal that gets billed. */
   const offered = season?.mealPlans?.length ? season.mealPlans : MEAL_PLANS;
 
-  function setQuantity(next: number) {
-    if (next <= 0) return onChange(null);
-    onChange({
+  /* A new room starts as a copy of the one before it, so ten identical
+     rooms are one set of choices and nine clicks, and only the room
+     that differs needs changing. */
+  function add() {
+    const last = rooms[rooms.length - 1];
+    onAdd({
+      key: newRoomKey(),
       roomTypeId: roomType.id,
-      quantity: next,
-      adults: selection?.adults ?? 2,
-      children: selection?.children ?? 0,
-      extraBeds: selection?.extraBeds ?? 0,
-      mealPlan: selection?.mealPlan ?? offered[0]!,
-      sellingRate: selection?.sellingRate ?? "",
-      extraBedRate: selection?.extraBedRate ?? "",
-      childRate: selection?.childRate ?? "",
+      adults: last?.adults ?? 2,
+      children: last?.children ?? 0,
+      extraBeds: last?.extraBeds ?? 0,
+      mealPlan: last?.mealPlan ?? offered[0]!,
+      sellingRate: last?.sellingRate ?? "",
+      extraBedRate: last?.extraBedRate ?? "",
+      childRate: last?.childRate ?? "",
     });
   }
+
+  const maxAdults = Math.max(4, roomType.maxOccupancy || 0);
 
   return (
     <div
@@ -843,7 +957,7 @@ function RoomTypeRow({
           <div className="flex items-center gap-1 ml-2">
             <button
               type="button"
-              onClick={() => setQuantity(quantity - 1)}
+              onClick={onRemove}
               disabled={quantity === 0}
               aria-label={`Remove one ${roomType.name}`}
               className="flex items-center justify-center size-7 rounded-sm border border-grey-300 text-grey-600 hover:bg-grey-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
@@ -853,7 +967,7 @@ function RoomTypeRow({
             <span className="w-7 text-center text-base tabular font-medium">{quantity}</span>
             <button
               type="button"
-              onClick={() => setQuantity(quantity + 1)}
+              onClick={add}
               disabled={roomType.totalRooms > 0 && quantity >= roomType.totalRooms}
               aria-label={`Add one ${roomType.name}`}
               className="flex items-center justify-center size-7 rounded-sm border border-grey-300 text-grey-600 hover:bg-grey-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
@@ -864,113 +978,154 @@ function RoomTypeRow({
         </div>
       </div>
 
-      {quantity > 0 && selection && (
-        <div className="grid gap-3 sm:grid-cols-4 mt-3 pt-3 border-t border-grey-200">
-          <label className="block">
-            <span className="block text-sm text-grey-600 mb-1">Meal plan</span>
-            <NativeSelect
-              value={selection.mealPlan}
-              onChange={(e) =>
-                onChange({ ...selection, mealPlan: e.target.value as MealPlan })
-              }
-            >
-              {offered.map((plan) => (
-                <option key={plan} value={plan}>
-                  {MEAL_PLAN_SHORT[plan]} · {MEAL_PLAN_LABELS[plan]}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
+      {quantity > 0 && (
+        <div className="mt-3 pt-3 border-t border-grey-200 space-y-3">
+          {rooms.map((room, i) => (
+            <div key={room.key} className="grid gap-3 grid-cols-2 sm:grid-cols-[64px_repeat(4,minmax(0,1fr))] items-end">
+              <p className="col-span-2 sm:col-span-1 text-sm font-medium text-ink-900 sm:pb-2">
+                Room {i + 1}
+              </p>
+              <label className="block">
+                <span className="block text-sm text-grey-600 mb-1">Meal plan</span>
+                <NativeSelect
+                  value={room.mealPlan}
+                  onChange={(e) => onChange({ ...room, mealPlan: e.target.value as MealPlan })}
+                >
+                  {offered.map((plan) => (
+                    <option key={plan} value={plan}>
+                      {MEAL_PLAN_SHORT[plan]} · {MEAL_PLAN_LABELS[plan]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
 
-          <label className="block">
-            <span className="block text-sm text-grey-600 mb-1">Adults per room</span>
-            <NativeSelect
-              value={String(selection.adults)}
-              onChange={(e) => onChange({ ...selection, adults: Number(e.target.value) })}
-            >
-              {[1, 2, 3, 4].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </NativeSelect>
-          </label>
+              <label className="block">
+                <span className="block text-sm text-grey-600 mb-1">Adults</span>
+                <NativeSelect
+                  value={String(room.adults)}
+                  onChange={(e) => onChange({ ...room, adults: Number(e.target.value) })}
+                >
+                  {Array.from({ length: maxAdults }, (_, n) => n + 1).map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </NativeSelect>
+              </label>
 
-          <label className="block">
-            <span className="block text-sm text-grey-600 mb-1">Children per room</span>
-            <NativeSelect
-              value={String(selection.children)}
-              onChange={(e) => onChange({ ...selection, children: Number(e.target.value) })}
-            >
-              {[0, 1, 2].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </NativeSelect>
-          </label>
+              <label className="block">
+                <span className="block text-sm text-grey-600 mb-1">Children</span>
+                <NativeSelect
+                  value={String(room.children)}
+                  onChange={(e) => onChange({ ...room, children: Number(e.target.value) })}
+                >
+                  {[0, 1, 2, 3].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </NativeSelect>
+              </label>
 
-          <label className="block">
-            {/* ⚠️ Extra beds are per LINE, not per room — the same wording
-                appears on the type. Two guests sharing one rollaway across
-                three rooms is one extra bed, and charging three is the
-                mistake this label exists to prevent. */}
-            <span className="block text-sm text-grey-600 mb-1">Extra beds (total)</span>
-            <NativeSelect
-              value={String(selection.extraBeds)}
-              onChange={(e) => onChange({ ...selection, extraBeds: Number(e.target.value) })}
-            >
-              {Array.from({ length: (roomType.maxExtraBeds || 0) * quantity + 1 }, (_, n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </NativeSelect>
-          </label>
+              <label className="block">
+                <span className="block text-sm text-grey-600 mb-1">Extra beds</span>
+                <NativeSelect
+                  value={String(room.extraBeds)}
+                  onChange={(e) => onChange({ ...room, extraBeds: Number(e.target.value) })}
+                >
+                  {Array.from({ length: (roomType.maxExtraBeds || 0) + 1 }, (_, n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </NativeSelect>
+              </label>
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
+/** A key for a room on this booking. Only needs to be unique on the page. */
+function newRoomKey(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** "2 × Executive Deluxe Room, 1 × Suite" */
+function roomSummary(rooms: ReservationRoom[]): string {
+  const counts = new Map<string, number>();
+  for (const r of rooms) counts.set(r.roomTypeName, (counts.get(r.roomTypeName) ?? 0) + r.quantity);
+  return [...counts.entries()].map(([name, n]) => `${n} × ${name}`).join(", ");
+}
+
 /* ── Rate entry ────────────────────────────────────────────────────
    The step that replaced the rate-plan lookup.                      */
 
 function RateLine({
-  roomType, selection, nights, subtotal, onChange,
+  roomType, selection, index, count, nights, line, inclusive, error, onChange, onCopyToAll,
 }: {
   roomType: RoomType;
   selection: RoomSelection;
+  /** This room's position among the booking's rooms of the same type. */
+  index: number;
+  count: number;
   nights: number;
-  subtotal: number;
+  /** The priced line, pre-tax, as it will be saved. */
+  line: ReservationRoom;
+  /** The rates typed include GST. */
+  inclusive: boolean;
+  /** Set when an inclusive rate cannot be split into the GST bands. */
+  error?: string;
   onChange: (next: RoomSelection) => void;
+  onCopyToAll: () => void;
 }) {
-  const rate = Number(selection.sellingRate) || 0;
-  const band = rate >= GST_THRESHOLD ? 18 : 5;
+  const entered = Number(selection.sellingRate) || 0;
+  const rate = inclusive ? (splitGstInclusive(entered) as { rate?: number }).rate ?? 0 : 0;
+  const band = inclusive ? Math.round(rate * 100) : line.sellingRate >= GST_THRESHOLD ? 18 : 5;
+  const preTax = lineTotal(line, nights);
+  /* Inclusive: what was typed, across the stay. Otherwise: the pre-tax line. */
+  const shown = inclusive
+    ? ((Number(selection.sellingRate) || 0) +
+        (Number(selection.extraBedRate) || 0) * selection.extraBeds +
+        (Number(selection.childRate) || 0) * selection.children) * nights
+    : preTax;
+
+  const rateHint = !entered
+    ? inclusive ? "Per room per night, including GST" : "Per room per night, before tax"
+    : inclusive
+      ? `${money(line.sellingRate)} + ${money(entered - line.sellingRate)} GST (${band}%)`
+      : `Falls in the ${band}% GST band`;
 
   return (
     <div className="p-3.5 rounded-md border border-grey-200 bg-white">
       <div className="flex items-start justify-between gap-4 mb-3">
         <div className="min-w-0">
-          <p className="font-medium text-ink-900">{roomType.name}</p>
+          <p className="font-medium text-ink-900">
+            {roomType.name}
+            {count > 1 && (
+              <span className="text-grey-500 font-normal"> · Room {index + 1} of {count}</span>
+            )}
+          </p>
           <p className="text-sm text-grey-500">
-            × {selection.quantity} · {selection.mealPlan} · {selection.adults} adult
-            {selection.adults === 1 ? "" : "s"}
-            {selection.children ? `, ${selection.children} child` : ""}
-            {selection.extraBeds ? `, ${selection.extraBeds} extra bed` : ""}
+            {selection.mealPlan} · {selection.adults} adult{selection.adults === 1 ? "" : "s"}
+            {selection.children ? `, ${selection.children} child${selection.children === 1 ? "" : "ren"}` : ""}
+            {selection.extraBeds ? `, ${selection.extraBeds} extra bed${selection.extraBeds === 1 ? "" : "s"}` : ""}
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-base font-medium text-ink-900 tabular">{money(subtotal)}</p>
+          <p className="text-base font-medium text-ink-900 tabular">{money(shown)}</p>
           <p className="text-sm text-grey-500">
             {nights} night{nights === 1 ? "" : "s"}
+            {inclusive ? " · incl. GST" : " · before tax"}
           </p>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field
-          label="Room rate per night"
-          required
-          hint={rate > 0 ? `Falls in the ${band}% GST band` : "Per room, before tax"}
-        >
-          {({ id }) => (
+        <Field label="Room rate per night" required error={error} hint={rateHint}>
+          {(p) => (
             <Input
-              id={id}
+              id={p.id}
+              aria-describedby={p.describedBy}
+              invalid={p.invalid}
               type="number"
               numeric
               min={0}
@@ -983,7 +1138,11 @@ function RateLine({
 
         <Field
           label="Extra bed rate"
-          hint={selection.extraBeds ? "Per bed per night" : "No extra beds on this line"}
+          hint={
+            selection.extraBeds
+              ? `Per bed per night${inclusive ? ", including GST" : ""}`
+              : "No extra beds in this room"
+          }
         >
           {({ id }) => (
             <Input
@@ -1001,7 +1160,11 @@ function RateLine({
 
         <Field
           label="Child rate"
-          hint={selection.children ? "Per child per night" : "No children on this line"}
+          hint={
+            selection.children
+              ? `Per child per night${inclusive ? ", including GST" : ""}`
+              : "No children in this room"
+          }
         >
           {({ id }) => (
             <Input
@@ -1017,6 +1180,20 @@ function RateLine({
           )}
         </Field>
       </div>
+
+      {count > 1 && index === 0 && (
+        <div className="mt-3 flex justify-end">
+          <Button
+            size="sm"
+            variant="ghost"
+            leadingIcon={<Copy className="size-3.5" />}
+            onClick={onCopyToAll}
+            disabled={!selection.sellingRate}
+          >
+            Use these rates for all {count} rooms
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
