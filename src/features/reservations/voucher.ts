@@ -3,6 +3,8 @@ import {
   type Reservation, type Hotel, type Customer, type Company, type OrgSettings,
 } from "@/data/types";
 import { fidatoLogo, BRAND_INK, BRAND_ORANGE } from "@/assets/brand/logoMarkup";
+import { lineTotal } from "@/lib/pricing";
+import { toTwoDecimals, type TaxBand } from "@/lib/tax";
 
 /* ══════════════════════════════════════════════════════════════════
    RESERVATION VOUCHER
@@ -76,6 +78,8 @@ export interface VoucherModel {
   taxAmount: number;
   totalAmount: number;
   gstRate: number;
+  /** One GST line per band: an 18% room and a 5% extra bed are two lines. */
+  taxByBand: TaxBand[];
 
   /* The property's own acceptance. At least one is always present —
      the repository refuses a booking without it. */
@@ -115,8 +119,13 @@ export interface VoucherSources {
   org?: OrgSettings | null;
 }
 
+/* ⚠️ To the paisa. Rounded to the rupee, ₹13,809.53 + ₹690.47 printed
+   as INR 13,810 + INR 690 and the guest's copy stopped adding up. */
 const money = (n: number) =>
-  `INR ${Math.round(n).toLocaleString("en-IN")}`;
+  `INR ${(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** "GST 5%", for a band's line in the totals. */
+const bandLabel = (rate: number) => `GST ${Math.round(rate * 100)}%`;
 
 function longDate(iso?: string): string {
   if (!iso) return "-";
@@ -176,11 +185,6 @@ export function buildVoucher({
       extras.push(`${room.children} child${room.children === 1 ? "" : "ren"}`);
     }
 
-    const lineTotal =
-      (room.sellingRate * room.quantity +
-        room.extraBedRate * room.extraBeds +
-        room.childRate * room.children) * r.nights;
-
     return {
       index: i + 1,
       roomType: room.roomTypeName,
@@ -191,7 +195,7 @@ export function buildVoucher({
       occupancy: `${room.adults} adult${room.adults === 1 ? "" : "s"}`,
       ratePerNight: room.sellingRate,
       extras: extras.join(", "),
-      lineTotal,
+      lineTotal: lineTotal(room, r.nights),
     };
   });
 
@@ -237,6 +241,15 @@ export function buildVoucher({
     taxAmount: r.taxAmount,
     totalAmount: r.totalAmount,
     gstRate: r.gstRate,
+    /* Bookings made before the bands were stored keep their single line,
+       read from the stored figures as always. */
+    taxByBand: r.taxByBand?.length
+      ? r.taxByBand
+      : [{
+          rate: r.gstRate,
+          taxable: toTwoDecimals(r.roomCharges - r.discountAmount),
+          tax: r.taxAmount,
+        }],
 
     hotelConfirmationNumber: r.hotelConfirmationNumber,
     hotelRepName: r.hotelRepName,
@@ -575,7 +588,7 @@ export function renderVoucherHtml(v: VoucherModel): string {
         <table>
           ${totalRow("Room charges", money(v.roomCharges))}
           ${v.discountAmount > 0 ? totalRow("Discount", `− ${money(v.discountAmount)}`) : ""}
-          ${totalRow(`GST (${Math.round(v.gstRate * 100)}%)`, money(v.taxAmount))}
+          ${v.taxByBand.map((band) => totalRow(bandLabel(band.rate), money(band.tax))).join("")}
           <tr><td colspan="2" style="padding-top:6px;border-top:2px solid ${INK}"></td></tr>
           ${totalRow("Grand total", money(v.totalAmount), true)}
         </table>
@@ -949,7 +962,7 @@ export function renderVoucherEmail(
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             ${totalLine("Room charges", money(v.roomCharges))}
             ${v.discountAmount > 0 ? totalLine("Discount", `− ${money(v.discountAmount)}`) : ""}
-            ${totalLine(`GST (${Math.round(v.gstRate * 100)}%)`, money(v.taxAmount))}
+            ${v.taxByBand.map((band) => totalLine(bandLabel(band.rate), money(band.tax))).join("")}
             <tr><td colspan="2" style="padding-top:5px;border-top:2px solid ${INK};font-size:0;line-height:0">&nbsp;</td></tr>
             ${totalLine("Grand total", money(v.totalAmount), true)}
           </table>

@@ -9,11 +9,11 @@ import { cn } from "@/lib/cn";
 import { useActor, useSession, useScope } from "@/lib/session";
 import { canAssignOwner, assignableOwners } from "@/lib/permissions";
 import {
-  adminRepo, companiesRepo, customersRepo, hotelsRepo, reservationsRepo,
-  lineTotal, TODAY,
+  adminRepo, companiesRepo, customersRepo, hotelsRepo, reservationsRepo, TODAY,
 } from "@/data/repositories";
-import { money, moneyCompact, dateShort, percent, humanise } from "@/lib/format";
-import { GST_THRESHOLD, splitGstInclusive } from "@/lib/tax";
+import { moneyPrecise, dateShort, percent, humanise } from "@/lib/format";
+import { gstLabel, gstRateFor, splitGstInclusive, toTwoDecimals, fromPaise } from "@/lib/tax";
+import { chargesOf } from "@/lib/pricing";
 import {
   Page, PageHeader, Card, CardHeader, CardBody, CardFooter, Button, Field,
   Combobox, DateRangePicker, Textarea, Input, NativeSelect, StatusPill, Skeleton,
@@ -74,6 +74,18 @@ interface RoomSelection {
   sellingRate: string;
   extraBedRate: string;
   childRate: string;
+}
+
+/** The three rates typed for a room. Each is its own charge, taxed on its own. */
+type RateField = "sellingRate" | "extraBedRate" | "childRate";
+
+/** The rates this room is actually charged: extras only when it has them. */
+function chargedFields(sel: RoomSelection): RateField[] {
+  return [
+    "sellingRate",
+    ...(sel.extraBeds ? (["extraBedRate"] as const) : []),
+    ...(sel.children ? (["childRate"] as const) : []),
+  ];
 }
 
 export default function NewReservationPage() {
@@ -181,42 +193,52 @@ export default function NewReservationPage() {
     );
   }, [selections, roomTypes.data]);
 
-  /* A GST-inclusive rate no pre-tax tariff can produce, per room. */
+  /* A GST-inclusive rate no pre-tax tariff can produce, per room and
+     per rate: the room, the extra bed and the child are each checked on
+     their own, because each is taxed on its own. */
   const inclusiveErrors = useMemo(() => {
-    const out = new Map<string, string>();
+    const out = new Map<string, Partial<Record<RateField, string>>>();
     if (!ratesIncludeGst) return out;
     for (const sel of selections) {
-      const split = splitGstInclusive(Number(sel.sellingRate) || 0);
-      if ("error" in split) out.set(sel.key, split.error);
+      const errors: Partial<Record<RateField, string>> = {};
+      for (const field of chargedFields(sel)) {
+        const split = splitGstInclusive(Number(sel[field]) || 0);
+        if ("error" in split) errors[field] = split.error;
+      }
+      if (Object.keys(errors).length) out.set(sel.key, errors);
     }
     return out;
   }, [selections, ratesIncludeGst]);
 
   /* Build the priced room lines the repository expects: one per room.
-     With "Rates include GST", every typed rate is converted to its
-     pre-tax figure here, so the tax, the invoice and the voucher all
-     work from pre-tax rates exactly as before, and the total comes back
-     to what was typed. */
+     With "Rates include GST", each typed rate is split on its OWN band
+     (a ₹1,500 extra bed is 5% even beside an 18% room), the pre-tax
+     figures go on the line for the invoice, and the typed figures are
+     kept in `inclusiveRates` so the bill totals exactly what was typed. */
   const lineByKey = useMemo(() => {
     const out = new Map<string, ReservationRoom>();
     if (!roomTypes.data) return out;
     for (const sel of orderedSelections) {
       const rt = roomTypes.data.find((t) => t.id === sel.roomTypeId);
       if (!rt) continue;
-      let sellingRate = Number(sel.sellingRate) || 0;
       /* A rate for an extra the room does not have is not stored: it
          cannot be charged, and left on the line it reads like one was. */
-      let extraBedRate = sel.extraBeds ? Number(sel.extraBedRate) || 0 : 0;
-      let childRate = sel.children ? Number(sel.childRate) || 0 : 0;
-      if (ratesIncludeGst) {
-        const split = splitGstInclusive(sellingRate);
-        if ("base" in split) {
-          const pre = (v: number) => Math.round((v / (1 + split.rate)) * 100) / 100;
-          sellingRate = split.base;
-          extraBedRate = pre(extraBedRate);
-          childRate = pre(childRate);
-        }
-      }
+      const typed = {
+        sellingRate: toTwoDecimals(Number(sel.sellingRate) || 0),
+        extraBedRate: sel.extraBeds ? toTwoDecimals(Number(sel.extraBedRate) || 0) : 0,
+        childRate: sel.children ? toTwoDecimals(Number(sel.childRate) || 0) : 0,
+      };
+      const preTax = (v: number) => {
+        const split = splitGstInclusive(v);
+        return "base" in split ? split.base : v;
+      };
+      const rates = ratesIncludeGst
+        ? {
+            sellingRate: preTax(typed.sellingRate),
+            extraBedRate: preTax(typed.extraBedRate),
+            childRate: preTax(typed.childRate),
+          }
+        : typed;
       out.set(sel.key, {
         roomTypeId: rt.id,
         roomTypeName: rt.name,
@@ -226,9 +248,8 @@ export default function NewReservationPage() {
         adults: sel.adults,
         children: sel.children,
         extraBeds: sel.extraBeds,
-        sellingRate,
-        extraBedRate,
-        childRate,
+        ...rates,
+        ...(ratesIncludeGst ? { inclusiveRates: typed } : {}),
       });
     }
     return out;
@@ -591,7 +612,7 @@ export default function NewReservationPage() {
                           nights={nights}
                           line={line}
                           inclusive={ratesIncludeGst}
-                          error={inclusiveErrors.get(sel.key)}
+                          errors={inclusiveErrors.get(sel.key)}
                           onChange={(next) =>
                             setSelections((prev) => prev.map((s) => (s.key === next.key ? next : s)))
                           }
@@ -845,28 +866,36 @@ export default function NewReservationPage() {
               <p className="text-base text-grey-500 leading-relaxed">
                 Pick dates and rooms to see the price.
               </p>
+            ) : inclusiveErrors.size > 0 ? (
+              <p className="text-base text-grey-500 leading-relaxed">
+                Fix the rates marked in red to see the price.
+              </p>
             ) : (
               <>
+                {/* ⚠️ To the paisa. Rounded to the rupee here, ₹13,809.53 and
+                    ₹690.47 read as ₹13,810 and ₹690 and the lines stopped
+                    adding up to the total beneath them. */}
                 <QuoteRow
                   label={ratesIncludeGst ? "Room charges before GST" : "Room charges"}
-                  value={money(quote.roomCharges)}
+                  value={moneyPrecise(quote.roomCharges)}
                 />
                 {quote.discountAmount > 0 && (
                   <QuoteRow
                     label={`Discount (${quote.discountPercent}%)`}
-                    value={`− ${money(quote.discountAmount)}`}
+                    value={`− ${moneyPrecise(quote.discountAmount)}`}
                     tone="success"
                   />
                 )}
                 {/* ⚠️ One line per band. A booking can legitimately span
-                    both — a ₹6,000 Deluxe at 5% and a ₹9,000 Suite at 18% —
-                    and collapsing them into a single "GST" line hides the
-                    fact that two rates were applied. */}
+                    both (an 18% room with a 5% extra bed, or a ₹6,000 Deluxe
+                    beside a ₹9,000 Suite), and collapsing them into a single
+                    "GST" line hides the fact that two rates were applied. */}
                 {quote.taxByBand.map((band) => (
                   <QuoteRow
                     key={band.rate}
-                    label={`GST ${percent(band.rate * 100, 0)} on ${moneyCompact(band.taxable)}`}
-                    value={money(band.tax)}
+                    label={`GST ${percent(band.rate * 100, 0)}`}
+                    sub={`on ${moneyPrecise(band.taxable)}`}
+                    value={moneyPrecise(band.tax)}
                   />
                 ))}
 
@@ -874,11 +903,13 @@ export default function NewReservationPage() {
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="text-base font-medium text-ink-900">Total</span>
                     <span className="text-xl font-semibold text-ink-900 tabular">
-                      {money(quote.totalAmount)}
+                      {moneyPrecise(quote.totalAmount)}
                     </span>
                   </div>
                   <p className="text-xs text-grey-500 mt-1">
-                    {moneyCompact(quote.totalAmount / Math.max(1, nights))} per night
+                    {nights > 1
+                      ? `${moneyPrecise(quote.totalAmount / nights)} a night on average`
+                      : "For 1 night"}
                     {ratesIncludeGst && " · rates include GST"}
                   </p>
                 </div>
@@ -1059,8 +1090,19 @@ function roomSummary(rooms: ReservationRoom[]): string {
 /* ── Rate entry ────────────────────────────────────────────────────
    The step that replaced the rate-plan lookup.                      */
 
+/**
+ * "₹6,190.48 + ₹309.52 GST (5%)": what is inside a rate typed including
+ * GST, on that rate's own band. Nothing when it cannot be split, because
+ * the field's error says why.
+ */
+function inclusiveSplit(typed: number): string | undefined {
+  const split = splitGstInclusive(typed);
+  if ("error" in split) return undefined;
+  return `${moneyPrecise(split.base)} + ${moneyPrecise(typed - split.base)} GST (${gstLabel(split.rate)})`;
+}
+
 function RateLine({
-  roomType, selection, index, count, nights, line, inclusive, error, onChange, onCopyToAll,
+  roomType, selection, index, count, nights, line, inclusive, errors, onChange, onCopyToAll,
 }: {
   roomType: RoomType;
   selection: RoomSelection;
@@ -1072,27 +1114,38 @@ function RateLine({
   line: ReservationRoom;
   /** The rates typed include GST. */
   inclusive: boolean;
-  /** Set when an inclusive rate cannot be split into the GST bands. */
-  error?: string;
+  /** Per rate, set when an inclusive rate cannot be split into the GST bands. */
+  errors?: Partial<Record<RateField, string>>;
   onChange: (next: RoomSelection) => void;
   onCopyToAll: () => void;
 }) {
   const entered = Number(selection.sellingRate) || 0;
-  const rate = inclusive ? (splitGstInclusive(entered) as { rate?: number }).rate ?? 0 : 0;
-  const band = inclusive ? Math.round(rate * 100) : line.sellingRate >= GST_THRESHOLD ? 18 : 5;
-  const preTax = lineTotal(line, nights);
-  /* Inclusive: what was typed, across the stay. Otherwise: the pre-tax line. */
-  const shown = inclusive
-    ? ((Number(selection.sellingRate) || 0) +
-        (Number(selection.extraBedRate) || 0) * selection.extraBeds +
-        (Number(selection.childRate) || 0) * selection.children) * nights
-    : preTax;
+  const bed = Number(selection.extraBedRate) || 0;
+  const child = Number(selection.childRate) || 0;
+
+  /* Inclusive: what was typed, across the stay. Otherwise: the pre-tax
+     line. Summed in paise, the same way the quote sums it. */
+  const shown = fromPaise(
+    chargesOf(line, nights).reduce((s, c) => s + (inclusive ? c.inclusivePaise ?? 0 : c.basePaise), 0),
+  );
 
   const rateHint = !entered
     ? inclusive ? "Per room per night, including GST" : "Per room per night, before tax"
     : inclusive
-      ? `${money(line.sellingRate)} + ${money(entered - line.sellingRate)} GST (${band}%)`
-      : `Falls in the ${band}% GST band`;
+      ? inclusiveSplit(entered)
+      : `Falls in the ${gstLabel(gstRateFor(entered))} GST band`;
+
+  /* ⚠️ An extra bed and a child are taxed on their OWN rate, never
+     pulled into the room's band. The hint says so, because an 18% room
+     beside a 5% bed is exactly what a reader would otherwise query. */
+  const extraHint = (units: number, typed: number, unit: "bed" | "child", none: string) =>
+    !units
+      ? none
+      : !typed
+        ? `Per ${unit} per night, ${inclusive ? "including GST" : "before tax"}`
+        : inclusive
+          ? `Per ${unit}: ${inclusiveSplit(typed) ?? ""}`
+          : `Per ${unit} per night, taxed on its own at ${gstLabel(gstRateFor(typed))}`;
 
   return (
     <div className="p-3.5 rounded-md border border-grey-200 bg-white">
@@ -1111,7 +1164,7 @@ function RateLine({
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-base font-medium text-ink-900 tabular">{money(shown)}</p>
+          <p className="text-base font-medium text-ink-900 tabular">{moneyPrecise(shown)}</p>
           <p className="text-sm text-grey-500">
             {nights} night{nights === 1 ? "" : "s"}
             {inclusive ? " · incl. GST" : " · before tax"}
@@ -1120,7 +1173,7 @@ function RateLine({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Room rate per night" required error={error} hint={rateHint}>
+        <Field label="Room rate per night" required error={errors?.sellingRate} hint={rateHint}>
           {(p) => (
             <Input
               id={p.id}
@@ -1138,15 +1191,14 @@ function RateLine({
 
         <Field
           label="Extra bed rate"
-          hint={
-            selection.extraBeds
-              ? `Per bed per night${inclusive ? ", including GST" : ""}`
-              : "No extra beds in this room"
-          }
+          error={errors?.extraBedRate}
+          hint={extraHint(selection.extraBeds, bed, "bed", "No extra beds in this room")}
         >
-          {({ id }) => (
+          {(p) => (
             <Input
-              id={id}
+              id={p.id}
+              aria-describedby={p.describedBy}
+              invalid={p.invalid}
               type="number"
               numeric
               min={0}
@@ -1160,15 +1212,14 @@ function RateLine({
 
         <Field
           label="Child rate"
-          hint={
-            selection.children
-              ? `Per child per night${inclusive ? ", including GST" : ""}`
-              : "No children in this room"
-          }
+          error={errors?.childRate}
+          hint={extraHint(selection.children, child, "child", "No children in this room")}
         >
-          {({ id }) => (
+          {(p) => (
             <Input
-              id={id}
+              id={p.id}
+              aria-describedby={p.describedBy}
+              invalid={p.invalid}
               type="number"
               numeric
               min={0}
@@ -1270,15 +1321,20 @@ function ReviewRow({
 }
 
 function QuoteRow({
-  label, value, tone,
+  label, sub, value, tone,
 }: {
   label: string;
+  /** A second, quieter line under the label, e.g. what a GST band is on. */
+  sub?: string;
   value: string;
   tone?: "success";
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-base text-grey-600">{label}</span>
+      <span className="text-base text-grey-600">
+        {label}
+        {sub && <span className="block text-xs text-grey-500 tabular">{sub}</span>}
+      </span>
       <span
         className={cn(
           "text-base tabular",

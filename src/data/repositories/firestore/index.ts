@@ -4,7 +4,8 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { computeTax, CURRENT_GST_VERSION } from "@/lib/tax";
+import { CURRENT_GST_VERSION, toTwoDecimals } from "@/lib/tax";
+import { priceBooking } from "@/lib/pricing";
 import { ASSIGNABLE_ROLES, type ScopeContext } from "@/lib/permissions";
 import { postWebhook, shouldSend } from "@/lib/webhook";
 import { companyDetailTags } from "@/lib/companyDetails";
@@ -696,9 +697,10 @@ export interface CreateReservationInput {
   checkOut: string;
   rooms: ReservationRoom[];
   /**
-   * The rates were agreed inclusive of GST. The room lines arrive already
-   * converted to pre-tax figures (see splitGstInclusive); this only
-   * decides that no corporate discount is taken off them as well.
+   * The rates were agreed inclusive of GST. The room lines arrive with
+   * pre-tax rates (see splitGstInclusive) and the typed figures in
+   * `inclusiveRates`; this also decides that no corporate discount is
+   * taken off them as well.
    */
   ratesIncludeGst?: boolean;
   paymentTerm: Reservation["paymentTerm"];
@@ -743,13 +745,8 @@ export function hasHotelConfirmation(input: {
   );
 }
 
-/** Pre-tax value of one room line across all rooms and nights. */
-export function lineTotal(room: ReservationRoom, nights: number): number {
-  return (
-    (room.sellingRate * room.quantity + room.extraBedRate * room.extraBeds +
-      room.childRate * room.children) * nights
-  );
-}
+/* Pre-tax value of one room line. Lives with the pricing it must agree with. */
+export { lineTotal } from "@/lib/pricing";
 
 export const reservationsRepo = {
   list: (q?: ListQuery, ctx?: ScopeContext): Promise<ListResult<Reservation>> =>
@@ -858,39 +855,13 @@ export const reservationsRepo = {
     return tally;
   },
 
-  quote: (rooms: ReservationRoom[], nights: number, company?: Company | null) => {
-    /* ⚠️ To the paisa. Rates taken out of a GST-inclusive price carry
-       paise (₹6,300 incl. is ₹6,190.48 before tax), and summing those in
-       floating point stored a total of 119767.76000000001. */
-    const paise = (n: number) => Math.round(n * 100) / 100;
-    const roomCharges = paise(rooms.reduce((s, r) => s + lineTotal(r, nights), 0));
-    const discountPercent = company?.negotiatedDiscountPercent ?? 0;
-    const discountAmount = Math.round((roomCharges * discountPercent) / 100);
-
-    // The discount reduces each line proportionally, so the band each
-    // line falls into is unaffected — the band follows the tariff.
-    const factor = roomCharges > 0 ? (roomCharges - discountAmount) / roomCharges : 1;
-    const tax = computeTax(
-      rooms.map((r) => ({
-        sellingRate: r.sellingRate,
-        taxableAmount: lineTotal(r, nights) * factor,
-      })),
-    );
-
-    const taxable = paise(roomCharges - discountAmount);
-    const totalAmount = paise(taxable + tax.taxAmount);
-
-    return {
-      roomCharges,
-      discountPercent,
-      discountAmount,
-      taxAmount: tax.taxAmount,
-      taxByBand: tax.byBand,
-      gstRate: tax.effectiveRate,
-      totalAmount,
-      companyName: company?.name,
-    };
-  },
+  /* ⚠️ To the paisa, tax per charge: see lib/pricing. The room, its
+     extra beds and its children are each banded on their own rate, and
+     a GST-inclusive rate totals exactly what was typed. */
+  quote: (rooms: ReservationRoom[], nights: number, company?: Company | null) => ({
+    ...priceBooking(rooms, nights, company?.negotiatedDiscountPercent ?? 0),
+    companyName: company?.name,
+  }),
 
   create: async (input: CreateReservationInput, actor: Actor): Promise<Reservation> => {
     const [customer, hotel] = await Promise.all([
@@ -970,6 +941,7 @@ export const reservationsRepo = {
       totalAmount: quote.totalAmount,
       gstVersion: CURRENT_GST_VERSION,
       gstRate: quote.gstRate,
+      taxByBand: quote.taxByBand,
 
       ownerId: input.ownerId ?? actor.id,
       ownerName: input.ownerName ?? actor.name,
@@ -1012,13 +984,13 @@ export const reservationsRepo = {
       tx.set(ref, reservation);
       tx.update(customerRef, {
         totalReservations: (snap.data()?.totalReservations ?? 0) + 1,
-        totalRevenue: (snap.data()?.totalRevenue ?? 0) + quote.totalAmount,
+        totalRevenue: toTwoDecimals((snap.data()?.totalRevenue ?? 0) + quote.totalAmount),
         lastActivityAt: serverTimestamp(),
       });
       if (companyRef && cSnap) {
         tx.update(companyRef, {
           totalReservations: (cSnap.data()?.totalReservations ?? 0) + 1,
-          totalRevenue: (cSnap.data()?.totalRevenue ?? 0) + quote.totalAmount,
+          totalRevenue: toTwoDecimals((cSnap.data()?.totalRevenue ?? 0) + quote.totalAmount),
           lastActivityAt: serverTimestamp(),
         });
       }

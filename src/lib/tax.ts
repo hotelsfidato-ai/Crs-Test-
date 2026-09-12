@@ -7,9 +7,27 @@
 
    ⚠️ A reservation may legitimately contain both bands — a ₹6,000
    Deluxe and a ₹9,000 Suite on the same booking. Tax must therefore be
-   computed per line and summed. Computing it on the reservation total
+   computed per charge and summed. Computing it on the reservation total
    is a tax error, not a rounding difference.
+
+   ⚠️ Each CHARGE is banded on its own: the room on the room rate, an
+   extra bed on the extra-bed rate, a child on the child rate. A ₹9,000
+   room with a ₹1,500 extra bed is 18% on the room and 5% on the bed.
+   The owner's rule: the extra bed is never pulled into the room's band.
+
+   ⚠️ All arithmetic is in whole paise. Rupee floats summed across lines
+   stored totals like 119767.76000000001, and a tax rounded to the rupee
+   while the pre-tax figure kept its paise turned ₹14,500 into ₹14,501.
    ══════════════════════════════════════════════════════════════════ */
+
+/** Rupees to whole paise. Every money sum in pricing happens in paise. */
+export const toPaise = (rupees: number): number => Math.round(rupees * 100);
+
+/** Whole paise back to rupees, exact to two decimals. */
+export const fromPaise = (paise: number): number => paise / 100;
+
+/** Rounds a rupee amount to the paisa. */
+export const toTwoDecimals = (rupees: number): number => fromPaise(toPaise(rupees));
 
 /** Tariff at or above this attracts the higher band. */
 export const GST_THRESHOLD = 7_500;
@@ -33,7 +51,7 @@ const BANDS: Record<GstVersion, { low: number; high: number }> = {
   "2025-09": { low: GST_LOW, high: GST_HIGH },
 };
 
-/** The GST rate for one room line, from its per-night tariff. */
+/** The GST rate for one charge, from its own per-night tariff. */
 export function gstRateFor(
   perNightRate: number,
   version: GstVersion = CURRENT_GST_VERSION,
@@ -42,48 +60,68 @@ export function gstRateFor(
   return perNightRate >= GST_THRESHOLD ? band.high : band.low;
 }
 
-export interface TaxableLine {
-  /** Per room per night, before tax. Decides the band. */
-  sellingRate: number;
-  /** The line's full pre-tax value across all rooms and nights. */
+/** One charge on a booking: a room, its extra beds, or its children. */
+export interface TaxableCharge {
+  /** Per unit per night, before tax. Decides the band, for this charge alone. */
+  unitRate: number;
+  /** Pre-tax value across all units and nights, after any discount. */
   taxableAmount: number;
+  /**
+   * The same charge including GST, when the rate was agreed inclusive.
+   * The tax is then what is left once the pre-tax value is taken out, so
+   * the total is exactly what was agreed and never a paisa off.
+   */
+  inclusiveAmount?: number;
+}
+
+export interface TaxBand {
+  rate: number;
+  taxable: number;
+  tax: number;
 }
 
 export interface TaxBreakdown {
   taxAmount: number;
   /** Pre-tax value taxed at each band, for the invoice breakdown. */
-  byBand: { rate: number; taxable: number; tax: number }[];
+  byBand: TaxBand[];
   /** Effective blended rate, for display only. Never for computation. */
   effectiveRate: number;
 }
 
-/** Computes tax per line and sums. The only correct way to tax a booking. */
+/** Computes tax per charge and sums. The only correct way to tax a booking. */
 export function computeTax(
-  lines: TaxableLine[],
+  charges: TaxableCharge[],
   version: GstVersion = CURRENT_GST_VERSION,
 ): TaxBreakdown {
+  /* Paise throughout. The rate goes in as basis points so the multiply
+     stays an integer and a half paisa always rounds up, never by float. */
   const buckets = new Map<number, { taxable: number; tax: number }>();
 
-  for (const line of lines) {
-    const rate = gstRateFor(line.sellingRate, version);
-    const tax = Math.round(line.taxableAmount * rate);
+  for (const charge of charges) {
+    const rate = gstRateFor(charge.unitRate, version);
+    const taxable = toPaise(charge.taxableAmount);
+    const tax =
+      charge.inclusiveAmount !== undefined
+        ? toPaise(charge.inclusiveAmount) - taxable
+        : Math.round((taxable * Math.round(rate * 10_000)) / 10_000);
     const bucket = buckets.get(rate) ?? { taxable: 0, tax: 0 };
-    bucket.taxable += line.taxableAmount;
+    bucket.taxable += taxable;
     bucket.tax += tax;
     buckets.set(rate, bucket);
   }
 
-  const byBand = [...buckets.entries()]
-    .map(([rate, b]) => ({ rate, taxable: b.taxable, tax: b.tax }))
-    .sort((a, b) => a.rate - b.rate);
-
-  const taxAmount = byBand.reduce((s, b) => s + b.tax, 0);
-  const taxable = byBand.reduce((s, b) => s + b.taxable, 0);
+  const inPaise = [...buckets.entries()].sort(([a], [b]) => a - b);
+  const taxPaise = inPaise.reduce((s, [, b]) => s + b.tax, 0);
+  const taxablePaise = inPaise.reduce((s, [, b]) => s + b.taxable, 0);
 
   return {
-    taxAmount,
-    byBand,
-    effectiveRate: taxable > 0 ? taxAmount / taxable : 0,
+    taxAmount: fromPaise(taxPaise),
+    byBand: inPaise.map(([rate, b]) => ({
+      rate,
+      taxable: fromPaise(b.taxable),
+      tax: fromPaise(b.tax),
+    })),
+    effectiveRate: taxablePaise > 0 ? taxPaise / taxablePaise : 0,
   };
 }
 
@@ -97,15 +135,20 @@ export function computeTax(
  * ⚠️ An inclusive rate from ₹7,875 up to ₹8,850 has no valid pre-tax
  * tariff: taken at 5% it is ₹7,500 or more (so 18%), and taken at 18% it
  * is under ₹7,500 (so 5%). No invoice can show that price, so it is
- * returned as an error, never guessed. The pre-tax base at 5% is rounded
- * DOWN so a rate a paisa under the threshold cannot round into it.
+ * returned as an error, never guessed.
+ *
+ * The base is rounded to the nearest paisa (₹6,500 is ₹6,190.48 + ₹309.52).
+ * At 5% it is rounded DOWN only when rounding would carry a rate a
+ * paisa under the threshold into it.
  */
 export function splitGstInclusive(
   inclusive: number,
   version: GstVersion = CURRENT_GST_VERSION,
 ): { base: number; rate: number } | { error: string } {
   const band = BANDS[version] ?? BANDS[CURRENT_GST_VERSION];
-  const low = Math.floor((inclusive / (1 + band.low)) * 100) / 100;
+  const lowExact = inclusive / (1 + band.low);
+  const lowRounded = Math.round(lowExact * 100) / 100;
+  const low = lowRounded < GST_THRESHOLD ? lowRounded : Math.floor(lowExact * 100) / 100;
   if (low < GST_THRESHOLD) return { base: low, rate: band.low };
   const high = Math.round((inclusive / (1 + band.high)) * 100) / 100;
   if (high >= GST_THRESHOLD) return { base: high, rate: band.high };

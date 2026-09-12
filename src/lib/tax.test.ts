@@ -10,7 +10,7 @@ import { computeTax, gstRateFor, splitGstInclusive, GST_THRESHOLD } from "./tax"
    ══════════════════════════════════════════════════════════════════ */
 
 const line = (rate: number, quantity = 1, nights = 1) => ({
-  sellingRate: rate,
+  unitRate: rate,
   taxableAmount: rate * quantity * nights,
 });
 
@@ -74,6 +74,28 @@ describe("computeTax", () => {
     expect(result.taxAmount).toBe(0);
     expect(result.byBand).toHaveLength(0);
   });
+
+  /* ⚠️ Each charge on its own band. A ₹9,000 room with a ₹1,500 extra
+     bed is 18% on the room and 5% on the bed, never 18% on both. */
+  it("bands an extra bed on its own rate, not the room's", () => {
+    const result = computeTax([line(9_000), line(1_500)]);
+    const bands = Object.fromEntries(result.byBand.map((b) => [b.rate, b]));
+    expect(bands[0.18]!.tax).toBe(1_620); // 18% of the room
+    expect(bands[0.05]!.tax).toBe(75);    // 5% of the bed
+  });
+
+  /* ⚠️ To the paisa, not the rupee. Rounding the tax to the rupee while
+     the pre-tax figure kept its paise is what turned ₹14,500 into ₹14,501. */
+  it("keeps the tax to the paisa, rounding a half paisa up", () => {
+    expect(computeTax([line(6_190.5)]).taxAmount).toBe(309.53);  // 309.525
+    expect(computeTax([line(12_288.14)]).taxAmount).toBe(2_211.87); // 2211.8652
+  });
+
+  it("takes the tax out of an inclusive charge so the total is what was agreed", () => {
+    const result = computeTax([{ unitRate: 12_288.14, taxableAmount: 12_288.14, inclusiveAmount: 14_500 }]);
+    expect(result.taxAmount).toBe(2_211.86);
+    expect(Math.round(12_288.14 * 100) + Math.round(result.taxAmount * 100)).toBe(1_450_000);
+  });
 });
 
 /* Negotiated rates that already include GST: the tax is taken out, not added. */
@@ -82,6 +104,13 @@ describe("splitGstInclusive", () => {
 
   it("takes 5% out of an inclusive rate in the low band", () => {
     expect(base(5250)).toEqual({ base: 5000, rate: 0.05 });
+  });
+
+  it("rounds the pre-tax figure to the nearest paisa", () => {
+    // 6,500 ÷ 1.05 = 6,190.476…: ₹6,190.48 + ₹309.52, not ₹6,190.47 + ₹309.53.
+    expect(base(6500)).toEqual({ base: 6190.48, rate: 0.05 });
+    expect(base(1500)).toEqual({ base: 1428.57, rate: 0.05 });
+    expect(base(14500)).toEqual({ base: 12288.14, rate: 0.18 });
   });
 
   it("takes 18% out of an inclusive rate in the high band", () => {
@@ -111,15 +140,23 @@ describe("splitGstInclusive", () => {
     }
   });
 
-  /* What the salesperson typed is what the guest pays, give or take the
-     rupee the per-line tax rounding can move it. */
-  it("gives back the entered amount once the tax is added again", () => {
-    for (const p of [1999, 3500, 5250, 7000, 9999, 12500]) {
-      const { base: b, rate } = base(p);
-      const nights = 3;
-      const tax = computeTax([{ sellingRate: b, taxableAmount: b * nights }]).taxAmount;
-      expect(Math.abs(b * nights + tax - p * nights), `₹${p}`).toBeLessThanOrEqual(1);
-      expect(rate).toBe(gstRateFor(b));
+  /* ⚠️ What the salesperson typed is EXACTLY what the guest pays: not
+     give or take a rupee, not give or take a paisa. Checked in paise
+     across the whole range, for one to five nights. */
+  it("gives back exactly the entered amount once the tax is added again", () => {
+    for (let p = 500; p <= 30_000; p += 1.37) {
+      const typed = Math.round(p * 100) / 100;
+      const split = splitGstInclusive(typed);
+      if ("error" in split) continue;
+      expect(split.rate, `₹${typed}`).toBe(gstRateFor(split.base));
+      for (let nights = 1; nights <= 5; nights++) {
+        const pre = split.base * nights;
+        const { taxAmount } = computeTax([
+          { unitRate: split.base, taxableAmount: pre, inclusiveAmount: typed * nights },
+        ]);
+        expect(Math.round(pre * 100) + Math.round(taxAmount * 100), `₹${typed} × ${nights}`)
+          .toBe(Math.round(typed * 100) * nights);
+      }
     }
   });
 });

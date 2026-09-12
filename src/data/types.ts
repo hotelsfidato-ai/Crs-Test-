@@ -370,10 +370,20 @@ export interface ReservationRoom {
   extraBeds: number;
 
   /* Entered by the salesperson at booking time and frozen thereafter.
-     A later rate change never alters an existing folio. */
+     A later rate change never alters an existing folio. Always before
+     tax: for rates agreed inclusive of GST these are taken out of the
+     figures in `inclusiveRates`. */
   sellingRate: number;
   extraBedRate: number;
   childRate: number;
+
+  /**
+   * The rates exactly as agreed, GST included, when the booking was
+   * entered that way. The tax is the difference from the pre-tax rates
+   * above, so the bill totals exactly what was agreed. Absent when the
+   * rates were entered before tax.
+   */
+  inclusiveRates?: { sellingRate: number; extraBedRate: number; childRate: number };
 }
 
 export interface ReservationGuest {
@@ -459,8 +469,14 @@ export interface Reservation extends Auditable {
      Which band table produced taxAmount. Historical folios are never
      recomputed, so this is how an old figure stays explainable. */
   gstVersion: GstVersion;
-  /** Effective blended rate, for display. Tax is computed per line. */
+  /** Effective blended rate, for display. Tax is computed per charge. */
   gstRate: number;
+  /**
+   * The tax at each band: a 5% line and an 18% line when a booking
+   * spans both. Absent on bookings made before it was stored, which
+   * show one GST line at `gstRate`.
+   */
+  taxByBand?: { rate: number; taxable: number; tax: number }[];
 
   /* ── Phase 2.5 write-back. Written by n8n, never by the app. ──
      voucherUrl doubles as the idempotency check: a retry must not

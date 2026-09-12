@@ -141,6 +141,35 @@ describe("renderVoucherHtml", () => {
     expect(out).not.toContain("<script>alert");
     expect(out).toContain("&lt;script&gt;");
   });
+
+  /* ⚠️ An 18% room with a 5% extra bed is two GST lines. One line at the
+     blended rate printed "GST (16%)", a rate that does not exist. */
+  it("prints one GST line per band, to the paisa", () => {
+    const split = buildVoucher({
+      reservation: {
+        ...reservation,
+        roomCharges: 9_055.69, discountAmount: 0, taxAmount: 1_444.31, totalAmount: 10_500,
+        gstRate: 0.1595,
+        taxByBand: [
+          { rate: 0.05, taxable: 1_428.57, tax: 71.43 },
+          { rate: 0.18, taxable: 7_627.12, tax: 1_372.88 },
+        ],
+      } as Reservation,
+      hotel, customer, org,
+    });
+    for (const out of [renderVoucherHtml(split), renderVoucherEmail(split).html]) {
+      expect(out).toContain("GST 5%");
+      expect(out).toContain("INR 71.43");
+      expect(out).toContain("GST 18%");
+      expect(out).toContain("INR 1,372.88");
+      expect(out).toContain("INR 10,500.00");
+      expect(out).not.toContain("GST (16%)");
+    }
+  });
+
+  it("keeps a single GST line for bookings made before bands were stored", () => {
+    expect(model.taxByBand).toEqual([{ rate: 0.05, taxable: 40_000, tax: 2_000 }]);
+  });
 });
 
 describe("renderVoucherEmail", () => {

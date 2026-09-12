@@ -15,6 +15,7 @@ import {
 import {
   canCancelReservation, canEditReservation, labelFor, nextStatuses, isTerminal,
 } from "@/lib/rules";
+import { gstLabel } from "@/lib/tax";
 import { summariseReservation } from "@/features/ai/responses";
 import { CANCELLATION_REASONS } from "@/lib/vocabulary";
 import {
@@ -290,10 +291,10 @@ export default function ReservationDetailPage() {
                             {r.nights}
                           </td>
                           <td className="px-5 py-3 text-right tabular text-grey-600">
-                            {money(room.sellingRate)}
+                            {moneyPrecise(room.sellingRate)}
                           </td>
                           <td className="px-5 py-3 text-right tabular font-medium">
-                            {money(lineTotal(room, r.nights))}
+                            {moneyPrecise(lineTotal(room, r.nights))}
                           </td>
                         </tr>
                       ))}
@@ -314,13 +315,30 @@ export default function ReservationDetailPage() {
                         tone="success"
                       />
                     )}
-                    <FolioRow label="GST" value={moneyPrecise(r.taxAmount)} />
+                    {/* One line per band when the booking stored them: an 18%
+                        room beside a 5% extra bed is two rates, not one. */}
+                    {r.taxByBand?.length ? (
+                      r.taxByBand.map((band) => (
+                        <FolioRow
+                          key={band.rate}
+                          label={`GST ${gstLabel(band.rate)} on ${moneyPrecise(band.taxable)}`}
+                          value={moneyPrecise(band.tax)}
+                        />
+                      ))
+                    ) : (
+                      <FolioRow label="GST" value={moneyPrecise(r.taxAmount)} />
+                    )}
                     <div className="flex items-baseline justify-between gap-3 pt-2 border-t border-grey-300">
                       <span className="text-base font-medium text-ink-900">Total</span>
                       <span className="text-lg font-semibold text-ink-900 tabular">
                         {moneyPrecise(r.totalAmount)}
                       </span>
                     </div>
+                    {r.ratesIncludeGst && (
+                      <p className="text-xs text-grey-500 text-right">
+                        Rates agreed including GST
+                      </p>
+                    )}
                   </div>
                 </CardBody>
               </Card>

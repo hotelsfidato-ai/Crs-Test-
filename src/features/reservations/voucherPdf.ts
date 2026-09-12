@@ -304,7 +304,9 @@ export async function buildVoucherPdf(
 
   totalRow("Room charges", money(v.roomCharges));
   if (v.discountAmount > 0) totalRow("Discount", `- ${money(v.discountAmount)}`);
-  totalRow(`GST (${Math.round(v.gstRate * 100)}%)`, money(v.taxAmount));
+  for (const band of v.taxByBand) {
+    totalRow(`GST ${Math.round(band.rate * 100)}%`, money(band.tax));
+  }
   setDraw(doc, INK);
   doc.setLineWidth(0.4);
   doc.line(totalsLeft, ctx.y - 1, RIGHT, ctx.y - 1);
@@ -457,9 +459,9 @@ export async function buildVoucherPdf(
   return doc;
 }
 
-/** `INR 1,16,216` — Indian digit grouping, WinAnsi safe. */
+/** `INR 1,16,216.00`: Indian digit grouping, to the paisa, WinAnsi safe. */
 function money(n: number): string {
-  return `INR ${Math.round(n || 0).toLocaleString("en-IN")}`;
+  return `INR ${(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export async function voucherPdfBlob(
