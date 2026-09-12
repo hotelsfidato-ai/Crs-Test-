@@ -859,7 +859,11 @@ export const reservationsRepo = {
   },
 
   quote: (rooms: ReservationRoom[], nights: number, company?: Company | null) => {
-    const roomCharges = rooms.reduce((s, r) => s + lineTotal(r, nights), 0);
+    /* ⚠️ To the paisa. Rates taken out of a GST-inclusive price carry
+       paise (₹6,300 incl. is ₹6,190.48 before tax), and summing those in
+       floating point stored a total of 119767.76000000001. */
+    const paise = (n: number) => Math.round(n * 100) / 100;
+    const roomCharges = paise(rooms.reduce((s, r) => s + lineTotal(r, nights), 0));
     const discountPercent = company?.negotiatedDiscountPercent ?? 0;
     const discountAmount = Math.round((roomCharges * discountPercent) / 100);
 
@@ -873,8 +877,8 @@ export const reservationsRepo = {
       })),
     );
 
-    const taxable = roomCharges - discountAmount;
-    const totalAmount = taxable + tax.taxAmount;
+    const taxable = paise(roomCharges - discountAmount);
+    const totalAmount = paise(taxable + tax.taxAmount);
 
     return {
       roomCharges,
