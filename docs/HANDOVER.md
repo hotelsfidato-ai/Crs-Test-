@@ -13,9 +13,10 @@ and in git.
 
 ## The five-line version
 
-1. **v1.1.0 live 2026-09-11** (tag `v1.1.0`): room types import, fixing rows on the review
-   screen, same property name in two cities. v1.0.0 the same day brought the Daily sales report
-   and import tagged to a salesperson.
+1. **v1.2.0 live 2026-09-12** (tag `v1.2.0`): the booking wizard takes occupancy and rates per
+   room (each room is its own line), and has "Rates include GST" for negotiated inclusive rates
+   (GST taken out per room, no corporate discount on top). v1.1.0 brought the room types import
+   and fixing rows on the review screen; v1.0.0 the Daily sales report.
 2. **The 28 properties and 105 room types are LIVE** (1,340 rooms), loaded from the checked
    spreadsheets in `D:\fidato data\`. Room counts are still missing for 5 properties and
    Grand Majestic has no room types; see *In flight*.
@@ -32,12 +33,12 @@ and in git.
 
 | | |
 |---|---|
-| Hosting | https://crstest-9a0c5.web.app · v1.1.0 |
+| Hosting | https://crstest-9a0c5.web.app · v1.2.0 |
 | Firestore rules | Deployed with v1.0.0 (adds `dsrVisits`, `dsrDays`) |
 | Firestore indexes | 181 of the 200 Spark allows, generated from `src/data/queryPlan.ts` |
 | Firebase project | `crstest-9a0c5` · Spark plan |
-| Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` · **public**, `main` and tags `v1.0.0`, `v1.1.0` pushed |
-| Tests | 216 unit · 122 rules · typecheck and build clean |
+| Repo | `https://github.com/hotelsfidato-ai/Crs-Test-` · **public**, `main` and tags `v1.0.0`, `v1.1.0`, `v1.2.0` pushed |
+| Tests | 222 unit · 122 rules · typecheck and build clean |
 
 `CLAUDE.md` carries orientation and traps only, and points here for state. **Keep it that way:**
 state in a file nobody rewrites is state that goes quietly wrong.
