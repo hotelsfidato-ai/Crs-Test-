@@ -1025,4 +1025,10 @@ export interface ListResult<T> {
   total: number;
   page: number;
   pageSize: number;
+  /**
+   * Set when a search looked through only the first N records (in the
+   * current sort and filters) because there were more: a record past
+   * them can be missed, so the screen suggests a filter.
+   */
+  searchCapped?: number;
 }

@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { SkeletonTable, NoResultsState, ErrorState, EmptyState } from "./States";
@@ -201,10 +201,19 @@ export function Pagination({
   className?: string;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  /* A page past the end (an old link, or a list that shrank since it
+     was opened) goes to the last page instead of an empty table under
+     "26–21 of 21". */
+  useEffect(() => {
+    if (total > 0 && page > pages) onPageChange(pages);
+  }, [total, page, pages, onPageChange]);
+
   if (total === 0) return null;
 
-  const from = (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
+  const shown = Math.min(page, pages);
+  const from = (shown - 1) * pageSize + 1;
+  const to = Math.min(shown * pageSize, total);
 
   // Windowed page numbers: 1 … 4 5 [6] 7 8 … 20
   const window: (number | "gap")[] = [];

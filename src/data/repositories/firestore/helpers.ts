@@ -77,9 +77,9 @@ export const serverNow = () => serverTimestamp();
    Mirrors the Phase 1 shape so no screen changes.
 
    ⚠️ Firestore has no substring search. `search` is applied in the
-   client over the fetched page, exactly as Phase 1 did. It therefore
-   searches the page, not the collection — the UI states this. Moving
-   to Typesense later changes only this function.                     */
+   client over a window of records (see runQuery), not the whole
+   collection, and a capped window is reported so the UI can say so.
+   Moving to a search service later changes only this function.       */
 
 export interface Cursor {
   last?: QueryDocumentSnapshot<DocumentData>;
@@ -116,6 +116,52 @@ export interface RunQueryOptions {
  * return a forbidden document fails outright rather than returning a
  * subset. The rule and the query must agree.
  */
+/* ── Paging ────────────────────────────────────────────────────────
+   ⚠️ Every list used to return the first 25 rows whatever page was
+   asked for, and reported those 25 as the total, so the pagination
+   under a table could never offer page 2. A sales book of 400 companies
+   showed 25 and stopped.
+
+   Firestore has no OFFSET that saves reads, so pages are walked with
+   cursors: page N starts after the last document of page N-1. Each
+   list remembers the cursors it has seen, so Next costs one page of
+   reads and going back costs nothing extra; jumping straight to page 9
+   walks from the furthest page already known. The total is a count
+   aggregation, charged at one read per thousand matching documents,
+   not one per document. */
+
+type Snap = QueryDocumentSnapshot<DocumentData>;
+
+/** The last document of each page already fetched, per distinct list. */
+const pageCursors = new Map<string, Snap[]>();
+/** Search windows, briefly, so paging through results does not refetch them. */
+const searchWindows = new Map<string, { at: number; docs: Snap[]; capped: boolean }>();
+const SEARCH_WINDOW = 500;
+const SEARCH_TTL_MS = 60_000;
+const MAX_REMEMBERED = 50;
+
+function remember<V>(map: Map<string, V>, key: string, value: V) {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > MAX_REMEMBERED) map.delete(map.keys().next().value as string);
+}
+
+/** Page `page` (1-based) of `base`, walking from the furthest cursor already known. */
+async function pageOf(base: Query<DocumentData>, page: number, pageSize: number, key: string): Promise<Snap[]> {
+  const known = pageCursors.get(key) ?? [];
+  const from = Math.min(known.length, page - 1);
+  const need = (page - from) * pageSize;
+  const snap = await getDocs(
+    from > 0 ? query(base, startAfter(known[from - 1]!), limit(need)) : query(base, limit(need)),
+  );
+  for (let p = from + 1; p <= page; p++) {
+    const last = snap.docs[(p - from) * pageSize - 1];
+    if (last) known[p - 1] = last;
+  }
+  remember(pageCursors, key, known);
+  return snap.docs.slice((page - from - 1) * pageSize, (page - from) * pageSize);
+}
+
 export async function runQuery<T>(
   path: string,
   q: ListQuery | undefined,
@@ -130,12 +176,15 @@ export async function runQuery<T>(
   } = options;
   const query_ = q ?? {};
   const pageSize = query_.pageSize ?? 25;
+  const page = Math.max(1, Math.floor(query_.page ?? 1));
 
   const constraints: QueryConstraint[] = [];
+  const signature: unknown[] = [path, pageSize];
 
   // Scoping first — see the note above.
   const pinned = scope ? scopeConstraints(scope) : [];
   constraints.push(...pinned.map((c) => where(c.field, "==", c.value)));
+  signature.push(pinned);
 
   for (const field of filterFields) {
     const value = query_.filters?.[field];
@@ -146,6 +195,7 @@ export async function runQuery<T>(
        is the truth; the filter defers to it. */
     if (pinned.some((c) => c.field === field)) continue;
     constraints.push(where(field, "==", value));
+    signature.push([field, value]);
   }
 
   /* ⚠️ At most one — Firestore rejects a query with two array-contains
@@ -154,28 +204,53 @@ export async function runQuery<T>(
     const v = query_.filters?.[f];
     return v && v !== "all";
   });
-  if (arrayField) constraints.push(where(arrayField, "array-contains", query_.filters![arrayField]));
+  if (arrayField) {
+    constraints.push(where(arrayField, "array-contains", query_.filters![arrayField]));
+    signature.push(["contains", arrayField, query_.filters![arrayField]]);
+  }
 
   const sortField = query_.sortBy ?? defaultSort?.field;
   const sortDir = query_.sortDir ?? defaultSort?.dir ?? "desc";
   if (sortField) constraints.push(orderBy(sortField, sortDir));
+  signature.push([sortField, sortDir]);
 
-  // Over-fetch slightly so client-side search still fills a page.
-  const fetchSize = query_.search ? pageSize * 4 : pageSize;
-  constraints.push(limit(fetchSize + 1));
+  const base = query(collection(db, path) as Query<DocumentData>, ...constraints);
+  const key = JSON.stringify(signature);
 
-  const base = collection(db, path) as Query<DocumentData>;
-  const snap = await getDocs(query(base, ...constraints));
-
-  let items = snap.docs.slice(0, fetchSize).map((d) => fromDoc<T>(d, path));
-  if (query_.search) {
-    items = items.filter((r) => matchesSearch(r, query_.search!, searchFields));
+  /* ⚠️ Search is still in the browser: Firestore has no substring match.
+     It looks through the first SEARCH_WINDOW records in the current sort
+     and filters, and pages through what matched. `capped` says there
+     were more records than the window, so a miss may not be a true
+     miss; the screen says so and suggests a filter. Moving to a search
+     service later changes only this branch. */
+  if (query_.search?.trim()) {
+    const searchKey = `${key}|${query_.search.trim().toLowerCase()}`;
+    let window = searchWindows.get(searchKey);
+    if (!window || Date.now() - window.at > SEARCH_TTL_MS) {
+      const snap = await getDocs(query(base, limit(SEARCH_WINDOW + 1)));
+      window = { at: Date.now(), docs: snap.docs.slice(0, SEARCH_WINDOW), capped: snap.docs.length > SEARCH_WINDOW };
+      remember(searchWindows, searchKey, window);
+    }
+    const matched = window.docs
+      .map((d) => fromDoc<T>(d, path))
+      .filter((r) => matchesSearch(r, query_.search!, searchFields));
+    return {
+      items: matched.slice((page - 1) * pageSize, page * pageSize),
+      total: matched.length,
+      page,
+      pageSize,
+      ...(window.capped ? { searchCapped: SEARCH_WINDOW } : {}),
+    };
   }
 
+  const [counted, docs] = await Promise.all([
+    getCountFromServer(base).then((c) => c.data().count),
+    pageOf(base, page, pageSize, key),
+  ]);
   return {
-    items: items.slice(0, pageSize),
-    total: items.length,
-    page: query_.page ?? 1,
+    items: docs.map((d) => fromDoc<T>(d, path)),
+    total: counted,
+    page,
     pageSize,
   };
 }

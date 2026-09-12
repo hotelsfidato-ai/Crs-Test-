@@ -267,6 +267,14 @@ export default function CompaniesPage() {
           onPageChange={list.setPage}
         />
       )}
+
+      {data?.searchCapped && (
+        <p className="text-xs text-grey-500 mt-3 leading-relaxed">
+          Search looked through the first {number(data.searchCapped)} companies in this order. If the
+          one you want is not here, narrow the list with a filter (salesperson, status or tier) and
+          search again.
+        </p>
+      )}
     </Page>
   );
 }
